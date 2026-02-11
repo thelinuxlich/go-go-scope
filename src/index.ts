@@ -5,6 +5,8 @@
  * with automatic cleanup via the `using` and `await using` syntax.
  */
 
+import type { Context, Span, SpanOptions, Tracer } from "@opentelemetry/api";
+import { context as otelContext, trace } from "@opentelemetry/api";
 import createDebug from "debug";
 
 const debugScope = createDebug("go-go-scope:scope");
@@ -14,30 +16,8 @@ export type Result<E, T> = readonly [E | undefined, T | undefined];
 export type Success<T> = readonly [undefined, T];
 export type Failure<E> = readonly [E, undefined];
 
-/**
- * OpenTelemetry Tracer interface (minimal subset for optional integration)
- * This avoids a hard dependency on @opentelemetry/api
- */
-export interface Tracer {
-	startSpan(name: string, options?: SpanOptions): Span;
-}
-
-/**
- * OpenTelemetry Span interface (minimal subset)
- */
-export interface Span {
-	end(): void;
-	recordException(exception: unknown): void;
-	setStatus(status: { code: number; message?: string }): void;
-	setAttributes?(attributes: Record<string, unknown>): void;
-}
-
-/**
- * Options for span creation
- */
-export interface SpanOptions {
-	attributes?: Record<string, unknown>;
-}
+// Re-export OpenTelemetry types for users
+export type { Context, Span, SpanOptions, Tracer };
 
 /**
  * Options for spawning a task with tracing.
@@ -300,6 +280,7 @@ export class Scope<
 	private disposed = false;
 	private readonly _tracer?: Tracer;
 	private readonly span?: Span;
+	private readonly context?: Context;
 	private taskCount = 0;
 	private spanHasError = false;
 	private readonly startTime: number;
@@ -367,14 +348,31 @@ export class Scope<
 
 		// Create span if tracer is provided
 		if (this.tracer) {
-			this.span = this.tracer.startSpan(options?.name ?? "scope", {
-				attributes: {
-					"scope.timeout": options?.timeout,
-					"scope.has_parent_signal": !!parentSignal,
-					"scope.has_parent_scope": !!options?.parent,
-					"scope.concurrency": options?.concurrency,
+			// Get parent context from parent scope if available
+			const parentContext = options?.parent?.otelContext;
+			// Get active context from OpenTelemetry (root context if none active)
+			const currentContext = parentContext ?? otelContext.active();
+
+			// Create the span with parent context
+			this.span = this.tracer.startSpan(
+				options?.name ?? "scope",
+				{
+					attributes: {
+						"scope.timeout": options?.timeout,
+						"scope.has_parent_signal": !!parentSignal,
+						"scope.has_parent_scope": !!options?.parent,
+						"scope.concurrency": options?.concurrency,
+					},
 				},
-			});
+				currentContext,
+			);
+
+			// Store the context with this span set as active
+			if (this.span) {
+				this.context = trace.setSpan(currentContext, this.span);
+			} else {
+				this.context = currentContext;
+			}
 		}
 
 		// Link to parent signal if provided
@@ -460,6 +458,22 @@ export class Scope<
 	}
 
 	/**
+	 * Get the OpenTelemetry span for this scope.
+	 * @internal Used for linking child spans
+	 */
+	get otelSpan(): Span | undefined {
+		return this.span;
+	}
+
+	/**
+	 * Get the OpenTelemetry context for this scope.
+	 * @internal Used for creating child spans with proper parent-child relationships
+	 */
+	get otelContext(): Context | undefined {
+		return this.context;
+	}
+
+	/**
 	 * Spawn a task that returns a Result tuple with the raw error object.
 	 * Automatically wraps the function with error handling.
 	 *
@@ -502,11 +516,11 @@ export class Scope<
 		// Merge with custom attributes
 		Object.assign(attributes, options?.otel?.attributes);
 
+		// Create task span with proper parent context
 		const taskSpan = this._tracer?.startSpan(
 			options?.otel?.name ?? "scope.task",
-			{
-				attributes,
-			},
+			{ attributes },
+			this.otelContext ?? otelContext.active(),
 		);
 
 		const taskStartTime = performance.now();

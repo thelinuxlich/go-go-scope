@@ -1,0 +1,10 @@
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:1.76.0
+    container_name: go-go-scope-jaeger
+    ports:
+      - "16687:16686" # Jaeger UI (mapped to 16687 to avoid conflicts)
+      - "4319:4318" # OTLP HTTP receiver (mapped to 4319 to avoid conflicts)
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    restart: unless-stopped

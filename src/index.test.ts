@@ -4,8 +4,8 @@ import {
 	type Failure,
 	SpanStatusCode,
 	type Success,
-	type Tracer,
 	scope,
+	type Tracer,
 } from "./index.js";
 
 describe("Task", () => {
@@ -736,15 +736,23 @@ describe("task() with retry option", () => {
 });
 
 // Mock OpenTelemetry tracer for testing
+let mockSpanIdCounter = 0;
+
 function createMockTracer(): { tracer: Tracer; spans: MockSpan[] } {
 	const spans: MockSpan[] = [];
 
 	const tracer: Tracer = {
 		startSpan(
 			name: string,
-			options?: { attributes?: Record<string, unknown> },
+			options?: {
+				attributes?: Record<string, unknown>;
+				links?: {
+					context: { traceId: string; spanId: string; traceFlags: number };
+				}[];
+			},
 		) {
-			const span = new MockSpan(name, options?.attributes);
+			const parentContext = options?.links?.[0]?.context;
+			const span = new MockSpan(name, options?.attributes, parentContext);
 			spans.push(span);
 			return span;
 		},
@@ -759,10 +767,28 @@ class MockSpan {
 	ended = false;
 	exceptions: unknown[] = [];
 	status: { code: number; message?: string } | undefined;
+	parent?: { traceId: string; spanId: string; traceFlags: number };
+	traceId: string;
+	spanId: string;
 
-	constructor(name: string, attributes?: Record<string, unknown>) {
+	constructor(
+		name: string,
+		attributes?: Record<string, unknown>,
+		parentContext?: { traceId: string; spanId: string; traceFlags: number },
+	) {
 		this.name = name;
 		this.attributes = attributes;
+		this.parent = parentContext;
+		this.traceId = parentContext?.traceId ?? `trace-${mockSpanIdCounter++}`;
+		this.spanId = `span-${mockSpanIdCounter++}`;
+	}
+
+	spanContext() {
+		return {
+			traceId: this.traceId,
+			spanId: this.spanId,
+			traceFlags: 1,
+		};
 	}
 
 	end(): void {
