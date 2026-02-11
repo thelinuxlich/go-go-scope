@@ -853,6 +853,10 @@ class MockSpan {
 	setStatus(status: { code: number; message?: string }): void {
 		this.status = status;
 	}
+
+	setAttributes(attributes: Record<string, unknown>): void {
+		this.attributes = { ...this.attributes, ...attributes };
+	}
 }
 
 describe("OpenTelemetry Integration", () => {
@@ -1092,5 +1096,49 @@ describe("OpenTelemetry Integration", () => {
 		const taskSpan = spans.find((s) => s.name === "fetch-task");
 		expect(taskSpan).toBeDefined();
 		expect(taskSpan?.attributes?.["task.type"]).toBe("background");
+	});
+
+	test("records task duration in span attributes", async () => {
+		const { tracer, spans } = createMockTracer();
+
+		{
+			await using s = scope({ tracer });
+			using t = s.spawn(() => Promise.resolve("done"));
+			await t;
+		}
+
+		// Allow disposal to complete
+		await new Promise((r) => setTimeout(r, 10));
+
+		const taskSpan = spans.find((s) => s.name === "scope.task");
+		expect(taskSpan).toBeDefined();
+		expect(taskSpan?.attributes?.["task.duration_ms"]).toBeDefined();
+		expect(typeof taskSpan?.attributes?.["task.duration_ms"]).toBe("number");
+		expect(taskSpan?.attributes?.["task.duration_ms"]).toBeGreaterThanOrEqual(
+			0,
+		);
+	});
+
+	test("records scope duration in span attributes", async () => {
+		const { tracer, spans } = createMockTracer();
+
+		{
+			await using s = scope({ tracer });
+			using t = s.spawn(() => Promise.resolve("done"));
+			await t;
+			// Small delay to ensure measurable duration
+			await new Promise((r) => setTimeout(r, 10));
+		}
+
+		// Allow disposal to complete
+		await new Promise((r) => setTimeout(r, 10));
+
+		const scopeSpan = spans.find((s) => s.name === "scope");
+		expect(scopeSpan).toBeDefined();
+		expect(scopeSpan?.attributes?.["scope.duration_ms"]).toBeDefined();
+		expect(typeof scopeSpan?.attributes?.["scope.duration_ms"]).toBe("number");
+		expect(scopeSpan?.attributes?.["scope.duration_ms"]).toBeGreaterThanOrEqual(
+			0,
+		);
 	});
 });

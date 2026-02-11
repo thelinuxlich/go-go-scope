@@ -24,6 +24,7 @@ export interface Span {
 	end(): void;
 	recordException(exception: unknown): void;
 	setStatus(status: { code: number; message?: string }): void;
+	setAttributes?(attributes: Record<string, unknown>): void;
 }
 
 /**
@@ -227,10 +228,12 @@ export class Scope implements AsyncDisposable {
 	private readonly span?: Span;
 	private taskCount = 0;
 	private spanHasError = false;
+	private readonly startTime: number;
 
 	constructor(options?: ScopeOptions) {
 		this.abortController = new AbortController();
 		this.tracer = options?.tracer;
+		this.startTime = performance.now();
 
 		// Create span if tracer is provided
 		if (this.tracer) {
@@ -320,6 +323,8 @@ export class Scope implements AsyncDisposable {
 			attributes,
 		});
 
+		const taskStartTime = performance.now();
+
 		const wrappedFn = async (signal: AbortSignal): Promise<T> => {
 			try {
 				const result = await fn(signal);
@@ -335,6 +340,9 @@ export class Scope implements AsyncDisposable {
 				});
 				throw error;
 			} finally {
+				// Calculate and record task duration in milliseconds
+				const duration = performance.now() - taskStartTime;
+				taskSpan?.setAttributes?.({ "task.duration_ms": duration });
 				taskSpan?.end();
 			}
 		};
@@ -443,6 +451,11 @@ export class Scope implements AsyncDisposable {
 		if (!this.spanHasError) {
 			this.span?.setStatus({ code: SpanStatusCode.OK });
 		}
+
+		// Calculate and record scope duration in milliseconds
+		const duration = performance.now() - this.startTime;
+		this.span?.setAttributes?.({ "scope.duration_ms": duration });
+
 		this.span?.end();
 
 		// If any disposals threw, aggregate and rethrow

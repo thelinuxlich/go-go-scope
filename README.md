@@ -1061,8 +1061,31 @@ async function fetchWithTracing(userId: string) {
 
 | Span Name | Description | Attributes |
 |-----------|-------------|------------|
-| `scope` (or custom name) | The scope lifecycle span | `scope.timeout`, `scope.has_parent_signal` |
-| `scope.task` (or custom name) | Each spawned task | `task.index` (1-based counter) |
+| `scope` (or custom name) | The scope lifecycle span | `scope.timeout`, `scope.has_parent_signal`, `scope.duration_ms` |
+| `scope.task` (or custom name) | Each spawned task | `task.index` (1-based counter), `task.duration_ms` |
+
+### Duration Tracking
+
+The library automatically calculates and records the duration of scopes and tasks in milliseconds:
+
+```typescript
+await using s = scope({ tracer, name: 'api-request' })
+
+using t = s.spawn(async () => {
+  const result = await fetchData()
+  return result
+}, { name: 'fetch-data' })
+
+await t
+// Task span includes: task.duration_ms = ~50 (ms)
+
+// Scope span includes: scope.duration_ms = ~52 (ms)
+```
+
+This is useful for:
+- **Performance monitoring** - Identify slow operations
+- **SLA tracking** - Alert when requests exceed thresholds
+- **Debugging** - Understand where time is spent in concurrent operations
 
 ### Custom Task Span Names and Attributes
 
