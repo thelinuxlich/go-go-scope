@@ -1458,7 +1458,7 @@ using t = s.task(async () => {
   const [err, data] = await fetchData()
   if (err) throw err
   return data
-}, { name: 'fetch-data' })
+}, { otel: { name: 'fetch-data' } })
 
 await t
 // Task span includes: task.duration_ms = ~50 (ms)
@@ -1480,23 +1480,27 @@ await using s = scope({ tracer })
 
 // Custom task name
 using t1 = s.task(() => fetchUser(userId), { 
-  name: 'fetch-user' 
+  otel: { name: 'fetch-user' }
 })
 
 // Custom attributes for better observability
 using t2 = s.task(() => fetchPosts(userId), {
-  name: 'fetch-posts',
-  attributes: {
-    'http.method': 'GET',
-    'http.url': `/api/users/${userId}/posts`,
-    'user.id': userId,
+  otel: {
+    name: 'fetch-posts',
+    attributes: {
+      'http.method': 'GET',
+      'http.url': `/api/users/${userId}/posts`,
+      'user.id': userId,
+    }
   }
 })
 
 // Works with task() too
 using t3 = s.task(() => riskyOperation(), {
-  name: 'background-job',
-  attributes: { 'job.type': 'cleanup' }
+  otel: {
+    name: 'background-job',
+    attributes: { 'job.type': 'cleanup' }
+  }
 })
 ```
 
