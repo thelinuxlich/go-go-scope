@@ -184,7 +184,7 @@ interface TaskOptions {
   // Timeout for this specific task (in milliseconds)
   timeout?: number
   
-  // Custom cleanup function - runs when task completes or is cancelled
+  // Custom cleanup function - runs when parent scope exits
   onCleanup?: () => void | Promise<void>
 }
 ```
@@ -207,7 +207,9 @@ using task = s.spawn(
 )
 
 const result = await task
-// Cleanup runs automatically when task settles (success or failure)
+// Task completes here...
+
+// ...but cleanup runs when scope exits (LIFO order with other resources)
 ```
 
 **Execution Order:**

@@ -152,7 +152,6 @@ export class Task<T> implements PromiseLike<T>, Disposable {
 	constructor(
 		fn: (signal: AbortSignal) => Promise<T>,
 		parentSignal: AbortSignal,
-		onCleanup?: () => void | Promise<void>,
 	) {
 		this.id = ++taskIdCounter;
 		debugTask("[%d] creating task", this.id);
@@ -187,21 +186,6 @@ export class Task<T> implements PromiseLike<T>, Disposable {
 				this.settled = true;
 				if (!parentSignal.aborted) {
 					parentSignal.removeEventListener("abort", parentAbortHandler);
-				}
-				// Run custom cleanup if provided
-				if (onCleanup) {
-					debugTask("[%d] running custom cleanup", this.id);
-					try {
-						const cleanupResult = onCleanup();
-						if (cleanupResult instanceof Promise) {
-							// For async cleanup, we fire-and-forget to not block
-							cleanupResult.catch((err) => {
-								debugTask("[%d] cleanup error: %s", this.id, err);
-							});
-						}
-					} catch (err) {
-						debugTask("[%d] cleanup error: %s", this.id, err);
-					}
 				}
 			});
 	}
@@ -765,12 +749,25 @@ export class Scope implements AsyncDisposable {
 			}
 		};
 
-		const task = new Task(
-			wrappedFn,
-			this.abortController.signal,
-			options?.onCleanup,
-		);
+		const task = new Task(wrappedFn, this.abortController.signal);
 		this.disposables.push(task);
+
+		// Register custom cleanup if provided - runs when scope exits
+		if (options?.onCleanup) {
+			const cleanupFn = options.onCleanup;
+			const cleanupDisposable: AsyncDisposable = {
+				async [Symbol.asyncDispose]() {
+					debugTask("[%s] running task cleanup", taskName);
+					try {
+						await cleanupFn();
+					} catch (err) {
+						debugTask("[%s] cleanup error: %s", taskName, err);
+					}
+				},
+			};
+			this.disposables.push(cleanupDisposable);
+		}
+
 		debugScope(
 			"[%s] task #%d added to disposables (total: %d)",
 			this.name,
