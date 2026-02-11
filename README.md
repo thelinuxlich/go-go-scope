@@ -347,6 +347,57 @@ All factory functions receive an `AbortSignal` that allows you to:
    const result = await task
    ```
 
+## Scope Independence and Parent-Child Relationships
+
+Scopes are **independent by default**. Creating one scope after another doesn't automatically link them:
+
+```typescript
+await using parent = scope({ timeout: 5000 })
+await using child = scope()  // Independent! Not linked to parent
+
+// If parent times out, child continues running
+```
+
+To create a parent-child relationship where child cancellation propagates from parent, **explicitly pass the parent's signal**:
+
+```typescript
+await using parent = scope({ timeout: 5000 })
+
+// Child inherits parent's cancellation
+await using child = scope({ signal: parent.signal })
+
+// Now if parent times out or is cancelled, child is also cancelled
+```
+
+This explicit linking gives you control over scope hierarchies. Common patterns:
+
+```typescript
+// Pattern 1: Nested operations with shared cancellation
+await using outer = scope({ timeout: 10000 })
+
+const user = await outer.spawn(() => fetchUser(id))
+
+// Inner scope inherits cancellation but can have its own settings
+await using inner = scope({ 
+  signal: outer.signal,
+  concurrency: 3  // Inner scope has its own concurrency limit
+})
+
+// These parallel tasks are limited to 3 concurrent
+await inner.parallel(urls.map(url => () => fetch(url)))
+
+// Pattern 2: Fire-and-forget with cleanup
+await using main = scope()
+
+// Create a detached child that won't cancel if main scope exits
+await using background = scope({ 
+  timeout: 60000  // But it has its own timeout
+})
+
+// Start background work
+background.spawn(() => processLargeDataset())
+```
+
 ## Advanced Features
 
 ### Channels (Go-style concurrent communication)
