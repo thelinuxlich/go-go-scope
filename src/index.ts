@@ -150,7 +150,7 @@ export interface ScopeOptions<
  */
 let taskIdCounter = 0;
 
-export class Task<T> implements PromiseLike<T>, Disposable {
+export class Task<T> implements PromiseLike<T> {
 	private readonly promise: Promise<T>;
 	private readonly abortController: AbortController;
 	private settled = false;
@@ -224,19 +224,6 @@ export class Task<T> implements PromiseLike<T>, Disposable {
 	): Promise<TResult1 | TResult2> {
 		return this.promise.then(onfulfilled, onrejected);
 	}
-
-	/**
-	 * Dispose the task by aborting it.
-	 * Called automatically when using `using` keyword.
-	 */
-	[Symbol.dispose](): void {
-		if (!this.settled) {
-			debugTask("[%d] disposing (aborting)", this.id);
-			this.abortController.abort("task disposed");
-		} else {
-			debugTask("[%d] already settled, skipping dispose", this.id);
-		}
-	}
 }
 
 /**
@@ -296,8 +283,8 @@ export class AsyncDisposableResource<T> implements AsyncDisposable {
  * @example
  * ```typescript
  * await using s = scope({ timeout: 5000 })
- * using t1 = s.spawn(() => fetchData())
- * using t2 = s.spawn(() => fetchMore())
+ * const t1 = s.spawn(() => fetchData())
+ * const t2 = s.spawn(() => fetchMore())
  * const [r1, r2] = await Promise.all([t1, t2])
  * ```
  */
@@ -1068,7 +1055,7 @@ export class Scope<
  * @example
  * ```typescript
  * await using s = scope({ timeout: 5000 })
- * using t = s.spawn(() => fetchData())
+ * const t = s.spawn(() => fetchData())
  * const result = await t
  * ```
  *
@@ -1077,7 +1064,7 @@ export class Scope<
  * import { trace } from "@opentelemetry/api"
  *
  * await using s = scope({ tracer: trace.getTracer("my-app") })
- * using t = s.spawn(() => fetchData())  // Creates "scope.task" span
+ * const t = s.spawn(() => fetchData())  // Creates "scope.task" span
  * const result = await t
  * // Scope disposal creates "scope" span with task count
  * ```

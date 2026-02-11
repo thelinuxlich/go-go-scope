@@ -33,8 +33,8 @@ import { scope } from 'go-go-scope'
 async function fetchUserData(userId: string) {
   await using s = scope({ timeout: 5000 })
   
-  using userTask = s.task(({ signal }) => fetchUser(userId, { signal }))
-  using postsTask = s.task(({ signal }) => fetchPosts(userId, { signal }))
+  const userTask = s.task(({ signal }) => fetchUser(userId, { signal }))
+  const postsTask = s.task(({ signal }) => fetchPosts(userId, { signal }))
   
   // task() returns Result tuple [error, value]
   const [userErr, user] = await userTask
@@ -52,7 +52,7 @@ async function fetchWithDatabase(userId: string) {
   await using s = scope()
     .provide('db', () => openDatabase(), db => db.close())
   
-  using task = s.task(async ({ services, signal }) => {
+  const task = s.task(async ({ services, signal }) => {
     return services.db.query('SELECT * FROM users WHERE id = ?', [userId], { signal })
   })
   
@@ -70,7 +70,7 @@ async function fetchWithChildScope(userId: string) {
   // Child inherits signal AND services from parent
   await using child = scope({ parent })
   
-  using task = child.task(async ({ services }) => {
+  const task = child.task(async ({ services }) => {
     // Can use parent's 'db' service directly
     return services.db.query('SELECT * FROM users WHERE id = ?', [userId])
   })
@@ -147,7 +147,7 @@ Supports retry and timeout via TaskOptions. Inherits scope's concurrency and cir
 The task function receives a context object with `{ services, signal }`:
 
 ```typescript
-using task = s.task(async ({ services, signal }) => {
+const task = s.task(async ({ services, signal }) => {
   const response = await fetch(url, { signal })
   return response.json()
 })
@@ -165,7 +165,7 @@ With services from `provide()`:
 await using s = scope()
   .provide('db', () => openDatabase())
 
-using task = s.task(async ({ services }) => {
+const task = s.task(async ({ services }) => {
   return services.db.query('SELECT 1')
 })
 
@@ -176,7 +176,7 @@ return result
 
 With retry:
 ```typescript
-using task = s.task(
+const task = s.task(
   async ({ signal }) => fetchUser(id, { signal }),
   { 
     retry: {
@@ -194,7 +194,7 @@ if (err) throw err
 
 With OpenTelemetry:
 ```typescript
-using task = s.task(
+const task = s.task(
   async ({ signal }) => fetchUser(id, { signal }),
   { 
     otel: {
@@ -239,7 +239,7 @@ interface TaskOptions {
 ```typescript
 await using s = scope()
 
-using task = s.task(
+const task = s.task(
   async ({ signal }) => {
     const conn = await openConnection()
     return conn.query('SELECT * FROM users')
@@ -383,7 +383,7 @@ All factory functions receive an `AbortSignal` that allows you to:
 3. **Check if already aborted**:
    ```typescript
    await using s = scope()
-   using task = s.task(async ({ signal }) => {
+   const task = s.task(async ({ signal }) => {
      if (signal.aborted) throw new Error('Already cancelled')
      return fetchData({ signal })
    }, { timeout: 1000 })
@@ -614,12 +614,12 @@ Add automatic retry logic to any task via `TaskOptions`:
 await using s = scope()
 
 // task() returns Result tuple [error, value]
-using task = s.task(() => fetchData(), { retry: { maxRetries: 3 } })
+const task = s.task(() => fetchData(), { retry: { maxRetries: 3 } })
 const [err, result] = await task
 if (err) throw err  // Handle error explicitly
 
 // Custom retry with exponential backoff
-using task = s.task(
+const task = s.task(
   () => fetchData(),
   {
     retry: {
@@ -652,7 +652,7 @@ The library leverages the Explicit Resource Management proposal:
 
 ```typescript
 // Synchronous disposal
-using task = s.task(() => work())
+const task = s.task(() => work())
 // task[Symbol.dispose]() called at end of block
 
 // Asynchronous disposal
@@ -679,7 +679,7 @@ All tasks receive an `AbortSignal` that is aborted when:
 - A parent signal is aborted
 
 ```typescript
-using task = s.task(async ({ signal }) => {
+const task = s.task(async ({ signal }) => {
   // Check if already aborted
   if (signal.aborted) throw new Error('Already cancelled')
   
@@ -851,7 +851,7 @@ async function fetchUserData(userId: string) {
   if (userErr) throw userErr
   
   // Child tasks inherit parent's signal
-  using postsTask = s.task(() => fetchPosts(userId))
+  const postsTask = s.task(() => fetchPosts(userId))
   using commentsTask = s.task(() => fetchComments(userId))
   
   const [postsResult, commentsResult] = await Promise.all([postsTask, commentsTask])
@@ -1024,8 +1024,8 @@ async function getUserData() {
   await using s = scope()
     .provide('db', () => openDatabase(), (db) => db.close())
   
-  using userTask = s.task(({ services }) => services.db.query('SELECT * FROM users WHERE id = ?', [1]))
-  using postsTask = s.task(({ services }) => services.db.query('SELECT * FROM posts WHERE user_id = ?', [1]))
+  const userTask = s.task(({ services }) => services.db.query('SELECT * FROM users WHERE id = ?', [1]))
+  const postsTask = s.task(({ services }) => services.db.query('SELECT * FROM posts WHERE user_id = ?', [1]))
   
   const [userResult, postsResult] = await Promise.all([userTask, postsTask])
   const [userErr, user] = userResult
@@ -1388,8 +1388,8 @@ async function fetchWithTracing(userId: string) {
   await using s = scope({ tracer, name: 'fetch-user-data' })
   
   // Each task creates a "scope.task" child span
-  using userTask = s.task(() => fetchUser(userId))
-  using postsTask = s.task(() => fetchPosts(userId))
+  const userTask = s.task(() => fetchUser(userId))
+  const postsTask = s.task(() => fetchPosts(userId))
   
   const [userResult, postsResult] = await Promise.all([userTask, postsTask])
   const [userErr, user] = userResult
@@ -1454,7 +1454,7 @@ The library automatically calculates and records the duration of scopes and task
 ```typescript
 await using s = scope({ tracer, name: 'api-request' })
 
-using t = s.task(async () => {
+const t = s.task(async () => {
   const [err, data] = await fetchData()
   if (err) throw err
   return data

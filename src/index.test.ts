@@ -11,7 +11,7 @@ import {
 describe("Task", () => {
 	test("resolves with the function result", async () => {
 		await using s = scope();
-		using t = s.task(() => Promise.resolve("value"));
+		const t = s.task(() => Promise.resolve("value"));
 
 		const [err, result] = await t;
 		expect(err).toBeUndefined();
@@ -20,7 +20,7 @@ describe("Task", () => {
 
 	test("rejects when function throws", async () => {
 		await using s = scope();
-		using t = s.task(() => Promise.reject(new Error("fail")));
+		const t = s.task(() => Promise.reject(new Error("fail")));
 
 		const [err] = await t;
 		expect(err).toBeInstanceOf(Error);
@@ -51,7 +51,7 @@ describe("Task", () => {
 		await using s = scope();
 
 		// Test NetworkError preservation
-		using t1 = s.task(() =>
+		const t1 = s.task(() =>
 			Promise.reject(new NetworkError("Connection failed", 503)),
 		);
 		const [err1] = await t1;
@@ -61,7 +61,7 @@ describe("Task", () => {
 		expect((err1 as NetworkError).statusCode).toBe(503);
 
 		// Test ValidationError preservation
-		using t2 = s.task(() =>
+		const t2 = s.task(() =>
 			Promise.reject(new ValidationError("Invalid email", "email")),
 		);
 		const [err2] = await t2;
@@ -102,32 +102,9 @@ describe("Task", () => {
 		expect(aborted).toBe(true);
 	});
 
-	test("can be disposed directly", async () => {
-		const s = scope();
-
-		let aborted = false;
-		const t = s.task(async ({ signal }) => {
-			return new Promise<readonly [undefined, string]>((_resolve, reject) => {
-				signal.addEventListener("abort", () => {
-					aborted = true;
-					reject(new Error("aborted"));
-				});
-				// Never resolve
-			});
-		});
-
-		// Dispose the task directly
-		t[Symbol.dispose]();
-		void Promise.resolve(t).catch(() => {});
-
-		// Give time for abort to propagate
-		await new Promise((_r) => setTimeout(_r, 10));
-		expect(aborted).toBe(true);
-	});
-
 	test("isSettled becomes true after resolution", async () => {
 		await using s = scope();
-		using t = s.task(() => Promise.resolve("done"));
+		const t = s.task(() => Promise.resolve("done"));
 
 		expect(t.isSettled).toBe(false);
 		await t;
@@ -136,7 +113,7 @@ describe("Task", () => {
 
 	test("isSettled becomes true after rejection", async () => {
 		await using s = scope();
-		using t = s.task(() => Promise.reject(new Error("fail")));
+		const t = s.task(() => Promise.reject(new Error("fail")));
 
 		expect(t.isSettled).toBe(false);
 		await t;
@@ -147,8 +124,8 @@ describe("Task", () => {
 describe("Scope", () => {
 	test("creates tasks that resolve", async () => {
 		await using s = scope();
-		using t1 = s.task(() => Promise.resolve("a"));
-		using t2 = s.task(() => Promise.resolve("b"));
+		const t1 = s.task(() => Promise.resolve("a"));
+		const t2 = s.task(() => Promise.resolve("b"));
 
 		const [r1, r2] = await Promise.all([t1, t2]);
 		expect(r1[1]).toBe("a");
@@ -387,8 +364,8 @@ describe("Scope", () => {
 	test("task() returns Result tuples", async () => {
 		await using s = scope();
 
-		using successTask = s.task(() => Promise.resolve("success"));
-		using failTask = s.task(() => Promise.reject(new Error("failure")));
+		const successTask = s.task(() => Promise.resolve("success"));
+		const failTask = s.task(() => Promise.reject(new Error("failure")));
 
 		const successResult = await successTask;
 		const failResult = await failTask;
@@ -539,7 +516,7 @@ describe("task() with retry option", () => {
 	test("returns success Result on first attempt", async () => {
 		await using s = scope();
 
-		using t = s.task(() => Promise.resolve("success"));
+		const t = s.task(() => Promise.resolve("success"));
 		const [err, result] = await t;
 
 		expect(err).toBeUndefined();
@@ -550,7 +527,7 @@ describe("task() with retry option", () => {
 		await using s = scope();
 		let attempts = 0;
 
-		using t = s.task(
+		const t = s.task(
 			() => {
 				attempts++;
 				if (attempts < 3) {
@@ -571,7 +548,7 @@ describe("task() with retry option", () => {
 		await using s = scope();
 		let attempts = 0;
 
-		using t = s.task(
+		const t = s.task(
 			() => {
 				attempts++;
 				return Promise.reject(new Error(`attempt ${attempts}`));
@@ -593,7 +570,7 @@ describe("task() with retry option", () => {
 		class RetryableError extends Error {}
 		class FatalError extends Error {}
 
-		using t = s.task(
+		const t = s.task(
 			() => {
 				attempts++;
 				if (attempts === 1) {
@@ -621,7 +598,7 @@ describe("task() with retry option", () => {
 		const retryCallbacks: { error: unknown; attempt: number }[] = [];
 		let attempts = 0;
 
-		using t = s.task(
+		const t = s.task(
 			() => {
 				attempts++;
 				if (attempts < 3) {
@@ -650,7 +627,7 @@ describe("task() with retry option", () => {
 		let attempts = 0;
 		const startTime = Date.now();
 
-		using t = s.task(
+		const t = s.task(
 			() => {
 				attempts++;
 				if (attempts < 3) {
@@ -674,7 +651,7 @@ describe("task() with retry option", () => {
 		let attempts = 0;
 		const delays: number[] = [];
 
-		using t = s.task(
+		const t = s.task(
 			() => {
 				attempts++;
 				if (attempts < 4) {
@@ -701,7 +678,7 @@ describe("task() with retry option", () => {
 		const controller = new AbortController();
 		await using s = scope({ signal: controller.signal });
 
-		using t = s.task(() => Promise.reject(new Error("fail")), {
+		const t = s.task(() => Promise.reject(new Error("fail")), {
 			retry: { maxRetries: 5, delay: 1000 },
 		});
 
@@ -714,7 +691,7 @@ describe("task() with retry option", () => {
 	test("respects scope timeout", async () => {
 		await using s = scope({ timeout: 200 });
 
-		using t = s.task(() => Promise.reject(new Error("fail")), {
+		const t = s.task(() => Promise.reject(new Error("fail")), {
 			retry: { maxRetries: 10, delay: 100 },
 		});
 		const [err] = await t;
@@ -726,7 +703,7 @@ describe("task() with retry option", () => {
 		const { tracer, spans } = createMockTracer();
 		await using s = scope({ tracer });
 
-		using t = s.task(() => Promise.resolve("success"), {
+		const t = s.task(() => Promise.resolve("success"), {
 			otel: { name: "retryable-task" },
 			retry: { maxRetries: 0 },
 		});
@@ -734,6 +711,27 @@ describe("task() with retry option", () => {
 
 		const taskSpan = spans.find((s) => s.name === "retryable-task");
 		expect(taskSpan).toBeDefined();
+	});
+
+	test("records task duration in otel span", async () => {
+		const { tracer, spans } = createMockTracer();
+		await using s = scope({ tracer });
+
+		const t = s.task(
+			async () => {
+				await new Promise((r) => setTimeout(r, 50));
+				return "success";
+			},
+			{ otel: { name: "timed-task" } },
+		);
+		await t;
+
+		const taskSpan = spans.find((s) => s.name === "timed-task");
+		expect(taskSpan).toBeDefined();
+		expect(taskSpan?.attributes?.["task.duration_ms"]).toBeDefined();
+		expect(taskSpan?.attributes?.["task.duration_ms"]).toBeGreaterThanOrEqual(
+			40,
+		);
 	});
 });
 
