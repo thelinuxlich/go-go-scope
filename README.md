@@ -28,16 +28,21 @@ npm install go-go-scope
 
 ```typescript
 import { scope } from 'go-go-scope'
-import { goTry } from 'go-go-try'
 
 // Simple scoped operation with timeout
 async function fetchUserData(userId: string) {
   await using s = scope({ timeout: 5000 })
   
-  using userTask = s.spawn(({ signal }) => fetchUser(userId, { signal }))
-  using postsTask = s.spawn(({ signal }) => fetchPosts(userId, { signal }))
+  using userTask = s.task(({ signal }) => fetchUser(userId, { signal }))
+  using postsTask = s.task(({ signal }) => fetchPosts(userId, { signal }))
   
-  const [user, posts] = await Promise.all([userTask, postsTask])
+  // task() returns Result tuple [error, value]
+  const [userErr, user] = await userTask
+  const [postsErr, posts] = await postsTask
+  
+  if (userErr) throw userErr
+  if (postsErr) throw postsErr
+  
   return { user, posts }
   // Tasks auto-cancelled if scope exits (timeout, error, or return)
 }
@@ -47,11 +52,13 @@ async function fetchWithDatabase(userId: string) {
   await using s = scope()
     .provide('db', () => openDatabase(), db => db.close())
   
-  using task = s.spawn(async ({ services, signal }) => {
+  using task = s.task(async ({ services, signal }) => {
     return services.db.query('SELECT * FROM users WHERE id = ?', [userId], { signal })
   })
   
-  return await task
+  const [err, result] = await task
+  if (err) throw err
+  return result
   // Database closes automatically when scope exits
 }
 
@@ -63,12 +70,14 @@ async function fetchWithChildScope(userId: string) {
   // Child inherits signal AND services from parent
   await using child = scope({ parent })
   
-  using task = child.spawn(async ({ services }) => {
+  using task = child.task(async ({ services }) => {
     // Can use parent's 'db' service directly
     return services.db.query('SELECT * FROM users WHERE id = ?', [userId])
   })
   
-  return await task
+  const [err, result] = await task
+  if (err) throw err
+  return result
   // Child cancels when parent exits, database closes last
 }
 
@@ -83,22 +92,23 @@ const fastest = await s.race([
 
 // Task-level timeout
 await using s = scope()
-const result = await s.spawn(
+const [err, result] = await s.task(
   async ({ signal }) => {
     const response = await fetch(url, { signal })
     return response.json()
   },
   { timeout: 3000 }
 )
+if (err) throw err
 
-// Parallel with error tolerance - returns Result tuples
+// Parallel with error tolerance - returns Result tuples with raw errors
 await using s = scope()
-const results = await s.parallelTasks([
+const results = await s.parallel([
   ({ signal }) => fetchUser(1, { signal }),  // might fail
   ({ signal }) => fetchUser(2, { signal }),  // might fail
   ({ signal }) => fetchUser(3, { signal }),  // might fail
 ])
-// Each result is [string | undefined, User | undefined]
+// Each result is [Error | undefined, User | undefined]
 for (const [err, user] of results) {
   if (err) console.log('Failed:', err)
   else console.log('User:', user)
@@ -128,21 +138,26 @@ interface ScopeOptions {
 await using s = scope({ timeout: 5000 })
 ```
 
-### `Scope.spawn(fn, options?)`
+### `Scope.task(fn, options?)`
 
-Spawns a task within the scope. Task is cancelled when scope exits.
+Spawns a task within the scope that returns a `Result` tuple `[error, value]`. Task is cancelled when scope exits.
 
 Supports retry and timeout via TaskOptions. Inherits scope's concurrency and circuit breaker settings.
 
 The task function receives a context object with `{ services, signal }`:
 
 ```typescript
-using task = s.spawn(async ({ services, signal }) => {
+using task = s.task(async ({ services, signal }) => {
   const response = await fetch(url, { signal })
   return response.json()
 })
 
-const result = await task
+const [err, result] = await task
+if (err) {
+  console.error('Task failed:', err)
+} else {
+  console.log('Result:', result)
+}
 ```
 
 With services from `provide()`:
@@ -150,14 +165,18 @@ With services from `provide()`:
 await using s = scope()
   .provide('db', () => openDatabase())
 
-using task = s.spawn(async ({ services }) => {
+using task = s.task(async ({ services }) => {
   return services.db.query('SELECT 1')
 })
+
+const [err, result] = await task
+if (err) throw err
+return result
 ```
 
 With retry:
 ```typescript
-using task = s.spawn(
+using task = s.task(
   async ({ signal }) => fetchUser(id, { signal }),
   { 
     retry: {
@@ -167,11 +186,15 @@ using task = s.spawn(
     }
   }
 )
+
+const [err, user] = await task
+if (err) throw err
+// use user
 ```
 
 With OpenTelemetry:
 ```typescript
-using task = s.spawn(
+using task = s.task(
   async ({ signal }) => fetchUser(id, { signal }),
   { 
     otel: {
@@ -180,33 +203,13 @@ using task = s.spawn(
     }
   }
 )
-```
 
-### `Scope.task(fn, options?)`
-
-Like `spawn`, but returns a `Result` tuple compatible with go-go-try.
-
-Supports the same options as `spawn`.
-
-```typescript
-using task = s.task(() => riskyOperation())
-const [err, value] = await task  // [string | undefined, T | undefined]
-```
-
-With retry:
-```typescript
-using task = s.task(
-  () => riskyOperation(),
-  { 
-    retry: { maxRetries: 3, delay: 1000 },
-    otel: { name: 'background-operation' }
-  }
-)
+const [err, user] = await task
 ```
 
 ### TaskOptions
 
-Both `spawn()` and `task()` accept a `TaskOptions` object with the following properties:
+`task()` accepts a `TaskOptions` object with the following properties:
 
 ```typescript
 interface TaskOptions {
@@ -236,7 +239,7 @@ interface TaskOptions {
 ```typescript
 await using s = scope()
 
-using task = s.spawn(
+using task = s.task(
   async ({ signal }) => {
     const conn = await openConnection()
     return conn.query('SELECT * FROM users')
@@ -249,7 +252,8 @@ using task = s.spawn(
   }
 )
 
-const result = await task
+const [err, result] = await task
+if (err) throw err
 // Task completes here...
 
 // ...but cleanup runs when scope exits (LIFO order with other resources)
@@ -273,9 +277,10 @@ await using s = scope()
   .provide('cache', () => createCache())
 
 // Access in tasks
-await s.spawn(({ services }) => {
+const [err, result] = await s.task(({ services }) => {
   return services.db.query('SELECT 1')
 })
+if (err) throw err
 ```
 
 ### `Scope.use(key)`
@@ -295,21 +300,9 @@ Race multiple operations - first wins, others cancelled. Uses the scope's signal
 
 ```typescript
 await using s = scope()
-const winner = await s.race([
+const [err, winner] = await s.race([
   ({ signal }) => fetch('https://fast.com', { signal }),
   ({ signal }) => fetch('https://slow.com', { signal }),
-])
-```
-
-### `Scope.raceTasks(factories)`
-
-Like `race`, but returns a `Result` tuple that never throws.
-
-```typescript
-await using s = scope()
-const [err, winner] = await s.raceTasks([
-  ({ signal }) => fetch('https://api1.com', { signal }),
-  ({ signal }) => fetch('https://api2.com', { signal }),
 ])
 if (err) {
   console.log('All racers failed:', err)
@@ -321,74 +314,40 @@ if (err) {
 ### `Scope.parallel(factories, options?)`
 
 Run factories in parallel. Uses the scope's concurrency limit and signal.
+Returns an array of Result tuples `[error, value]`.
 
 ```typescript
 await using s = scope({ concurrency: 3 })
 const results = await s.parallel(
   urls.map(url => ({ signal }) => fetch(url, { signal }))
 )
+// results is [[undefined, Response], [Error, undefined], ...]
+for (const [err, response] of results) {
+  if (err) console.log('Failed:', err)
+  else console.log('Success:', response)
+}
 ```
 
 **Options:**
-- `failFast` (default: `true`) - If `true`, stops on first error (like `Promise.all`). If `false`, continues and returns all successful results, with `undefined` for failed tasks.
+- `failFast` (default: `false`) - If `true`, stops on first error and throws. If `false` (default), continues and returns Results for all tasks.
 
 ```typescript
-// failFast: true (default) - throws on first error
-try {
-  const results = await s.parallel([
-    () => Promise.resolve('a'),
-    () => Promise.reject(new Error('fail')),
-    () => Promise.resolve('c'),  // never runs
-  ])
-} catch (e) {
-  // e is 'fail'
-}
-
-// failFast: false - continues on error
+// failFast: false (default) - returns Results for all tasks
 const results = await s.parallel([
   () => Promise.resolve('a'),
   () => Promise.reject(new Error('fail')),
   () => Promise.resolve('c'),
-], { failFast: false })
-// results is ['a', undefined, 'c']
-```
-
-### `Scope.parallelTasks(factories, options?)`
-
-Like `parallel`, but returns `Result` tuples. By default, never throws.
-
-```typescript
-await using s = scope()
-const results = await s.parallelTasks([
-  ({ signal }) => fetchUser(1, { signal }),  // might fail
-  ({ signal }) => fetchUser(2, { signal }),  // might fail
 ])
-// Each result is [string | undefined, T | undefined]
-for (const [err, user] of results) {
-  if (err) console.log('Failed:', err)
-  else console.log('User:', user)
-}
-```
-
-**Options:**
-- `failFast` (default: `false`) - If `true`, throws on first error. If `false` (default), returns Results for all tasks.
-
-```typescript
-// failFast: false (default) - returns Results
-const results = await s.parallelTasks([
-  () => Promise.resolve('a'),
-  () => Promise.reject(new Error('fail')),
-])
-// results is [[undefined, 'a'], ['fail', undefined]]
+// results is [[undefined, 'a'], [Error, undefined], [undefined, 'c']]
 
 // failFast: true - throws on first error
 try {
-  await s.parallelTasks([
+  await s.parallel([
     () => Promise.resolve('a'),
     () => Promise.reject(new Error('fail')),
   ], { failFast: true })
 } catch (e) {
-  // e is 'fail'
+  // e is the Error
 }
 ```
 
@@ -424,11 +383,12 @@ All factory functions receive an `AbortSignal` that allows you to:
 3. **Check if already aborted**:
    ```typescript
    await using s = scope()
-   using task = s.spawn(async ({ signal }) => {
+   using task = s.task(async ({ signal }) => {
      if (signal.aborted) throw new Error('Already cancelled')
      return fetchData({ signal })
    }, { timeout: 1000 })
-   const result = await task
+   const [err, result] = await task
+   if (err) throw err
    ```
 
 ## Scope Independence and Parent-Child Relationships
@@ -505,7 +465,8 @@ parent.use('cache') // ✗ Undefined (child's service)
 await using outer = scope()
   .provide('db', () => openDatabase())
 
-const user = await outer.spawn(() => fetchUser(id))
+const [err, user] = await outer.task(() => fetchUser(id))
+if (err) throw err
 
 // Inner scope inherits 'db' and adds concurrency limit
 await using inner = scope({ parent: outer, concurrency: 3 })
@@ -523,8 +484,8 @@ await using background = scope({
   timeout: 60000  // Has its own timeout
 })
 
-// Start background work
-background.spawn(() => processLargeDataset())
+// Start background work (fire-and-forget, no result needed)
+void background.task(() => processLargeDataset())
 ```
 
 ## Advanced Features
@@ -539,7 +500,7 @@ const ch = s.channel<string>(100)
 
 // Multiple producers
 for (const server of servers) {
-  s.spawn(async () => {
+  s.task(async () => {
     for await (const log of server.logs()) {
       await ch.send(log)  // Blocks if buffer full (backpressure!)
     }
@@ -586,9 +547,10 @@ await using s = scope({
   }
 })
 
-const result = await s.spawn(() => 
+const [err, result] = await s.task(() => 
   fetchCriticalData()
 )
+if (err) throw err
 // Automatically stops calling after 5 failures
 // Retries after 30 seconds
 ```
@@ -651,16 +613,13 @@ Add automatic retry logic to any task via `TaskOptions`:
 ```typescript
 await using s = scope()
 
-// With spawn() - throws on final failure
-using task = s.spawn(() => fetchData(), { retry: { maxRetries: 3 } })
-const result = await task
-
-// With task() - returns Result tuple
+// task() returns Result tuple [error, value]
 using task = s.task(() => fetchData(), { retry: { maxRetries: 3 } })
 const [err, result] = await task
+if (err) throw err  // Handle error explicitly
 
 // Custom retry with exponential backoff
-using task = s.spawn(
+using task = s.task(
   () => fetchData(),
   {
     retry: {
@@ -693,7 +652,7 @@ The library leverages the Explicit Resource Management proposal:
 
 ```typescript
 // Synchronous disposal
-using task = s.spawn(() => work())
+using task = s.task(() => work())
 // task[Symbol.dispose]() called at end of block
 
 // Asynchronous disposal
@@ -720,7 +679,7 @@ All tasks receive an `AbortSignal` that is aborted when:
 - A parent signal is aborted
 
 ```typescript
-using task = s.spawn(async ({ signal }) => {
+using task = s.task(async ({ signal }) => {
   // Check if already aborted
   if (signal.aborted) throw new Error('Already cancelled')
   
@@ -888,13 +847,18 @@ async function fetchUserData(userId: string) {
 async function fetchUserData(userId: string) {
   await using s = scope({ timeout: 5000 })
   
-  const user = await s.spawn(() => fetchUser(userId))
+  const [userErr, user] = await s.task(() => fetchUser(userId))
+  if (userErr) throw userErr
   
   // Child tasks inherit parent's signal
-  using postsTask = s.spawn(() => fetchPosts(userId))
-  using commentsTask = s.spawn(() => fetchComments(userId))
+  using postsTask = s.task(() => fetchPosts(userId))
+  using commentsTask = s.task(() => fetchComments(userId))
   
-  const [posts, comments] = await Promise.all([postsTask, commentsTask])
+  const [postsResult, commentsResult] = await Promise.all([postsTask, commentsTask])
+  const [postsErr, posts] = postsResult
+  const [commentsErr, comments] = commentsResult
+  if (postsErr) throw postsErr
+  if (commentsErr) throw commentsErr
   
   return { user, posts, comments }
 }
@@ -1060,10 +1024,14 @@ async function getUserData() {
   await using s = scope()
     .provide('db', () => openDatabase(), (db) => db.close())
   
-  using userTask = s.spawn(({ services }) => services.db.query('SELECT * FROM users WHERE id = ?', [1]))
-  using postsTask = s.spawn(({ services }) => services.db.query('SELECT * FROM posts WHERE user_id = ?', [1]))
+  using userTask = s.task(({ services }) => services.db.query('SELECT * FROM users WHERE id = ?', [1]))
+  using postsTask = s.task(({ services }) => services.db.query('SELECT * FROM posts WHERE user_id = ?', [1]))
   
-  const [user, posts] = await Promise.all([userTask, postsTask])
+  const [userResult, postsResult] = await Promise.all([userTask, postsTask])
+  const [userErr, user] = userResult
+  const [postsErr, posts] = postsResult
+  if (userErr) throw userErr
+  if (postsErr) throw postsErr
   return { user, posts }
 }
 ```
@@ -1153,8 +1121,8 @@ async function processItems(items: string[]) {
   await using s = scope()
   const ch = s.channel<string>(100)
   
-  // Producer
-  s.spawn(async () => {
+  // Producer (fire-and-forget)
+  s.task(async () => {
     for (const item of items) {
       await ch.send(item)
     }
@@ -1237,7 +1205,9 @@ async function fetchWithCircuitBreaker() {
   })
   
   // All tasks in this scope automatically use the circuit breaker
-  return s.spawn(() => fetchData())
+  const [err, result] = await s.task(() => fetchData())
+  if (err) throw err
+  return result
 }
 ```
 
@@ -1417,11 +1387,15 @@ async function fetchWithTracing(userId: string) {
   // Creates a "fetch-user-data" span
   await using s = scope({ tracer, name: 'fetch-user-data' })
   
-  // Each spawn creates a "scope.task" child span
-  using userTask = s.spawn(() => fetchUser(userId))
-  using postsTask = s.spawn(() => fetchPosts(userId))
+  // Each task creates a "scope.task" child span
+  using userTask = s.task(() => fetchUser(userId))
+  using postsTask = s.task(() => fetchPosts(userId))
   
-  const [user, posts] = await Promise.all([userTask, userTask])
+  const [userResult, postsResult] = await Promise.all([userTask, postsTask])
+  const [userErr, user] = userResult
+  const [postsErr, posts] = postsResult
+  if (userErr) throw userErr
+  if (postsErr) throw postsErr
   
   // Span automatically ends when scope exits
   return { user, posts }
@@ -1480,9 +1454,10 @@ The library automatically calculates and records the duration of scopes and task
 ```typescript
 await using s = scope({ tracer, name: 'api-request' })
 
-using t = s.spawn(async () => {
-  const result = await fetchData()
-  return result
+using t = s.task(async () => {
+  const [err, data] = await fetchData()
+  if (err) throw err
+  return data
 }, { name: 'fetch-data' })
 
 await t
@@ -1504,12 +1479,12 @@ You can customize individual task spans with the optional second parameter:
 await using s = scope({ tracer })
 
 // Custom task name
-using t1 = s.spawn(() => fetchUser(userId), { 
+using t1 = s.task(() => fetchUser(userId), { 
   name: 'fetch-user' 
 })
 
 // Custom attributes for better observability
-using t2 = s.spawn(() => fetchPosts(userId), {
+using t2 = s.task(() => fetchPosts(userId), {
   name: 'fetch-posts',
   attributes: {
     'http.method': 'GET',
@@ -1551,7 +1526,7 @@ async function batchOperation(items: string[]) {
   })
   
   // Each item gets its own traced task span
-  const results = await s.parallelTasks(
+  const results = await s.parallel(
     items.map(item => () => processItem(item))
   )
   

@@ -18,7 +18,7 @@ describe("Channel", () => {
 		const ch = s.channel<number>(5);
 
 		// Producer
-		s.spawn(async () => {
+		s.task(async () => {
 			for (let i = 1; i <= 3; i++) {
 				await ch.send(i);
 			}
@@ -64,7 +64,7 @@ describe("Channel", () => {
 
 		// 3 producers
 		const producers = [1, 2, 3].map((id) =>
-			s.spawn(async () => {
+			s.task(async () => {
 				for (let i = 0; i < 5; i++) {
 					await ch.send(id * 10 + i);
 				}
@@ -73,7 +73,7 @@ describe("Channel", () => {
 
 		// Collect all values
 		const received: number[] = [];
-		s.spawn(async () => {
+		s.task(async () => {
 			await Promise.all(producers);
 			ch.close();
 		});
@@ -239,23 +239,21 @@ describe("CircuitBreaker", () => {
 
 		// Fail 3 times
 		for (let i = 0; i < 3; i++) {
-			try {
-				await s.spawn(() => Promise.reject(new Error("fail")));
-			} catch {
-				// Expected
-			}
+			const [err] = await s.task(() => Promise.reject(new Error("fail")));
+			expect(err).toBeInstanceOf(Error);
 		}
 
 		// Next request should be rejected immediately by circuit breaker
-		await expect(s.spawn(() => Promise.resolve("success"))).rejects.toThrow(
-			"Circuit breaker is open",
-		);
+		const [err] = await s.task(() => Promise.resolve("success"));
+		expect(err).toBeInstanceOf(Error);
+		expect((err as Error).message).toBe("Circuit breaker is open");
 	});
 
 	test("circuit breaker allows successful requests when closed", async () => {
 		await using s = scope({ circuitBreaker: { failureThreshold: 3 } });
 
-		const result = await s.spawn(() => Promise.resolve("success"));
+		const [err, result] = await s.task(() => Promise.resolve("success"));
+		expect(err).toBeUndefined();
 		expect(result).toBe("success");
 	});
 
@@ -265,23 +263,22 @@ describe("CircuitBreaker", () => {
 		});
 
 		// Open the circuit
-		try {
-			await s.spawn(() => Promise.reject(new Error("fail1")));
-		} catch {}
-		try {
-			await s.spawn(() => Promise.reject(new Error("fail2")));
-		} catch {}
+		const [err1] = await s.task(() => Promise.reject(new Error("fail1")));
+		expect(err1).toBeInstanceOf(Error);
+		const [err2] = await s.task(() => Promise.reject(new Error("fail2")));
+		expect(err2).toBeInstanceOf(Error);
 
 		// Circuit should be open
-		await expect(s.spawn(() => Promise.resolve("test"))).rejects.toThrow(
-			"Circuit breaker is open",
-		);
+		const [err3] = await s.task(() => Promise.resolve("test"));
+		expect(err3).toBeInstanceOf(Error);
+		expect((err3 as Error).message).toBe("Circuit breaker is open");
 
 		// Wait for reset timeout
 		await new Promise((r) => setTimeout(r, 60));
 
 		// Should be half-open now - one request allowed through
-		const result = await s.spawn(() => Promise.resolve("success"));
+		const [err4, result] = await s.task(() => Promise.resolve("success"));
+		expect(err4).toBeUndefined();
 		expect(result).toBe("success");
 	});
 
@@ -289,19 +286,19 @@ describe("CircuitBreaker", () => {
 		await using s = scope({ circuitBreaker: { failureThreshold: 5 } });
 
 		// Some failures but not enough to open
-		try {
-			await s.spawn(() => Promise.reject(new Error("fail")));
-		} catch {}
-		try {
-			await s.spawn(() => Promise.reject(new Error("fail")));
-		} catch {}
+		const [err1] = await s.task(() => Promise.reject(new Error("fail")));
+		expect(err1).toBeInstanceOf(Error);
+		const [err2] = await s.task(() => Promise.reject(new Error("fail")));
+		expect(err2).toBeInstanceOf(Error);
 
 		// Success should reset failure count
-		const result = await s.spawn(() => Promise.resolve("success"));
+		const [err3, result] = await s.task(() => Promise.resolve("success"));
+		expect(err3).toBeUndefined();
 		expect(result).toBe("success");
 
 		// Would need 5 more failures to open now
-		const result2 = await s.spawn(() => Promise.resolve("still closed"));
+		const [err4, result2] = await s.task(() => Promise.resolve("still closed"));
+		expect(err4).toBeUndefined();
 		expect(result2).toBe("still closed");
 	});
 
@@ -311,19 +308,19 @@ describe("CircuitBreaker", () => {
 		let failures = 0;
 
 		// Try to fetch with circuit breaker
-		async function fetchWithFallback() {
-			try {
-				return await s.spawn(async () => {
-					if (failures < 3) {
-						failures++;
-						throw new Error("service down");
-					}
-					return "success";
-				});
-			} catch {
+		async function fetchWithFallback(): Promise<string> {
+			const [err, result] = await s.task(async () => {
+				if (failures < 3) {
+					failures++;
+					throw new Error("service down");
+				}
+				return "success";
+			});
+			if (err) {
 				// Circuit open or error - use fallback
 				return "fallback";
 			}
+			return result as string;
 		}
 
 		// First 2 calls fail but circuit is still closed
@@ -577,7 +574,7 @@ describe("Integration: Real-world scenarios", () => {
 
 		// Simulate 3 WebSocket producers
 		const producers = [1, 2, 3].map((id) =>
-			s.spawn(async () => {
+			s.task(async () => {
 				for (let i = 0; i < 5; i++) {
 					await logChannel.send(`server${id}-log${i}`);
 				}
@@ -585,7 +582,7 @@ describe("Integration: Real-world scenarios", () => {
 		);
 
 		// Batch processor consumer
-		const consumer = s.spawn(async () => {
+		const consumer = s.task(async () => {
 			const batch: string[] = [];
 
 			for await (const log of logChannel) {
@@ -605,12 +602,13 @@ describe("Integration: Real-world scenarios", () => {
 		});
 
 		// Close channel when all producers done
-		s.spawn(async () => {
+		s.task(async () => {
 			await Promise.all(producers);
 			logChannel.close();
 		});
 
-		await consumer;
+		const [err] = await consumer;
+		expect(err).toBeUndefined();
 
 		expect(processedLogs.length).toBe(15);
 	});
@@ -625,7 +623,7 @@ describe("Integration: Real-world scenarios", () => {
 
 		// Spawn 5 tasks, but only 2 should run concurrently
 		const tasks = Array.from({ length: 5 }, (_, i) =>
-			s.spawn(async () => {
+			s.task(async () => {
 				concurrent++;
 				maxConcurrent = Math.max(maxConcurrent, concurrent);
 

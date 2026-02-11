@@ -473,15 +473,20 @@ export class Scope<
 	}
 
 	/**
-	 * Spawn a task within the scope.
+	 * Spawn a task that returns a Result tuple with the raw error object.
+	 * Automatically wraps the function with error handling.
 	 *
 	 * Supports retry and timeout via TaskOptions.
 	 * Scope-level concurrency and circuit breaker (if configured) are automatically applied.
+	 *
+	 * @param fn - Function that receives { services, signal } and returns a Promise
+	 * @param options - Optional task configuration for tracing and execution
+	 * @returns A disposable Task that resolves to a Result
 	 */
-	spawn<T>(
+	task<T>(
 		fn: (ctx: { services: Services; signal: AbortSignal }) => Promise<T>,
 		options?: TaskOptions,
-	): Task<T> {
+	): Task<Result<unknown, T>> {
 		if (this.disposed) {
 			throw new Error("Cannot spawn task on disposed scope");
 		}
@@ -503,14 +508,6 @@ export class Scope<
 			"task.scope_concurrency": this.concurrencySemaphore?.totalPermits ?? 0,
 		};
 
-		// Add retry configuration attributes
-		if (options?.retry) {
-			attributes["task.retry.max_retries"] = options.retry.maxRetries ?? 3;
-			attributes["task.retry.has_delay"] = !!options.retry.delay;
-			attributes["task.retry.has_condition"] = !!options.retry.retryCondition;
-		}
-
-		// Add timeout attribute
 		if (options?.timeout) {
 			attributes["task.timeout_ms"] = options.timeout;
 		}
@@ -518,7 +515,7 @@ export class Scope<
 		// Merge with custom attributes
 		Object.assign(attributes, options?.otel?.attributes);
 
-		const taskSpan = this.tracer?.startSpan(
+		const taskSpan = this._tracer?.startSpan(
 			options?.otel?.name ?? "scope.task",
 			{
 				attributes,
@@ -537,7 +534,7 @@ export class Scope<
 				throw signal.reason;
 			}
 
-			// Helper to call fn with or without services injection
+			// Helper to call fn with services injection
 			const callFn = (sig: AbortSignal): Promise<T> => {
 				return fn({ services: this.services, signal: sig });
 			};
@@ -561,13 +558,38 @@ export class Scope<
 					} catch (error) {
 						if (
 							error instanceof Error &&
-							error.message === "Circuit breaker is open"
+							error.message === "circuit breaker is open"
 						) {
-							debugTask("[%s] circuit breaker: OPEN - rejecting", taskName);
 							taskSpan?.setAttributes?.({
 								"task.circuit_breaker.rejected": true,
 							});
 						}
+						throw error;
+					}
+				};
+			}
+
+			// 2. Apply concurrency limit if configured at scope level
+			if (this.concurrencySemaphore) {
+				const sem = this.concurrencySemaphore;
+				const innerFn = executeFn;
+				executeFn = async (sig) => {
+					debugTask(
+						"[%s] acquiring concurrency permit (available: %d, waiting: %d)",
+						taskName,
+						sem.availablePermits,
+						sem.waiterCount,
+					);
+					taskSpan?.setAttributes?.({
+						"task.concurrency.available_before": sem.availablePermits,
+						"task.concurrency.waiting_before": sem.waiterCount,
+					});
+					try {
+						const result = await sem.execute(() => innerFn(sig));
+						debugTask("[%s] concurrency permit released", taskName);
+						return result;
+					} catch (error) {
+						debugTask("[%s] concurrency permit released with error", taskName);
 						throw error;
 					}
 				};
@@ -583,19 +605,20 @@ export class Scope<
 					const retryCondition = retryOpts.retryCondition ?? (() => true);
 					const onRetry = retryOpts.onRetry;
 
+					taskSpan?.setAttributes?.({
+						"task.retry.max_retries": maxRetries,
+						"task.retry.has_delay": !!delay,
+						"task.retry.has_condition": !!retryOpts.retryCondition,
+					});
 					debugTask(
 						"[%s] starting retry loop (maxRetries: %d)",
 						taskName,
 						maxRetries,
 					);
-					taskSpan?.setAttributes?.({
-						"task.retry.max_retries_configured": maxRetries,
-					});
 
 					for (let attempt = 0; attempt <= maxRetries; attempt++) {
-						retryAttempt = attempt;
 						if (sig.aborted) {
-							debugTask("[%s] retry loop aborted", taskName);
+							debugTask("[%s] task aborted during retry", taskName);
 							throw sig.reason;
 						}
 
@@ -606,6 +629,7 @@ export class Scope<
 								attempt + 1,
 								maxRetries + 1,
 							);
+							retryAttempt = attempt;
 							const result = await innerFn(sig);
 							if (attempt > 0) {
 								debugTask(
@@ -626,14 +650,13 @@ export class Scope<
 								);
 								taskSpan?.setAttributes?.({
 									"task.retry.condition_rejected": true,
-									"task.retry.attempts_made": attempt + 1,
 								});
 								throw error;
 							}
 
 							if (attempt >= maxRetries) {
 								debugTask(
-									"[%s] max retries (%d) exceeded",
+									"[%s] max retries (%d) exceeded, throwing",
 									taskName,
 									maxRetries,
 								);
@@ -648,16 +671,11 @@ export class Scope<
 								typeof delay === "function" ? delay(attempt + 1, error) : delay;
 
 							debugTask(
-								"[%s] attempt %d failed: %s, waiting %dms",
+								"[%s] attempt %d failed, waiting %dms before retry",
 								taskName,
 								attempt + 1,
-								error instanceof Error ? error.message : String(error),
 								delayMs,
 							);
-							taskSpan?.setAttributes?.({
-								"task.retry.current_attempt": attempt + 1,
-								"task.retry.delay_ms": delayMs,
-							});
 
 							if (onRetry) {
 								try {
@@ -688,17 +706,14 @@ export class Scope<
 				};
 			}
 
-			// 3. Apply timeout if specified
+			// 4. Apply timeout if specified
 			if (options?.timeout !== undefined && options.timeout > 0) {
 				const timeoutMs = options.timeout;
 				const innerFn = executeFn;
-				debugTask("[%s] applying timeout: %dms", taskName, timeoutMs);
 				executeFn = (sig) =>
 					new Promise((resolve, reject) => {
 						const timeoutId = setTimeout(() => {
-							const timeoutError = new Error(`timeout after ${timeoutMs}ms`);
-							debugTask("[%s] timeout reached: %dms", taskName, timeoutMs);
-							reject(timeoutError);
+							reject(new Error(`timeout after ${timeoutMs}ms`));
 						}, timeoutMs);
 
 						innerFn(sig)
@@ -713,104 +728,72 @@ export class Scope<
 					});
 			}
 
-			// 4. Apply scope-level concurrency if configured
-			if (this.concurrencySemaphore) {
-				const sem = this.concurrencySemaphore;
-				const innerFn = executeFn;
-				executeFn = async (sig) => {
-					const availableBefore = sem.available;
-					const waitingBefore = sem.waiting;
-					debugTask(
-						"[%s] acquiring concurrency permit (available: %d, waiting: %d)",
-						taskName,
-						availableBefore,
-						waitingBefore,
-					);
-					taskSpan?.setAttributes?.({
-						"task.concurrency.available_before": availableBefore,
-						"task.concurrency.waiting_before": waitingBefore,
-					});
-					try {
-						const result = await sem.acquire(() => innerFn(sig));
-						debugTask(
-							"[%s] concurrency permit acquired and released",
-							taskName,
-						);
-						return result;
-					} catch (error) {
-						debugTask(
-							"[%s] concurrency acquisition failed: %s",
-							taskName,
-							error,
-						);
-						throw error;
-					}
-				};
-			}
-
-			// Execute the wrapped function with tracing
+			// Execute the pipeline
+			debugTask("[%s] starting execution", taskName);
+			const startTime = performance.now();
 			try {
 				const result = await executeFn(signal);
-				taskSpan?.setStatus({ code: SpanStatusCode.OK });
+				const duration = performance.now() - startTime;
+				debugTask("[%s] completed successfully in %dms", taskName, duration);
+				taskSpan?.setAttributes?.({
+					"task.duration_ms": Math.round(duration),
+					"task.retry_attempts": retryAttempt,
+				});
 				return result;
 			} catch (error) {
-				// Determine error reason for OTel attributes
-				let errorReason = "exception";
-				let errorType = "unknown";
+				const duration = performance.now() - startTime;
+				debugTask("[%s] failed after %dms: %s", taskName, duration, error);
 
+				// Determine error reason
+				let errorReason = "exception";
 				if (error instanceof Error) {
-					const message = error.message.toLowerCase();
-					if (message.includes("timeout")) {
+					if (error.message.startsWith("timeout after")) {
 						errorReason = "timeout";
-						errorType = "task_timeout";
-					} else if (
-						message.includes("aborted") ||
-						message.includes("cancelled")
-					) {
-						errorReason = "aborted";
-						errorType = "parent_aborted";
-					} else if (message.includes("circuit breaker is open")) {
+					} else if (error.message === "circuit breaker is open") {
 						errorReason = "circuit_breaker_open";
-						errorType = "circuit_breaker";
-					} else {
-						errorReason = "exception";
-						errorType = error.constructor.name;
+					} else if (signal.aborted) {
+						errorReason = "aborted";
 					}
+				} else if (signal.aborted) {
+					errorReason = "aborted";
 				}
 
-				debugTask(
-					"[%s] task failed - reason: %s, type: %s, error: %s",
-					taskName,
-					errorReason,
-					errorType,
-					error instanceof Error ? error.message : String(error),
-				);
-
-				taskSpan?.recordException(
+				taskSpan?.recordException?.(
 					error instanceof Error ? error : new Error(String(error)),
 				);
-				taskSpan?.setStatus({
-					code: SpanStatusCode.ERROR,
-					message: error instanceof Error ? error.message : String(error),
-				});
 				taskSpan?.setAttributes?.({
+					"task.duration_ms": Math.round(duration),
 					"task.error_reason": errorReason,
-					"task.error_type": errorType,
 					"task.retry_attempts": retryAttempt,
 				});
 				throw error;
-			} finally {
-				const duration = performance.now() - taskStartTime;
-				taskSpan?.setAttributes?.({
-					"task.duration_ms": duration,
-					"task.final_retry_attempt": retryAttempt,
-				});
-				taskSpan?.end();
 			}
 		};
 
-		const task = new Task(wrappedFn, this.abortController.signal);
-		this.disposables.push(task);
+		// Create the task with the full pipeline
+		const task = new Task<T>(async (signal) => {
+			try {
+				const result = await wrappedFn(signal);
+				return [undefined, result] as Success<T>;
+			} catch (error) {
+				return [error, undefined] as Failure<unknown>;
+			}
+		}, this.abortController.signal);
+
+		// Record span status on completion
+		task.then(
+			() => {
+				taskSpan?.setStatus?.({ code: SpanStatusCode.OK });
+				taskSpan?.end?.();
+			},
+			() => {
+				taskSpan?.setStatus?.({
+					code: SpanStatusCode.ERROR,
+					message: "task failed",
+				});
+				taskSpan?.end?.();
+			},
+		);
 
 		// Register custom cleanup if provided - runs when scope exits
 		if (options?.onCleanup) {
@@ -835,147 +818,6 @@ export class Scope<
 			this.disposables.length,
 		);
 		return task;
-	}
-
-	/**
-	 * Spawn a task that returns a Result tuple.
-	 * Automatically wraps the function with error handling.
-	 *
-	 * Supports retry and timeout via TaskOptions.
-	 * Scope-level concurrency and circuit breaker (if configured) are automatically applied.
-	 *
-	 * @param fn - Function that receives an AbortSignal and returns a Promise
-	 * @param options - Optional task configuration for tracing and execution
-	 * @returns A disposable Task that resolves to a Result
-	 */
-	task<T>(
-		fn: (signal: AbortSignal) => Promise<T>,
-		options?: TaskOptions,
-	): Task<Result<string, T>> {
-		return this.spawn(
-			async ({ signal }) => {
-				// Build execution pipeline inside task's try/catch
-				let executeFn = fn;
-
-				// 1. Apply circuit breaker if configured at scope level
-				if (this.scopeCircuitBreaker) {
-					const cb = this.scopeCircuitBreaker;
-					const innerFn = executeFn;
-					executeFn = (sig) => cb.execute(() => innerFn(sig));
-				}
-
-				// 2. Apply retry logic if specified
-				if (options?.retry) {
-					const retryOpts = options.retry;
-					const innerFn = executeFn;
-					executeFn = async (sig) => {
-						const maxRetries = retryOpts.maxRetries ?? 3;
-						const delay = retryOpts.delay ?? 0;
-						const retryCondition = retryOpts.retryCondition ?? (() => true);
-						const onRetry = retryOpts.onRetry;
-
-						for (let attempt = 0; attempt <= maxRetries; attempt++) {
-							if (sig.aborted) {
-								throw sig.reason;
-							}
-
-							try {
-								debugTask("[retry] attempt %d/%d", attempt + 1, maxRetries + 1);
-								const result = await innerFn(sig);
-								if (attempt > 0) {
-									debugTask("[retry] succeeded on attempt %d", attempt + 1);
-								}
-								return result;
-							} catch (error) {
-								if (!retryCondition(error)) {
-									debugTask(
-										"[retry] error rejected by retryCondition, throwing",
-									);
-									throw error;
-								}
-
-								if (attempt >= maxRetries) {
-									debugTask(
-										"[retry] max retries (%d) exceeded, throwing",
-										maxRetries,
-									);
-									throw error;
-								}
-
-								const delayMs =
-									typeof delay === "function"
-										? delay(attempt + 1, error)
-										: delay;
-
-								debugTask(
-									"[retry] attempt %d failed, waiting %dms before retry",
-									attempt + 1,
-									delayMs,
-								);
-
-								if (onRetry) {
-									try {
-										onRetry(error, attempt + 1);
-									} catch {
-										// Ignore errors in onRetry
-									}
-								}
-
-								if (delayMs > 0) {
-									await new Promise((resolve, reject) => {
-										const timeoutId = setTimeout(resolve, delayMs);
-										sig.addEventListener(
-											"abort",
-											() => {
-												clearTimeout(timeoutId);
-												reject(sig.reason);
-											},
-											{ once: true },
-										);
-									});
-								}
-							}
-						}
-
-						// Should never reach here
-						throw new Error("Retry loop exited unexpectedly");
-					};
-				}
-
-				// 4. Apply timeout if specified
-				if (options?.timeout !== undefined && options.timeout > 0) {
-					const timeoutMs = options.timeout;
-					const innerFn = executeFn;
-					executeFn = (sig) =>
-						new Promise((resolve, reject) => {
-							const timeoutId = setTimeout(() => {
-								reject(new Error(`timeout after ${timeoutMs}ms`));
-							}, timeoutMs);
-
-							innerFn(sig)
-								.then((result) => {
-									clearTimeout(timeoutId);
-									resolve(result);
-								})
-								.catch((err) => {
-									clearTimeout(timeoutId);
-									reject(err);
-								});
-						});
-				}
-
-				// Execute with Result wrapping
-				try {
-					const result = await executeFn(signal);
-					return [undefined, result] as Success<T>;
-				} catch (error) {
-					const message =
-						error instanceof Error ? error.message : String(error);
-					return [message, undefined] as Failure<string>;
-				}
-			},
-			{ otel: options?.otel }, // Only pass otel options to spawn
-		);
 	}
 
 	/**
@@ -1180,13 +1022,14 @@ export class Scope<
 	/**
 	 * Race multiple tasks - the first to settle wins, others are cancelled.
 	 * Tasks run within this scope and inherit its configuration.
+	 * Returns a Result tuple [error, value] - never throws.
 	 *
 	 * @param factories - Array of factory functions that create promises
-	 * @returns A Promise that resolves to the value of the first settled task
+	 * @returns A Promise that resolves to a Result tuple of the first settled task
 	 */
 	async race<T>(
 		factories: readonly ((signal: AbortSignal) => Promise<T>)[],
-	): Promise<T> {
+	): Promise<Result<unknown, T>> {
 		return race(factories, {
 			signal: this.signal,
 			tracer: this.tracer,
@@ -1194,74 +1037,23 @@ export class Scope<
 	}
 
 	/**
-	 * Race multiple tasks and return Result tuples.
-	 * The first to settle wins, others are cancelled.
-	 * Never throws - errors are returned as [error, undefined].
-	 *
-	 * @param factories - Array of factory functions that create promises
-	 * @returns A Promise that resolves to a Result tuple of the first settled task
-	 */
-	async raceTasks<T>(
-		factories: readonly ((signal: AbortSignal) => Promise<T>)[],
-	): Promise<Result<string, T>> {
-		try {
-			const result = await this.race(factories);
-			return [undefined, result];
-		} catch (error) {
-			return [
-				error instanceof Error ? error.message : String(error),
-				undefined,
-			];
-		}
-	}
-
-	/**
 	 * Run multiple tasks in parallel.
 	 * Tasks run within this scope and inherit its configuration.
-	 *
-	 * @param factories - Array of factory functions that create promises
-	 * @param options - Optional configuration (failFast defaults to true)
-	 * @returns A Promise that resolves to an array of results
-	 */
-	async parallel<T>(
-		factories: readonly ((signal: AbortSignal) => Promise<T>)[],
-		options?: { failFast?: boolean },
-	): Promise<T[]> {
-		return parallel(factories, {
-			signal: this.signal,
-			concurrency: this.concurrencySemaphore?.totalPermits,
-			failFast: options?.failFast ?? true,
-			tracer: this.tracer,
-		});
-	}
-
-	/**
-	 * Run multiple tasks in parallel and return Result tuples.
-	 * By default, never throws - individual task errors are returned as [error, undefined].
+	 * Returns an array of Result tuples - never throws by default.
 	 *
 	 * @param factories - Array of factory functions that create promises
 	 * @param options - Optional configuration (failFast defaults to false)
 	 * @returns A Promise that resolves to an array of Result tuples, or throws if failFast is true
 	 */
-	async parallelTasks<T>(
+	async parallel<T>(
 		factories: readonly ((signal: AbortSignal) => Promise<T>)[],
 		options?: { failFast?: boolean },
-	): Promise<Result<string, T>[]> {
-		// If failFast is true, use parallel and convert results
-		if (options?.failFast) {
-			const results = await parallel(factories, {
-				signal: this.signal,
-				concurrency: this.concurrencySemaphore?.totalPermits,
-				failFast: true,
-				tracer: this.tracer,
-			});
-			// All succeeded, convert to Results
-			return results.map((r) => [undefined, r]);
-		}
-		// Default: use parallelResults which never throws
-		return parallelResults(factories, {
+	): Promise<Result<unknown, T>[]> {
+		// Use the parallel function with scope's configuration
+		return parallel(factories, {
 			signal: this.signal,
 			concurrency: this.concurrencySemaphore?.totalPermits,
+			failFast: options?.failFast ?? false,
 			tracer: this.tracer,
 		});
 	}
@@ -1329,19 +1121,19 @@ export interface RaceOptions {
 export async function race<T>(
 	factories: readonly ((signal: AbortSignal) => Promise<T>)[],
 	options?: RaceOptions,
-): Promise<T> {
+): Promise<Result<unknown, T>> {
 	const totalTasks = factories.length;
 
 	if (totalTasks === 0) {
-		throw new Error("Cannot race empty array of factories");
+		return [new Error("Cannot race empty array of factories"), undefined];
 	}
 
 	debugScope("[race] starting race with %d competitors", totalTasks);
 
 	// Check if signal is already aborted
 	if (options?.signal?.aborted) {
-		debugScope("[race] already aborted, throwing");
-		throw options.signal.reason;
+		debugScope("[race] already aborted");
+		return [options.signal.reason, undefined];
 	}
 
 	const s = new Scope({ signal: options?.signal, tracer: options?.tracer });
@@ -1349,8 +1141,8 @@ export async function race<T>(
 	let winnerIndex = -1;
 
 	try {
-		// Create abort promise that rejects when signal aborts
-		const abortPromise = new Promise<never>((_, reject) => {
+		// Create abort promise that returns error as Result
+		const abortPromise = new Promise<Result<unknown, T>>((resolve) => {
 			s.signal.addEventListener(
 				"abort",
 				() => {
@@ -1359,7 +1151,7 @@ export async function race<T>(
 						settledCount,
 						totalTasks,
 					);
-					reject(s.signal.reason);
+					resolve([s.signal.reason, undefined]);
 				},
 				{ once: true },
 			);
@@ -1367,21 +1159,30 @@ export async function race<T>(
 
 		// Spawn all tasks with tracking
 		const tasks = factories.map((factory, idx) =>
-			s.spawn(async ({ signal }) => {
-				const result = await factory(signal);
-				settledCount++;
-				if (winnerIndex === -1) {
-					winnerIndex = idx;
-					debugScope(
-						"[race] winner! task %d/%d won the race",
-						idx + 1,
-						totalTasks,
-					);
-				} else {
-					debugScope("[race] task %d/%d settled (loser)", idx + 1, totalTasks);
-				}
-				return result;
-			}),
+			s
+				.task(async ({ signal }) => {
+					const result = await factory(signal);
+					settledCount++;
+					if (winnerIndex === -1) {
+						winnerIndex = idx;
+						debugScope(
+							"[race] winner! task %d/%d won the race",
+							idx + 1,
+							totalTasks,
+						);
+					} else {
+						debugScope(
+							"[race] task %d/%d settled (loser)",
+							idx + 1,
+							totalTasks,
+						);
+					}
+					return result;
+				})
+				.then(([err, result]): Result<unknown, T> => {
+					if (err) return [err, undefined];
+					return [undefined, result as T];
+				}),
 		);
 
 		// Race all tasks against abort
@@ -1401,10 +1202,11 @@ export async function race<T>(
 /**
  * Run multiple tasks in parallel with optional concurrency limit.
  * All tasks run within a scope and are cancelled together on failure.
+ * Returns an array of Result tuples - never throws by default.
  *
  * @param factories - Array of factory functions that receive AbortSignal and create promises
- * @param options - Optional configuration including concurrency limit
- * @returns A Promise that resolves to an array of results
+ * @param options - Optional configuration including concurrency limit and failFast
+ * @returns A Promise that resolves to an array of Result tuples (or throws if failFast is true)
  *
  * @example
  * ```typescript
@@ -1412,6 +1214,7 @@ export async function race<T>(
  *   urls.map(url => ({ signal }) => fetch(url, { signal })),
  *   { concurrency: 3 }
  * )
+ * // results is [[undefined, Response], [Error, undefined], ...]
  * ```
  */
 export async function parallel<T>(
@@ -1422,14 +1225,14 @@ export async function parallel<T>(
 		failFast?: boolean;
 		tracer?: Tracer;
 	},
-): Promise<T[]> {
+): Promise<Result<unknown, T>[]> {
 	if (factories.length === 0) {
 		debugScope("[parallel] no factories, returning empty array");
 		return [];
 	}
 
 	const concurrency = options?.concurrency ?? 0;
-	const failFast = options?.failFast ?? true;
+	const failFast = options?.failFast ?? false;
 	const totalTasks = factories.length;
 
 	debugScope(
@@ -1441,8 +1244,8 @@ export async function parallel<T>(
 
 	// Check if signal is already aborted
 	if (options?.signal?.aborted) {
-		debugScope("[parallel] already aborted, throwing");
-		throw options.signal.reason;
+		debugScope("[parallel] already aborted");
+		return factories.map(() => [options.signal?.reason, undefined]);
 	}
 
 	const s = new Scope({ signal: options?.signal, tracer: options?.tracer });
@@ -1450,37 +1253,13 @@ export async function parallel<T>(
 	let errorCount = 0;
 
 	try {
-		// Create abort promise that rejects when signal aborts
-		const abortPromise = new Promise<never>((_, reject) => {
-			s.signal.addEventListener(
-				"abort",
-				() => {
-					debugScope(
-						"[parallel] aborted, completed %d/%d tasks",
-						completedCount,
-						totalTasks,
-					);
-					reject(s.signal.reason);
-				},
-				{ once: true },
-			);
-		});
-
-		// Helper to process a single task
+		// Helper to process a single task - always returns Result
 		const processTask = async (
 			factory: (signal: AbortSignal) => Promise<T>,
 			idx: number,
-		): Promise<{ result?: T; error?: unknown; index: number }> => {
-			try {
-				const result = await s.spawn(({ signal }) => factory(signal));
-				completedCount++;
-				debugScope(
-					"[parallel] task %d/%d completed",
-					completedCount,
-					totalTasks,
-				);
-				return { result, index: idx };
-			} catch (error) {
+		): Promise<Result<unknown, T>> => {
+			const result = await s.task(({ signal }) => factory(signal));
+			if (result[0]) {
 				errorCount++;
 				debugScope(
 					"[parallel] task %d/%d failed (failFast: %s)",
@@ -1488,34 +1267,38 @@ export async function parallel<T>(
 					totalTasks,
 					failFast,
 				);
-				return { error, index: idx };
+			} else {
+				completedCount++;
+				debugScope(
+					"[parallel] task %d/%d completed",
+					completedCount,
+					totalTasks,
+				);
 			}
+			return result;
 		};
 
 		// If no concurrency limit, run all in parallel
 		if (concurrency <= 0 || concurrency >= factories.length) {
 			debugScope("[parallel] running all tasks in parallel");
-			const settled = await Promise.race([
-				Promise.all(factories.map((f, i) => processTask(f, i))),
-				abortPromise,
-			]);
+			const results = await Promise.all(
+				factories.map((f, i) => processTask(f, i)),
+			);
 
 			// Check for errors if failFast
 			if (failFast) {
-				const firstError = settled.find((s) => s.error);
-				if (firstError) {
-					throw firstError.error;
+				const firstError = results.find((r) => r[0]);
+				if (firstError?.[0]) {
+					throw firstError[0];
 				}
 			}
 
-			// Extract results in order
-			return settled.map((s) => s.result as T);
+			return results;
 		}
 
 		// Run with limited concurrency using a worker pool
 		debugScope("[parallel] running with concurrency limit: %d", concurrency);
-		const results: (T | undefined)[] = new Array(factories.length);
-		const errors: (unknown | undefined)[] = new Array(factories.length);
+		const results: Result<unknown, T>[] = new Array(factories.length);
 		let index = 0;
 		let hasError = false;
 
@@ -1539,16 +1322,14 @@ export async function parallel<T>(
 					currentIndex,
 				);
 
-				const settled = await processTask(factory, currentIndex);
-				if (settled.error) {
-					errors[currentIndex] = settled.error;
+				const result = await processTask(factory, currentIndex);
+				results[currentIndex] = result;
+				if (result[0]) {
 					hasError = true;
 					if (failFast) {
 						debugScope("[parallel] worker %d aborting due to error", workerId);
 						break;
 					}
-				} else {
-					results[currentIndex] = settled.result;
 				}
 				tasksProcessed++;
 			}
@@ -1565,12 +1346,14 @@ export async function parallel<T>(
 			workers.push(worker(i));
 		}
 
-		await Promise.race([Promise.all(workers), abortPromise]);
+		await Promise.all(workers);
 
 		// Check for errors if failFast
 		if (failFast && hasError) {
-			const firstError = errors.find((e) => e !== undefined);
-			if (firstError) throw firstError;
+			const firstError = results.find((r) => r[0]);
+			if (firstError?.[0]) {
+				throw firstError[0];
+			}
 		}
 
 		debugScope(
@@ -1579,115 +1362,6 @@ export async function parallel<T>(
 			totalTasks,
 			errorCount,
 		);
-		return results as T[];
-	} finally {
-		await s[Symbol.asyncDispose]();
-	}
-}
-
-/**
- * Run multiple tasks in parallel and return Results.
- * By default, never throws - failed tasks return Failure, successful tasks return Success.
- * When failFast is true, throws on first error instead.
- *
- * @param factories - Array of factory functions that receive AbortSignal and create promises
- * @param options - Optional configuration including concurrency limit and failFast
- * @returns A Promise that resolves to an array of Results (or throws if failFast is true)
- *
- * @example
- * ```typescript
- * const results = await parallelResults([
- *   ({ signal }) => fetchUser(1, { signal }),
- *   ({ signal }) => fetchUser(2, { signal }),
- * ])
- * // results is [Result<string, User>, Result<string, User>]
- * ```
- */
-export async function parallelResults<T>(
-	factories: readonly ((signal: AbortSignal) => Promise<T>)[],
-	options?: {
-		concurrency?: number;
-		signal?: AbortSignal;
-		failFast?: boolean;
-		tracer?: Tracer;
-	},
-): Promise<Result<string, T>[]> {
-	if (factories.length === 0) {
-		return [];
-	}
-
-	const concurrency = options?.concurrency ?? 0;
-	const failFast = options?.failFast ?? false;
-
-	// Check if signal is already aborted
-	if (options?.signal?.aborted) {
-		throw options.signal.reason;
-	}
-
-	const s = new Scope({ signal: options?.signal, tracer: options?.tracer });
-
-	try {
-		// Create abort promise that rejects when signal aborts
-		const abortPromise = new Promise<never>((_, reject) => {
-			s.signal.addEventListener(
-				"abort",
-				() => {
-					reject(s.signal.reason);
-				},
-				{ once: true },
-			);
-		});
-
-		// Create a task for each factory that catches errors
-		const createTask = (factory: (signal: AbortSignal) => Promise<T>) =>
-			s.spawn(async ({ signal }) => {
-				try {
-					const result = await factory(signal);
-					return [undefined, result] as Success<T>;
-				} catch (error) {
-					const message =
-						error instanceof Error ? error.message : String(error);
-					return [message, undefined] as Failure<string>;
-				}
-			});
-
-		// If failFast is true, use parallel and convert to Results
-		if (failFast) {
-			const results = await parallel(factories, {
-				signal: options?.signal,
-				concurrency,
-				failFast: true,
-			});
-			return results.map((r) => [undefined, r]);
-		}
-
-		// If no concurrency limit, run all in parallel
-		if (concurrency <= 0 || concurrency >= factories.length) {
-			const tasks = factories.map((factory) => createTask(factory));
-			return await Promise.race([Promise.all(tasks), abortPromise]);
-		}
-
-		// Run with limited concurrency
-		const results: Result<string, T>[] = new Array(factories.length);
-		let index = 0;
-
-		async function worker(): Promise<void> {
-			while (index < factories.length) {
-				const currentIndex = index++;
-				const factory = factories[currentIndex];
-				if (!factory) continue;
-				const task = createTask(factory);
-				results[currentIndex] = await task;
-			}
-		}
-
-		const workers: Promise<void>[] = [];
-		const workerCount = Math.min(concurrency, factories.length);
-		for (let i = 0; i < workerCount; i++) {
-			workers.push(worker());
-		}
-
-		await Promise.race([Promise.all(workers), abortPromise]);
 		return results;
 	} finally {
 		await s[Symbol.asyncDispose]();
@@ -1959,6 +1633,14 @@ export class Semaphore implements AsyncDisposable {
 		} finally {
 			this.release();
 		}
+	}
+
+	/**
+	 * Execute a function with an acquired permit.
+	 * Alias for acquire().
+	 */
+	execute<T>(fn: () => Promise<T>): Promise<T> {
+		return this.acquire(fn);
 	}
 
 	/**
@@ -2329,14 +2011,23 @@ function createPoll<T>(
 
 		try {
 			const startTime = performance.now();
-			const value = await s.spawn((sig) => fn(sig));
+			const [err, value] = await s.task((sig) => fn(sig));
 			const duration = performance.now() - startTime;
-			debugScope(
-				"[poll] poll #%d succeeded in %dms",
-				pollCount,
-				Math.round(duration),
-			);
-			await onValue(value);
+			if (err) {
+				debugScope(
+					"[poll] poll #%d failed: %s",
+					pollCount,
+					err instanceof Error ? err.message : String(err),
+				);
+				// Continue polling even on error
+			} else {
+				debugScope(
+					"[poll] poll #%d succeeded in %dms",
+					pollCount,
+					Math.round(duration),
+				);
+				await onValue(value as T);
+			}
 		} catch (error) {
 			debugScope(
 				"[poll] poll #%d failed: %s",
