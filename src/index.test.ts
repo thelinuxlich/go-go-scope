@@ -196,6 +196,131 @@ describe("Scope", () => {
 		expect(aborted).toBe(true);
 	});
 
+	test("parent option inherits signal and services", async () => {
+		// Create parent scope with a service
+		await using parent = scope().provide("db", () => ({
+			query: () => "result",
+		}));
+
+		// Create child scope with parent option
+		await using child = scope({ parent });
+
+		// Child should have access to parent's services
+		const db = child.use("db");
+		expect(db.query()).toBe("result");
+
+		// Child should inherit parent's signal (cancel when parent cancels)
+		let childAborted = false;
+		void Promise.resolve(
+			child.spawn(async ({ signal }) => {
+				return new Promise<string>((_resolve, reject) => {
+					signal.addEventListener("abort", () => {
+						childAborted = true;
+						reject(new Error("parent aborted"));
+					});
+				});
+			}),
+		).catch(() => {});
+
+		// Dispose parent - should propagate to child
+		await parent[Symbol.asyncDispose]().catch(() => {});
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(childAborted).toBe(true);
+	});
+
+	test("parent option allows child to add more services", async () => {
+		// Create parent scope with one service
+		await using parent = scope().provide("db", () => ({ name: "postgres" }));
+
+		// Create child scope with parent and add another service
+		await using child = scope({ parent }).provide("cache", () => ({
+			get: () => "cached",
+		}));
+
+		// Child should access both services
+		expect(child.use("db").name).toBe("postgres");
+		expect(child.use("cache").get()).toBe("cached");
+
+		// Parent should NOT have access to child's service
+		expect(parent.use("cache" as never)).toBeUndefined();
+	});
+
+	test("parent option inherits all scope options", async () => {
+		// Create parent scope with all options
+		const parentController = new AbortController();
+		const parent = scope({
+			signal: parentController.signal,
+			concurrency: 5,
+			circuitBreaker: { failureThreshold: 3, resetTimeout: 1000 },
+		});
+
+		// Create child scope with parent option
+		const child = scope({ parent });
+
+		// Child should inherit all options
+		expect(child.concurrency).toBe(5);
+		expect(child.circuitBreaker).toEqual({
+			failureThreshold: 3,
+			resetTimeout: 1000,
+		});
+
+		// Verify signal inheritance through cancellation
+		let childAborted = false;
+		void Promise.resolve(
+			child.spawn(async ({ signal }) => {
+				return new Promise<string>((_resolve, reject) => {
+					signal.addEventListener("abort", () => {
+						childAborted = true;
+						reject(new Error("aborted"));
+					});
+				});
+			}),
+		).catch(() => {});
+
+		// Give task time to start listening
+		await new Promise((r) => setTimeout(r, 10));
+
+		// Abort parent - should propagate to child
+		parentController.abort("test abort");
+		await new Promise((r) => setTimeout(r, 50));
+
+		expect(childAborted).toBe(true);
+
+		// Cleanup
+		await child[Symbol.asyncDispose]().catch(() => {});
+		await parent[Symbol.asyncDispose]().catch(() => {});
+	});
+
+	test("child scope can override parent options", async () => {
+		// Create parent scope with options
+		await using parent = scope({
+			concurrency: 5,
+			circuitBreaker: { failureThreshold: 3, resetTimeout: 1000 },
+		});
+
+		// Create child scope with overrides
+		await using child = scope({
+			parent,
+			concurrency: 10,
+			circuitBreaker: { failureThreshold: 7, resetTimeout: 2000 },
+		});
+
+		// Child should have its own options, not parent's
+		expect(child.concurrency).toBe(10);
+		expect(child.circuitBreaker).toEqual({
+			failureThreshold: 7,
+			resetTimeout: 2000,
+		});
+
+		// Parent should retain original options
+		expect(parent.concurrency).toBe(5);
+		expect(parent.circuitBreaker).toEqual({
+			failureThreshold: 3,
+			resetTimeout: 1000,
+		});
+	});
+
 	test("throws when spawning on disposed scope", async () => {
 		const s = scope();
 		await s[Symbol.asyncDispose]();

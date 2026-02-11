@@ -106,7 +106,9 @@ export const SpanStatusCode = {
 /**
  * Options for creating a Scope
  */
-export interface ScopeOptions {
+export interface ScopeOptions<
+	ParentServices extends Record<string, unknown> = Record<string, never>,
+> {
 	/**
 	 * Optional timeout in milliseconds.
 	 * If set, the scope will be aborted after this duration.
@@ -135,6 +137,11 @@ export interface ScopeOptions {
 	 * When set, all tasks will execute through a circuit breaker with these options.
 	 */
 	circuitBreaker?: CircuitBreakerOptions;
+	/**
+	 * Optional parent scope to inherit signal and services from.
+	 * The child scope will share the parent's AbortSignal and have access to all parent services.
+	 */
+	parent?: Scope<ParentServices>;
 }
 
 /**
@@ -304,7 +311,7 @@ export class Scope<
 	private readonly disposables: (Disposable | AsyncDisposable)[] = [];
 	private readonly timeoutId: ReturnType<typeof setTimeout> | undefined;
 	private disposed = false;
-	private readonly tracer?: Tracer;
+	private readonly _tracer?: Tracer;
 	private readonly span?: Span;
 	private taskCount = 0;
 	private spanHasError = false;
@@ -315,44 +322,59 @@ export class Scope<
 	private readonly scopeCircuitBreaker?: CircuitBreaker;
 	private services: Services = {} as Services;
 
-	constructor(options?: ScopeOptions) {
+	constructor(options?: ScopeOptions<Record<string, unknown>>) {
 		this.id = ++scopeIdCounter;
 		this.name = options?.name ?? `scope-${this.id}`;
+
+		// Inherit from parent scope if provided
+		const parent = options?.parent;
+		const parentSignal = parent?.signal ?? options?.signal;
+		const parentServices = parent?.services;
+		if (parentServices) {
+			this.services = { ...parentServices } as Services;
+		}
+
+		// Inherit options from parent if not explicitly provided
+		const tracer = options?.tracer ?? parent?.tracer;
+		const concurrency = options?.concurrency ?? parent?.concurrency;
+		const circuitBreaker = options?.circuitBreaker ?? parent?.circuitBreaker;
+
 		debugScope(
-			"[%s] creating scope (timeout: %d, parent signal: %s, concurrency: %s, circuitBreaker: %s)",
+			"[%s] creating scope (timeout: %d, parent signal: %s, concurrency: %s, circuitBreaker: %s, parent: %s)",
 			this.name,
 			options?.timeout ?? 0,
-			options?.signal ? "yes" : "no",
-			options?.concurrency ?? "unlimited",
-			options?.circuitBreaker ? "yes" : "no",
+			parentSignal ? "yes" : "no",
+			concurrency ?? "unlimited",
+			circuitBreaker ? "yes" : "no",
+			parent ? "yes" : "no",
 		);
 		this.abortController = new AbortController();
-		this.tracer = options?.tracer;
+		this._tracer = tracer;
 		this.startTime = performance.now();
 
 		// Create concurrency semaphore if specified
-		if (options?.concurrency !== undefined && options.concurrency > 0) {
+		if (concurrency !== undefined && concurrency > 0) {
 			this.concurrencySemaphore = new Semaphore(
-				options.concurrency,
+				concurrency,
 				this.abortController.signal,
 			);
 			debugScope(
 				"[%s] created concurrency semaphore with %d permits",
 				this.name,
-				options.concurrency,
+				concurrency,
 			);
 		}
 
 		// Create circuit breaker if specified
-		if (options?.circuitBreaker) {
+		if (circuitBreaker) {
 			this.scopeCircuitBreaker = new CircuitBreaker(
-				options.circuitBreaker,
+				circuitBreaker,
 				this.abortController.signal,
 			);
 			debugScope(
 				"[%s] created circuit breaker (failureThreshold: %d)",
 				this.name,
-				options.circuitBreaker.failureThreshold ?? 5,
+				circuitBreaker.failureThreshold ?? 5,
 			);
 		}
 
@@ -361,15 +383,15 @@ export class Scope<
 			this.span = this.tracer.startSpan(options?.name ?? "scope", {
 				attributes: {
 					"scope.timeout": options?.timeout,
-					"scope.has_parent_signal": !!options?.signal,
+					"scope.has_parent_signal": !!parentSignal,
+					"scope.has_parent_scope": !!options?.parent,
 					"scope.concurrency": options?.concurrency,
 				},
 			});
 		}
 
 		// Link to parent signal if provided
-		if (options?.signal) {
-			const parentSignal = options.signal;
+		if (parentSignal) {
 			const parentHandler = () => {
 				const reason = parentSignal.reason;
 				debugScope("[%s] aborting due to parent signal: %s", this.name, reason);
@@ -383,11 +405,11 @@ export class Scope<
 				this.spanHasError = true;
 				this.abortController.abort(reason);
 			};
-			if (options.signal.aborted) {
+			if (parentSignal.aborted) {
 				debugScope("[%s] parent already aborted", this.name);
-				this.abortController.abort(options.signal.reason);
+				this.abortController.abort(parentSignal.reason);
 			} else {
-				options.signal.addEventListener("abort", parentHandler, { once: true });
+				parentSignal.addEventListener("abort", parentHandler, { once: true });
 			}
 		}
 
@@ -419,6 +441,35 @@ export class Scope<
 	 */
 	get isDisposed(): boolean {
 		return this.disposed;
+	}
+
+	/**
+	 * Get the tracer for this scope (inherited from parent if not set directly).
+	 * @internal Used for child scope inheritance
+	 */
+	get tracer(): Tracer | undefined {
+		return this._tracer;
+	}
+
+	/**
+	 * Get the concurrency limit for this scope (inherited from parent if not set directly).
+	 * @internal Used for child scope inheritance
+	 */
+	get concurrency(): number | undefined {
+		return this.concurrencySemaphore?.totalPermits;
+	}
+
+	/**
+	 * Get the circuit breaker options for this scope (inherited from parent if not set directly).
+	 * @internal Used for child scope inheritance
+	 */
+	get circuitBreaker(): CircuitBreakerOptions | undefined {
+		return this.scopeCircuitBreaker
+			? {
+					failureThreshold: this.scopeCircuitBreaker.failureThreshold,
+					resetTimeout: this.scopeCircuitBreaker.resetTimeout,
+				}
+			: undefined;
 	}
 
 	/**
@@ -1239,8 +1290,10 @@ export class Scope<
  * // Scope disposal creates "scope" span with task count
  * ```
  */
-export function scope(options?: ScopeOptions): Scope {
-	return new Scope(options);
+export function scope<
+	TServices extends Record<string, unknown> = Record<string, unknown>,
+>(options?: ScopeOptions<TServices>): Scope<TServices> {
+	return new Scope(options) as Scope<TServices>;
 }
 
 /**
@@ -2006,15 +2059,15 @@ class CircuitBreaker implements AsyncDisposable {
 	private state: CircuitState = "closed";
 	private failures = 0;
 	private lastFailureTime?: number;
-	private readonly failureThreshold: number;
-	private readonly resetTimeout: number;
+	private readonly _failureThreshold: number;
+	private readonly _resetTimeout: number;
 
 	constructor(
 		options: CircuitBreakerOptions = {},
 		private parentSignal?: AbortSignal,
 	) {
-		this.failureThreshold = options.failureThreshold ?? 5;
-		this.resetTimeout = options.resetTimeout ?? 30000;
+		this._failureThreshold = options.failureThreshold ?? 5;
+		this._resetTimeout = options.resetTimeout ?? 30000;
 	}
 
 	/**
@@ -2031,7 +2084,7 @@ class CircuitBreaker implements AsyncDisposable {
 		if (this.state === "open") {
 			if (
 				this.lastFailureTime &&
-				Date.now() - this.lastFailureTime >= this.resetTimeout
+				Date.now() - this.lastFailureTime >= this._resetTimeout
 			) {
 				this.state = "half-open";
 			} else {
@@ -2071,7 +2124,7 @@ class CircuitBreaker implements AsyncDisposable {
 			// Check if we should transition to half-open
 			if (
 				this.lastFailureTime &&
-				Date.now() - this.lastFailureTime >= this.resetTimeout
+				Date.now() - this.lastFailureTime >= this._resetTimeout
 			) {
 				return "half-open";
 			}
@@ -2084,6 +2137,20 @@ class CircuitBreaker implements AsyncDisposable {
 	 */
 	get failureCount(): number {
 		return this.failures;
+	}
+
+	/**
+	 * Get the failure threshold.
+	 */
+	get failureThreshold(): number {
+		return this._failureThreshold;
+	}
+
+	/**
+	 * Get the reset timeout in milliseconds.
+	 */
+	get resetTimeout(): number {
+		return this._resetTimeout;
 	}
 
 	/**
@@ -2112,7 +2179,7 @@ class CircuitBreaker implements AsyncDisposable {
 		this.failures++;
 		this.lastFailureTime = Date.now();
 
-		if (this.failures >= this.failureThreshold) {
+		if (this.failures >= this._failureThreshold) {
 			this.state = "open";
 		} else if (this.state === "half-open") {
 			// Failure in half-open goes back to open

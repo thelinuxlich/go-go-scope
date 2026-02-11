@@ -55,6 +55,23 @@ async function fetchWithDatabase(userId: string) {
   // Database closes automatically when scope exits
 }
 
+// Child scope inherits parent's services and cancellation
+async function fetchWithChildScope(userId: string) {
+  await using parent = scope()
+    .provide('db', () => openDatabase(), db => db.close())
+  
+  // Child inherits signal AND services from parent
+  await using child = scope({ parent })
+  
+  using task = child.spawn(async ({ services }) => {
+    // Can use parent's 'db' service directly
+    return services.db.query('SELECT * FROM users WHERE id = ?', [userId])
+  })
+  
+  return await task
+  // Child cancels when parent exits, database closes last
+}
+
 // Race multiple operations - signal available for cancellation
 await using s = scope()
 const fastest = await s.race([
@@ -96,15 +113,16 @@ Creates a new scope for structured concurrency.
 
 ```typescript
 interface ScopeOptions {
-  timeout?: number           // Auto-abort after N milliseconds
+  timeout?: number           // Auto-abort after N milliseconds (NOT inherited)
   signal?: AbortSignal       // Link to parent signal
-  tracer?: Tracer            // OpenTelemetry tracer for automatic tracing
+  tracer?: Tracer            // OpenTelemetry tracer (inherited from parent)
   name?: string              // Name for the scope span (default: "scope")
-  concurrency?: number       // Max concurrent tasks (0 = unlimited)
-  circuitBreaker?: {         // Circuit breaker configuration
+  concurrency?: number       // Max concurrent tasks (inherited from parent)
+  circuitBreaker?: {         // Circuit breaker config (inherited from parent)
     failureThreshold?: number // Failures before opening (default: 5)
     resetTimeout?: number     // ms before retry (default: 30000)
   }
+  parent?: Scope             // Parent scope to inherit signal, services, and options
 }
 
 await using s = scope({ timeout: 5000 })
@@ -424,40 +442,85 @@ await using child = scope()  // Independent! Not linked to parent
 // If parent times out, child continues running
 ```
 
-To create a parent-child relationship where child cancellation propagates from parent, **explicitly pass the parent's signal**:
+To create a parent-child relationship, use the **`parent` option**. This inherits:
+- The parent's **AbortSignal** for cancellation propagation
+- The parent's **services** for dependency injection
+- The parent's **tracer** for OpenTelemetry
+- The parent's **concurrency** limit
+- The parent's **circuit breaker** configuration
+
+```typescript
+await using parent = scope({
+  timeout: 5000,
+  concurrency: 5,
+  circuitBreaker: { failureThreshold: 3, resetTimeout: 1000 },
+})
+  .provide('db', () => openDatabase(), (db) => db.close())
+
+// Child inherits all options from parent
+await using child = scope({ parent })
+
+// Child can use parent's services directly
+const db = child.use('db')
+await db.query('SELECT 1')
+
+// Child also inherited concurrency=5 and circuit breaker settings
+// If parent times out or is disposed, child is also cancelled
+```
+
+You can also use the **`signal` option** if you only want cancellation propagation without service inheritance:
 
 ```typescript
 await using parent = scope({ timeout: 5000 })
 
-// Child inherits parent's cancellation
+// Child only inherits signal, not services
 await using child = scope({ signal: parent.signal })
-
-// Now if parent times out or is cancelled, child is also cancelled
 ```
 
-This explicit linking gives you control over scope hierarchies. Common patterns:
+### Child Scope with Additional Services
+
+Child scopes can add their own services on top of inherited ones:
 
 ```typescript
-// Pattern 1: Nested operations with shared cancellation
-await using outer = scope({ timeout: 10000 })
+await using parent = scope()
+  .provide('db', () => openDatabase())
+
+// Child inherits 'db' and adds 'cache'
+await using child = scope({ parent })
+  .provide('cache', () => createCache())
+
+// Child can access both
+child.use('db')     // From parent
+child.use('cache')  // From child
+
+// Parent can only access 'db'
+parent.use('db')    // ✓ Works
+parent.use('cache') // ✗ Undefined (child's service)
+```
+
+### Common Patterns
+
+```typescript
+// Pattern 1: Nested operations with inherited services
+await using outer = scope()
+  .provide('db', () => openDatabase())
 
 const user = await outer.spawn(() => fetchUser(id))
 
-// Inner scope inherits cancellation but can have its own settings
-await using inner = scope({ 
-  signal: outer.signal,
-  concurrency: 3  // Inner scope has its own concurrency limit
-})
+// Inner scope inherits 'db' and adds concurrency limit
+await using inner = scope({ parent: outer, concurrency: 3 })
 
-// These parallel tasks are limited to 3 concurrent
-await inner.parallel(urls.map(url => () => fetch(url)))
+// Access parent's service, limited to 3 concurrent
+await inner.parallel(urls.map(url => ({ services }) => 
+  services.db.query(url)
+))
 
 // Pattern 2: Fire-and-forget with cleanup
 await using main = scope()
 
-// Create a detached child that won't cancel if main scope exits
+// Create a detached child with its own settings
 await using background = scope({ 
-  timeout: 60000  // But it has its own timeout
+  timeout: 60000  // Has its own timeout
 })
 
 // Start background work
@@ -1369,7 +1432,7 @@ async function fetchWithTracing(userId: string) {
 
 | Span Name | Description | Attributes |
 |-----------|-------------|------------|
-| `scope` (or custom name) | The scope lifecycle span | `scope.timeout`, `scope.has_parent_signal`, `scope.duration_ms`, `scope.errors` |
+| `scope` (or custom name) | The scope lifecycle span | `scope.timeout`, `scope.has_parent_signal`, `scope.has_parent_scope`, `scope.duration_ms`, `scope.errors` |
 | `scope.task` (or custom name) | Each spawned task | `task.index`, `task.duration_ms`, `task.error_reason`, `task.retry_attempts`, `task.has_retry`, `task.has_timeout`, `task.has_circuit_breaker`, `task.scope_concurrency` |
 
 ### Task Error Reasons
