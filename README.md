@@ -183,7 +183,31 @@ interface TaskOptions {
   
   // Timeout for this specific task (in milliseconds)
   timeout?: number
+  
+  // Custom cleanup function - runs when task completes or is cancelled
+  onCleanup?: () => void | Promise<void>
 }
+```
+
+**Custom Cleanup Example:**
+```typescript
+await using s = scope()
+
+using task = s.spawn(
+  async (signal) => {
+    const conn = await openConnection()
+    return conn.query('SELECT * FROM users')
+  },
+  {
+    onCleanup: () => {
+      console.log('Task cleanup ran')
+      // Close resources, log metrics, etc.
+    }
+  }
+)
+
+const result = await task
+// Cleanup runs automatically when task settles (success or failure)
 ```
 
 **Execution Order:**
@@ -479,18 +503,41 @@ for await (const chunk of s.stream(readableStream)) {
 
 ### Polling
 
-Auto-refresh data at intervals:
+Auto-refresh data at intervals with a controllable poll:
 
 ```typescript
 await using s = scope()
 
-s.poll(
+const controller = s.poll(
   (signal) => fetchConfig({ signal }),
   (config) => updateUI(config),
   { interval: 30000 }  // Every 30 seconds
 )
+
+// Check status
+const status = controller.status()
+console.log(status.running)        // true
+console.log(status.pollCount)      // 5
+console.log(status.timeUntilNext)  // 15000 (ms)
+
+// Stop polling
+controller.stop()
+
+// Restart polling
+controller.start()
+
 // Automatically stops when scope exits
 ```
+
+**PollController methods:**
+- `start()` - Start or resume polling
+- `stop()` - Stop polling
+- `status()` - Get current status:
+  - `running: boolean` - Whether polling is active
+  - `pollCount: number` - Number of polls executed
+  - `timeUntilNext: number` - Milliseconds until next poll (0 if stopped)
+  - `lastPollTime?: number` - Timestamp of last poll
+  - `nextPollTime?: number` - Timestamp of next scheduled poll
 
 ### Retry
 

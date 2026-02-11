@@ -87,6 +87,11 @@ export interface TaskOptions {
 	 * If set, the task will be aborted after this duration.
 	 */
 	timeout?: number;
+	/**
+	 * Optional cleanup function to run when the task completes or is cancelled.
+	 * Runs alongside the default scope cleanup.
+	 */
+	onCleanup?: () => void | Promise<void>;
 }
 
 /**
@@ -147,6 +152,7 @@ export class Task<T> implements PromiseLike<T>, Disposable {
 	constructor(
 		fn: (signal: AbortSignal) => Promise<T>,
 		parentSignal: AbortSignal,
+		onCleanup?: () => void | Promise<void>,
 	) {
 		this.id = ++taskIdCounter;
 		debugTask("[%d] creating task", this.id);
@@ -181,6 +187,21 @@ export class Task<T> implements PromiseLike<T>, Disposable {
 				this.settled = true;
 				if (!parentSignal.aborted) {
 					parentSignal.removeEventListener("abort", parentAbortHandler);
+				}
+				// Run custom cleanup if provided
+				if (onCleanup) {
+					debugTask("[%d] running custom cleanup", this.id);
+					try {
+						const cleanupResult = onCleanup();
+						if (cleanupResult instanceof Promise) {
+							// For async cleanup, we fire-and-forget to not block
+							cleanupResult.catch((err) => {
+								debugTask("[%d] cleanup error: %s", this.id, err);
+							});
+						}
+					} catch (err) {
+						debugTask("[%d] cleanup error: %s", this.id, err);
+					}
 				}
 			});
 	}
@@ -744,7 +765,11 @@ export class Scope implements AsyncDisposable {
 			}
 		};
 
-		const task = new Task(wrappedFn, this.abortController.signal);
+		const task = new Task(
+			wrappedFn,
+			this.abortController.signal,
+			options?.onCleanup,
+		);
 		this.disposables.push(task);
 		debugScope(
 			"[%s] task #%d added to disposables (total: %d)",
@@ -1041,13 +1066,15 @@ export class Scope implements AsyncDisposable {
 		return stream(source, this.signal);
 	}
 
-	/** Poll a function at regular intervals. */
+	/** Poll a function at regular intervals.
+	 * Returns a controller to start, stop, and check status.
+	 */
 	poll<T>(
 		fn: (signal: AbortSignal) => Promise<T>,
 		onValue: (value: T) => void | Promise<void>,
 		options?: Omit<PollOptions, "signal">,
-	): Promise<void> {
-		return poll(fn, onValue, { ...options, signal: this.signal });
+	): PollController {
+		return createPoll(fn, onValue, { ...options, signal: this.signal });
 	}
 
 	/**
@@ -2100,6 +2127,30 @@ export interface PollOptions {
 }
 
 /**
+ * Controller for a polling operation.
+ * Allows starting, stopping, and checking status.
+ */
+export interface PollController {
+	/** Start or resume polling */
+	start(): void;
+	/** Stop polling */
+	stop(): void;
+	/** Get current polling status */
+	status(): {
+		/** Whether polling is currently running */
+		running: boolean;
+		/** Number of polls executed */
+		pollCount: number;
+		/** Time in ms until next poll (0 if running immediately) */
+		timeUntilNext: number;
+		/** Timestamp of last poll execution */
+		lastPollTime?: number;
+		/** Timestamp of next scheduled poll */
+		nextPollTime?: number;
+	};
+}
+
+/**
  * Poll a function at regular intervals with structured concurrency.
  * Automatically stops when the scope is disposed.
  *
@@ -2107,24 +2158,33 @@ export interface PollOptions {
  * ```typescript
  * await using s = scope()
  *
- * s.poll(async (signal) => {
+ * const controller = s.poll(async (signal) => {
  *   const config = await fetchConfig({ signal })
  *   updateConfig(config)
  * }, { interval: 30000 })
  *
  * // Polls every 30 seconds until scope exits
+ *
+ * // Check status
+ * console.log(controller.status())
+ *
+ * // Stop polling
+ * controller.stop()
+ *
+ * // Restart polling
+ * controller.start()
  * ```
  */
-export async function poll<T>(
+function createPoll<T>(
 	fn: (signal: AbortSignal) => Promise<T>,
 	onValue: (value: T) => void | Promise<void>,
 	options: PollOptions = {},
-): Promise<void> {
+): PollController {
 	const interval = options.interval ?? 5000;
 	const immediate = options.immediate ?? true;
 
 	debugScope(
-		"[poll] starting poll (interval: %dms, immediate: %s)",
+		"[poll] creating poll controller (interval: %dms, immediate: %s)",
 		interval,
 		immediate,
 	);
@@ -2135,59 +2195,139 @@ export async function poll<T>(
 		throw options.signal.reason;
 	}
 
-	const s = new Scope({ signal: options.signal });
 	let pollCount = 0;
+	let lastPollTime: number | undefined;
+	let nextPollTime: number | undefined;
+	let running = false;
+	let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-	try {
-		let firstRun = true;
-		while (!s.signal.aborted) {
-			if (immediate || !firstRun) {
-				pollCount++;
-				debugScope("[poll] executing poll #%d", pollCount);
-				try {
-					const startTime = performance.now();
-					const value = await s.spawn((sig) => fn(sig));
-					const duration = performance.now() - startTime;
-					debugScope(
-						"[poll] poll #%d succeeded in %dms",
-						pollCount,
-						Math.round(duration),
-					);
-					await onValue(value);
-				} catch (error) {
-					debugScope(
-						"[poll] poll #%d failed: %s",
-						pollCount,
-						error instanceof Error ? error.message : String(error),
-					);
-					// Continue polling even on error
-				}
-			}
-			firstRun = false;
+	const s = new Scope({ signal: options.signal });
 
-			// Wait for interval or abort
-			try {
-				await new Promise<void>((resolve, reject) => {
-					const timeoutId = setTimeout(resolve, interval);
-					s.signal.addEventListener(
-						"abort",
-						() => {
-							clearTimeout(timeoutId);
-							reject(s.signal.reason);
-						},
-						{ once: true },
-					);
-				});
-			} catch {
-				debugScope(
-					"[poll] aborted during interval wait, total polls: %d",
-					pollCount,
-				);
-				break;
-			}
+	const executePoll = async () => {
+		if (!running || s.signal.aborted) return;
+
+		pollCount++;
+		lastPollTime = performance.now();
+		nextPollTime = lastPollTime + interval;
+		debugScope("[poll] executing poll #%d", pollCount);
+
+		try {
+			const startTime = performance.now();
+			const value = await s.spawn((sig) => fn(sig));
+			const duration = performance.now() - startTime;
+			debugScope(
+				"[poll] poll #%d succeeded in %dms",
+				pollCount,
+				Math.round(duration),
+			);
+			await onValue(value);
+		} catch (error) {
+			debugScope(
+				"[poll] poll #%d failed: %s",
+				pollCount,
+				error instanceof Error ? error.message : String(error),
+			);
+			// Continue polling even on error
 		}
-	} finally {
-		debugScope("[poll] stopping poll, total executions: %d", pollCount);
-		await s[Symbol.asyncDispose]();
+
+		// Schedule next poll if still running
+		if (running && !s.signal.aborted) {
+			timeoutId = setTimeout(executePoll, interval);
+		}
+	};
+
+	const start = () => {
+		if (running) {
+			debugScope("[poll] already running, ignoring start()");
+			return;
+		}
+		if (s.signal.aborted) {
+			debugScope("[poll] cannot start, already aborted");
+			return;
+		}
+		running = true;
+		debugScope("[poll] starting poll");
+
+		if (immediate) {
+			// Execute immediately
+			void executePoll();
+		} else {
+			// Schedule first execution
+			nextPollTime = performance.now() + interval;
+			timeoutId = setTimeout(executePoll, interval);
+		}
+	};
+
+	const stop = () => {
+		if (!running) {
+			debugScope("[poll] not running, ignoring stop()");
+			return;
+		}
+		running = false;
+		if (timeoutId) {
+			clearTimeout(timeoutId);
+			timeoutId = undefined;
+		}
+		nextPollTime = undefined;
+		debugScope("[poll] stopped poll, total executions: %d", pollCount);
+	};
+
+	const status = () => {
+		const now = performance.now();
+		let timeUntilNext = 0;
+
+		if (running && nextPollTime) {
+			timeUntilNext = Math.max(0, nextPollTime - now);
+		} else if (running && !immediate && pollCount === 0) {
+			// Hasn't started yet and not immediate
+			timeUntilNext = interval;
+		}
+
+		return {
+			running,
+			pollCount,
+			timeUntilNext,
+			lastPollTime,
+			nextPollTime,
+		};
+	};
+
+	// Clean up when signal is aborted
+	options.signal?.addEventListener(
+		"abort",
+		() => {
+			debugScope("[poll] abort signal received, stopping");
+			stop();
+			s[Symbol.asyncDispose]().catch(() => {});
+		},
+		{ once: true },
+	);
+
+	// Auto-start if immediate
+	if (immediate) {
+		start();
 	}
+
+	return {
+		start,
+		stop,
+		status,
+	};
+}
+
+/**
+ * Poll a function at regular intervals with structured concurrency.
+ * Automatically starts polling and returns a controller.
+ *
+ * @deprecated Use `createPoll()` or `scope().poll()` for better control
+ */
+export function poll<T>(
+	fn: (signal: AbortSignal) => Promise<T>,
+	onValue: (value: T) => void | Promise<void>,
+	options: PollOptions = {},
+): PollController {
+	const controller = createPoll(fn, onValue, options);
+	// Auto-start if immediate (createPoll already handles this)
+	// If not immediate, user needs to call start()
+	return controller;
 }

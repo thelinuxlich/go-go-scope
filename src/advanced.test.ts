@@ -447,7 +447,7 @@ describe("poll", () => {
 		const controller = new AbortController();
 
 		// immediate: false - should wait for first interval
-		const pollPromise = poll<string>(
+		const pollController = poll<string>(
 			() => Promise.resolve("value"),
 			() => {
 				results.push("called");
@@ -458,17 +458,17 @@ describe("poll", () => {
 		// Check after 50ms - should not have been called yet
 		await new Promise((r) => setTimeout(r, 50));
 		expect(results.length).toBe(0);
+		expect(pollController.status().pollCount).toBe(0);
 
 		// Cancel
 		controller.abort();
-		await pollPromise.catch(() => {});
 	});
 
 	test("continues on error", async () => {
 		const results: string[] = [];
 		let calls = 0;
 
-		void poll<string>(
+		const controller = poll<string>(
 			async () => {
 				calls++;
 				if (calls === 1) throw new Error("fail");
@@ -483,30 +483,30 @@ describe("poll", () => {
 		// Let it run for ~120ms
 		await new Promise((r) => setTimeout(r, 120));
 
-		// Cancel
-		const controller = new AbortController();
-		controller.abort();
+		// Stop
+		controller.stop();
 
 		// Should have continued despite error
 		expect(calls).toBeGreaterThanOrEqual(2);
+		expect(controller.status().pollCount).toBeGreaterThanOrEqual(2);
 	});
 
 	test("respects abort signal", async () => {
 		const controller = new AbortController();
 		const results: string[] = [];
 
-		// Start with aborted controller - should reject immediately
+		// Start with aborted controller - should not create or should be stopped
 		controller.abort("stopped");
 
-		await expect(
+		expect(() => {
 			poll<string>(
 				() => Promise.resolve("value"),
 				() => {
 					results.push("called");
 				},
 				{ interval: 1000, signal: controller.signal },
-			),
-		).rejects.toThrow("stopped");
+			);
+		}).toThrow("stopped");
 
 		expect(results.length).toBe(0);
 	});
@@ -517,20 +517,53 @@ describe("poll", () => {
 		const results: number[] = [];
 		let counter = 0;
 
-		// Start polling and catch rejection on disposal
-		s.poll(
+		// Start polling
+		const controller = s.poll(
 			() => Promise.resolve(++counter),
 			(value) => {
 				results.push(value);
 			},
 			{ interval: 50, immediate: true },
-		).catch(() => {});
+		);
 
 		// Let it run
 		await new Promise((r) => setTimeout(r, 120));
 
 		// Should have some results
 		expect(results.length).toBeGreaterThanOrEqual(1);
+		expect(controller.status().running).toBe(true);
+		expect(controller.status().pollCount).toBeGreaterThanOrEqual(1);
+	});
+
+	test("poll controller start/stop/status", async () => {
+		const results: string[] = [];
+
+		const controller = poll<string>(
+			() => Promise.resolve("value"),
+			(value) => {
+				results.push(value);
+			},
+			{ interval: 100, immediate: false }, // Don't auto-start
+		);
+
+		// Initially not running
+		expect(controller.status().running).toBe(false);
+		expect(controller.status().pollCount).toBe(0);
+
+		// Start
+		controller.start();
+		expect(controller.status().running).toBe(true);
+
+		// Let it run
+		await new Promise((r) => setTimeout(r, 150));
+		expect(controller.status().pollCount).toBeGreaterThanOrEqual(1);
+
+		// Stop
+		controller.stop();
+		expect(controller.status().running).toBe(false);
+
+		// Check time until next (should be 0 when stopped)
+		expect(controller.status().timeUntilNext).toBe(0);
 	});
 });
 
