@@ -1,13 +1,5 @@
 import { describe, expect, test } from "vitest";
-import {
-	stream,
-	Channel,
-	CircuitBreaker,
-	Semaphore,
-	parallel,
-	poll,
-	scope,
-} from "./index.js";
+import { stream, CircuitBreaker, parallel, poll, scope } from "./index.js";
 
 describe("Channel", () => {
 	test("basic send and receive", async () => {
@@ -205,7 +197,7 @@ describe("Semaphore", () => {
 		const sem = s.semaphore(1);
 
 		// Acquire the only permit and hold it
-		const holdingTask = s.spawn(async () => {
+		s.spawn(async () => {
 			await sem.acquire(async () => {
 				await new Promise((r) => setTimeout(r, 200));
 			});
@@ -462,9 +454,11 @@ describe("poll", () => {
 		const results: number[] = [];
 		let counter = 0;
 
-		const pollPromise = poll(
+		void poll(
 			() => Promise.resolve(++counter),
-			(value) => results.push(value),
+			(value) => {
+				results.push(value);
+			},
 			{ interval: 50, immediate: true },
 		);
 
@@ -485,9 +479,11 @@ describe("poll", () => {
 		const controller = new AbortController();
 
 		// immediate: false - should wait for first interval
-		const pollPromise = poll(
+		const pollPromise = poll<string>(
 			() => Promise.resolve("value"),
-			() => results.push("called"),
+			() => {
+				results.push("called");
+			},
 			{ interval: 100, immediate: false, signal: controller.signal },
 		);
 
@@ -504,13 +500,15 @@ describe("poll", () => {
 		const results: string[] = [];
 		let calls = 0;
 
-		const pollPromise = poll(
+		void poll<string>(
 			async () => {
 				calls++;
 				if (calls === 1) throw new Error("fail");
 				return "success";
 			},
-			(value) => results.push(value),
+			(value) => {
+				results.push(value);
+			},
 			{ interval: 50, immediate: true },
 		);
 
@@ -533,9 +531,11 @@ describe("poll", () => {
 		controller.abort("stopped");
 
 		await expect(
-			poll(
+			poll<string>(
 				() => Promise.resolve("value"),
-				() => results.push("called"),
+				() => {
+					results.push("called");
+				},
 				{ interval: 1000, signal: controller.signal },
 			),
 		).rejects.toThrow("stopped");
@@ -550,9 +550,11 @@ describe("poll", () => {
 		let counter = 0;
 
 		// Start polling
-		const pollPromise = s.poll(
+		void s.poll(
 			() => Promise.resolve(++counter),
-			(value) => results.push(value),
+			(value) => {
+				results.push(value);
+			},
 			{ interval: 50, immediate: true },
 		);
 

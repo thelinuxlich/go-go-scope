@@ -9,6 +9,7 @@
 - ⏱️ **Timeouts Built-in** - First-class timeout support with automatic cancellation
 - 🏁 **Race Support** - Structured racing where losers are cancelled
 - 📊 **OpenTelemetry** - Optional tracing integration for observability
+- 🐛 **Debug Logging** - Built-in debug output for troubleshooting
 - 📦 **Zero Dependencies** - Lightweight with no runtime dependencies
 - 🔷 **Type-Safe** - Full TypeScript support with proper type inference
 
@@ -1164,6 +1165,73 @@ async function batchOperation(items: string[]) {
 ```bash
 npm install @opentelemetry/api
 ```
+
+## Debug Logging
+
+go-go-scope includes built-in debug logging using the [`debug`](https://github.com/debug-js/debug) module. This is useful for troubleshooting scope lifecycle events, task execution, and cancellation propagation during development.
+
+### Enabling Debug Output
+
+Set the `DEBUG` environment variable to enable logging:
+
+```bash
+# Enable all go-go-scope debug logs
+DEBUG=go-go-scope:* node your-app.js
+
+# Enable only scope logs
+DEBUG=go-go-scope:scope node your-app.js
+
+# Enable only task logs
+DEBUG=go-go-scope:task node your-app.js
+
+# Enable both
+DEBUG=go-go-scope:scope,go-go-scope:task node your-app.js
+```
+
+### Debug Namespaces
+
+| Namespace | Description |
+|-----------|-------------|
+| `go-go-scope:scope` | Scope lifecycle events (creation, spawning tasks, disposal) |
+| `go-go-scope:task` | Task lifecycle events (creation, completion, abortion, disposal) |
+
+### Example Output
+
+```
+go-go-scope:scope [scope-1] creating scope (timeout: 0, parent signal: no) +0ms
+go-go-scope:scope [scope-1] spawning task #1 "task-1" +1ms
+go-go-scope:task [1] creating task +0ms
+go-go-scope:scope [scope-1] task #1 added to disposables (total: 1) +0ms
+go-go-scope:task [1] completed successfully +5ms
+go-go-scope:scope [scope-1] disposing scope (tasks: 1, disposables: 1) +10ms
+go-go-scope:scope [scope-1] aborting all tasks +0ms
+go-go-scope:scope [scope-1] cleared 1 disposables +1ms
+go-go-scope:scope [scope-1] scope disposed (duration: 15ms, errors: 0) +0ms
+```
+
+### Debug Events
+
+**Scope events logged:**
+- Scope creation (with timeout/parent signal info)
+- Task spawning (with task index and name)
+- Resource acquisition
+- Scope disposal start/end (with duration and error count)
+- Individual resource disposal progress
+- Parent signal abortion
+- Timeout triggers
+
+**Task events logged:**
+- Task creation (with auto-incrementing ID)
+- Task completion (success/failure)
+- Task abortion (parent signal or disposal)
+- Task disposal
+
+### Usage Tips
+
+- Use `DEBUG=go-go-scope:*` when debugging cancellation issues
+- Check task IDs to trace individual task lifecycles
+- Scope names (set via `name` option) appear in logs for easier identification
+- Duration values in logs are in milliseconds
 
 ## License
 

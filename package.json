@@ -33,6 +33,7 @@
   "license": "MIT",
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@types/debug": "^4.1.12",
     "@types/node": "^22.15.17",
     "pkgroll": "^2.12.2",
     "typescript": "^5.8.3",
@@ -40,5 +41,8 @@
   },
   "peerDependencies": {
     "go-go-try": "^6.0.0"
+  },
+  "dependencies": {
+    "debug": "^4.4.3"
   }
 }

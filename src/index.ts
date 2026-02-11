@@ -5,6 +5,11 @@
  * with automatic cleanup via the `using` and `await using` syntax.
  */
 
+import createDebug from "debug";
+
+const debugScope = createDebug("go-go-scope:scope");
+const debugTask = createDebug("go-go-scope:task");
+
 export type Result<E, T> = readonly [E | undefined, T | undefined];
 export type Success<T> = readonly [undefined, T];
 export type Failure<E> = readonly [E, undefined];
@@ -85,23 +90,30 @@ export interface ScopeOptions {
  * A disposable task that runs within a Scope.
  * Implements PromiseLike for await support and Disposable for cleanup.
  */
+let taskIdCounter = 0;
+
 export class Task<T> implements PromiseLike<T>, Disposable {
 	private readonly promise: Promise<T>;
 	private readonly abortController: AbortController;
 	private settled = false;
+	private readonly id: number;
 
 	constructor(
 		fn: (signal: AbortSignal) => Promise<T>,
 		parentSignal: AbortSignal,
 	) {
+		this.id = ++taskIdCounter;
+		debugTask("[%d] creating task", this.id);
 		this.abortController = new AbortController();
 
 		// Link to parent - if parent aborts, we abort
 		const parentAbortHandler = () => {
+			debugTask("[%d] aborting due to parent signal", this.id);
 			this.abortController.abort(parentSignal.reason);
 		};
 
 		if (parentSignal.aborted) {
+			debugTask("[%d] parent already aborted, aborting immediately", this.id);
 			this.abortController.abort(parentSignal.reason);
 		} else {
 			parentSignal.addEventListener("abort", parentAbortHandler, {
@@ -110,12 +122,21 @@ export class Task<T> implements PromiseLike<T>, Disposable {
 		}
 
 		// Create the promise
-		this.promise = fn(this.abortController.signal).finally(() => {
-			this.settled = true;
-			if (!parentSignal.aborted) {
-				parentSignal.removeEventListener("abort", parentAbortHandler);
-			}
-		});
+		this.promise = fn(this.abortController.signal)
+			.then((value) => {
+				debugTask("[%d] completed successfully", this.id);
+				return value;
+			})
+			.catch((error) => {
+				debugTask("[%d] failed with error: %s", this.id, error);
+				throw error;
+			})
+			.finally(() => {
+				this.settled = true;
+				if (!parentSignal.aborted) {
+					parentSignal.removeEventListener("abort", parentAbortHandler);
+				}
+			});
 	}
 
 	/**
@@ -152,7 +173,10 @@ export class Task<T> implements PromiseLike<T>, Disposable {
 	 */
 	[Symbol.dispose](): void {
 		if (!this.settled) {
+			debugTask("[%d] disposing (aborting)", this.id);
 			this.abortController.abort("task disposed");
+		} else {
+			debugTask("[%d] already settled, skipping dispose", this.id);
 		}
 	}
 }
@@ -219,6 +243,8 @@ export class AsyncDisposableResource<T> implements AsyncDisposable {
  * const [r1, r2] = await Promise.all([t1, t2])
  * ```
  */
+let scopeIdCounter = 0;
+
 export class Scope implements AsyncDisposable {
 	private readonly abortController: AbortController;
 	private readonly disposables: (Disposable | AsyncDisposable)[] = [];
@@ -229,8 +255,18 @@ export class Scope implements AsyncDisposable {
 	private taskCount = 0;
 	private spanHasError = false;
 	private readonly startTime: number;
+	private readonly id: number;
+	private readonly name: string;
 
 	constructor(options?: ScopeOptions) {
+		this.id = ++scopeIdCounter;
+		this.name = options?.name ?? `scope-${this.id}`;
+		debugScope(
+			"[%s] creating scope (timeout: %d, parent signal: %s)",
+			this.name,
+			options?.timeout ?? 0,
+			options?.signal ? "yes" : "no",
+		);
 		this.abortController = new AbortController();
 		this.tracer = options?.tracer;
 		this.startTime = performance.now();
@@ -250,6 +286,7 @@ export class Scope implements AsyncDisposable {
 			const parentSignal = options.signal;
 			const parentHandler = () => {
 				const reason = parentSignal.reason;
+				debugScope("[%s] aborting due to parent signal: %s", this.name, reason);
 				this.span?.recordException(
 					reason instanceof Error ? reason : new Error(String(reason)),
 				);
@@ -261,6 +298,7 @@ export class Scope implements AsyncDisposable {
 				this.abortController.abort(reason);
 			};
 			if (options.signal.aborted) {
+				debugScope("[%s] parent already aborted", this.name);
 				this.abortController.abort(options.signal.reason);
 			} else {
 				options.signal.addEventListener("abort", parentHandler, { once: true });
@@ -271,6 +309,7 @@ export class Scope implements AsyncDisposable {
 		if (options?.timeout !== undefined && options.timeout > 0) {
 			this.timeoutId = setTimeout(() => {
 				const error = new Error(`timeout after ${options.timeout}ms`);
+				debugScope("[%s] timeout after %dms", this.name, options.timeout);
 				this.span?.recordException(error);
 				this.span?.setStatus({
 					code: SpanStatusCode.ERROR,
@@ -312,6 +351,8 @@ export class Scope implements AsyncDisposable {
 
 		this.taskCount++;
 		const taskIndex = this.taskCount;
+		const taskName = options?.name ?? `task-${taskIndex}`;
+		debugScope('[%s] spawning task #%d "%s"', this.name, taskIndex, taskName);
 
 		// Merge default attributes with custom ones
 		const attributes: Record<string, unknown> = {
@@ -349,6 +390,12 @@ export class Scope implements AsyncDisposable {
 
 		const task = new Task(wrappedFn, this.abortController.signal);
 		this.disposables.push(task);
+		debugScope(
+			"[%s] task #%d added to disposables (total: %d)",
+			this.name,
+			taskIndex,
+			this.disposables.length,
+		);
 		return task;
 	}
 
@@ -392,6 +439,11 @@ export class Scope implements AsyncDisposable {
 
 		const resource = new AsyncDisposableResource(acquire, dispose);
 		this.disposables.push(resource);
+		debugScope(
+			"[%s] acquired resource (total disposables: %d)",
+			this.name,
+			this.disposables.length,
+		);
 		return resource.acquire();
 	}
 
@@ -401,9 +453,16 @@ export class Scope implements AsyncDisposable {
 	 */
 	async [Symbol.asyncDispose](): Promise<void> {
 		if (this.disposed) {
+			debugScope("[%s] already disposed, skipping", this.name);
 			return;
 		}
 
+		debugScope(
+			"[%s] disposing scope (tasks: %d, disposables: %d)",
+			this.name,
+			this.taskCount,
+			this.disposables.length,
+		);
 		this.disposed = true;
 
 		// Clear timeout if set
@@ -412,24 +471,41 @@ export class Scope implements AsyncDisposable {
 		}
 
 		// Abort all tasks
+		debugScope("[%s] aborting all tasks", this.name);
 		this.abortController.abort(new Error("scope disposed"));
 
 		// Dispose all resources in reverse order (LIFO)
 		const errors: unknown[] = [];
+		let disposeIndex = 0;
 		for (const disposable of [...this.disposables].reverse()) {
+			disposeIndex++;
 			try {
+				debugScope(
+					"[%s] disposing resource %d/%d",
+					this.name,
+					disposeIndex,
+					this.disposables.length,
+				);
 				if (Symbol.asyncDispose in disposable) {
 					await disposable[Symbol.asyncDispose]();
 				} else if (Symbol.dispose in disposable) {
 					disposable[Symbol.dispose]();
 				}
 			} catch (error) {
+				debugScope(
+					"[%s] error disposing resource %d: %s",
+					this.name,
+					disposeIndex,
+					error,
+				);
 				errors.push(error);
 			}
 		}
 
 		// Clear the disposables list
+		const disposedCount = this.disposables.length;
 		this.disposables.length = 0;
+		debugScope("[%s] cleared %d disposables", this.name, disposedCount);
 
 		// End the scope span
 		if (errors.length > 0) {
@@ -457,6 +533,12 @@ export class Scope implements AsyncDisposable {
 		this.span?.setAttributes?.({ "scope.duration_ms": duration });
 
 		this.span?.end();
+		debugScope(
+			"[%s] scope disposed (duration: %dms, errors: %d)",
+			this.name,
+			Math.round(duration),
+			errors.length,
+		);
 
 		// If any disposals threw, aggregate and rethrow
 		if (errors.length > 0) {
@@ -468,6 +550,50 @@ export class Scope implements AsyncDisposable {
 			);
 			throw aggregate;
 		}
+	}
+
+	/** Create a channel within this scope. */
+	channel<T>(capacity?: number): Channel<T> {
+		const ch = new Channel<T>(capacity ?? 0, this.signal);
+		this.acquire(
+			async () => ch,
+			async () => ch[Symbol.asyncDispose](),
+		).catch(() => {});
+		return ch;
+	}
+
+	/** Create a semaphore within this scope. */
+	semaphore(permits: number): Semaphore {
+		const sem = new Semaphore(permits, this.signal);
+		this.acquire(
+			async () => sem,
+			async () => sem[Symbol.asyncDispose](),
+		).catch(() => {});
+		return sem;
+	}
+
+	/** Create a circuit breaker within this scope. */
+	circuitBreaker(options?: CircuitBreakerOptions): CircuitBreaker {
+		const cb = new CircuitBreaker(options, this.signal);
+		this.acquire(
+			async () => cb,
+			async () => cb[Symbol.asyncDispose](),
+		).catch(() => {});
+		return cb;
+	}
+
+	/** Wrap an AsyncIterable with scope cancellation. */
+	stream<T>(source: AsyncIterable<T>): AsyncGenerator<T> {
+		return stream(source, this.signal);
+	}
+
+	/** Poll a function at regular intervals. */
+	poll<T>(
+		fn: (signal: AbortSignal) => Promise<T>,
+		onValue: (value: T) => void | Promise<void>,
+		options?: Omit<PollOptions, "signal">,
+	): Promise<void> {
+		return poll(fn, onValue, { ...options, signal: this.signal });
 	}
 }
 
@@ -844,7 +970,7 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 
 	constructor(
 		private capacity: number,
-		private parentSignal?: AbortSignal,
+		parentSignal?: AbortSignal,
 	) {
 		if (parentSignal) {
 			parentSignal.addEventListener(
@@ -1035,10 +1161,7 @@ export class Semaphore implements AsyncDisposable {
 	private aborted = false;
 	private abortReason: unknown;
 
-	constructor(
-		initialPermits: number,
-		private parentSignal?: AbortSignal,
-	) {
+	constructor(initialPermits: number, parentSignal?: AbortSignal) {
 		this.permits = initialPermits;
 
 		if (parentSignal) {
@@ -1398,65 +1521,3 @@ export async function poll<T>(
 		await s[Symbol.asyncDispose]();
 	}
 }
-
-// Add methods to Scope prototype
-
-declare module "." {
-	interface Scope {
-		/** Create a channel within this scope. */
-		channel<T>(capacity?: number): Channel<T>;
-		/** Create a semaphore within this scope. */
-		semaphore(permits: number): Semaphore;
-		/** Create a circuit breaker within this scope. */
-		circuitBreaker(options?: CircuitBreakerOptions): CircuitBreaker;
-		/** Wrap an AsyncIterable with scope cancellation. */
-		stream<T>(source: AsyncIterable<T>): AsyncGenerator<T>;
-		/** Poll a function at regular intervals. */
-		poll<T>(
-			fn: (signal: AbortSignal) => Promise<T>,
-			onValue: (value: T) => void | Promise<void>,
-			options?: Omit<PollOptions, "signal">,
-		): Promise<void>;
-	}
-}
-
-Scope.prototype.channel = function <T>(capacity = 0): Channel<T> {
-	const ch = new Channel<T>(capacity, this.signal);
-	this.acquire(
-		async () => ch,
-		async () => ch[Symbol.asyncDispose](),
-	).catch(() => {}); // Channel cleanup is handled by dispose
-	return ch;
-};
-
-Scope.prototype.semaphore = function (permits: number): Semaphore {
-	const sem = new Semaphore(permits, this.signal);
-	this.acquire(
-		async () => sem,
-		async () => sem[Symbol.asyncDispose](),
-	).catch(() => {});
-	return sem;
-};
-
-Scope.prototype.circuitBreaker = function (
-	options?: CircuitBreakerOptions,
-): CircuitBreaker {
-	const cb = new CircuitBreaker(options, this.signal);
-	this.acquire(
-		async () => cb,
-		async () => cb[Symbol.asyncDispose](),
-	).catch(() => {});
-	return cb;
-};
-
-Scope.prototype.stream = function <T>(source: AsyncIterable<T>) {
-	return stream(source, this.signal);
-};
-
-Scope.prototype.poll = function <T>(
-	fn: (signal: AbortSignal) => Promise<T>,
-	onValue: (value: T) => void | Promise<void>,
-	options?: Omit<PollOptions, "signal">,
-) {
-	return poll(fn, onValue, { ...options, signal: this.signal });
-};

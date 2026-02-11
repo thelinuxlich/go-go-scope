@@ -2,12 +2,8 @@ import { describe, expect, test } from "vitest";
 import {
 	AsyncDisposableResource,
 	type Failure,
-	type Result,
-	Scope,
-	type Span,
 	SpanStatusCode,
 	type Success,
-	Task,
 	type Tracer,
 	parallel,
 	parallelResults,
@@ -38,9 +34,9 @@ describe("Task", () => {
 		let started = false;
 		let aborted = false;
 
-		using t = s.spawn(async (signal) => {
+		s.spawn(async (signal) => {
 			started = true;
-			return new Promise<string>((resolve, reject) => {
+			return new Promise<string>((_resolve, reject) => {
 				signal.addEventListener("abort", () => {
 					aborted = true;
 					reject(new Error("aborted"));
@@ -50,14 +46,14 @@ describe("Task", () => {
 		});
 
 		// Give task time to start
-		await new Promise((r) => setTimeout(r, 10));
+		await new Promise((_r) => setTimeout(_r, 10));
 		expect(started).toBe(true);
 
 		// Abort the scope - suppress rejection
 		await s[Symbol.asyncDispose]().catch(() => {});
 
 		// Give time for abort to propagate
-		await new Promise((r) => setTimeout(r, 10));
+		await new Promise((_r) => setTimeout(_r, 10));
 		expect(aborted).toBe(true);
 	});
 
@@ -65,8 +61,8 @@ describe("Task", () => {
 		const s = scope();
 
 		let aborted = false;
-		using t = s.spawn(async (signal) => {
-			return new Promise<string>((resolve, reject) => {
+		const t = s.spawn(async (signal) => {
+			return new Promise<string>((_resolve, reject) => {
 				signal.addEventListener("abort", () => {
 					aborted = true;
 					reject(new Error("aborted"));
@@ -79,7 +75,7 @@ describe("Task", () => {
 		t[Symbol.dispose]();
 
 		// Give time for abort to propagate
-		await new Promise((r) => setTimeout(r, 10));
+		await new Promise((_r) => setTimeout(_r, 10));
 		expect(aborted).toBe(true);
 	});
 
@@ -119,8 +115,8 @@ describe("Scope", () => {
 		let t1Aborted = false;
 		let t2Aborted = false;
 
-		using t1 = s.spawn(async (signal) => {
-			return new Promise<string>((_, reject) => {
+		s.spawn(async (signal) => {
+			return new Promise<string>((_resolve, reject) => {
 				signal.addEventListener("abort", () => {
 					t1Aborted = true;
 					reject(new Error("t1 aborted"));
@@ -129,8 +125,8 @@ describe("Scope", () => {
 			});
 		});
 
-		using t2 = s.spawn(async (signal) => {
-			return new Promise<string>((_, reject) => {
+		s.spawn(async (signal) => {
+			return new Promise<string>((_resolve, reject) => {
 				signal.addEventListener("abort", () => {
 					t2Aborted = true;
 					reject(new Error("t2 aborted"));
@@ -142,7 +138,7 @@ describe("Scope", () => {
 		await s[Symbol.asyncDispose]().catch(() => {});
 
 		// Give time for propagation
-		await new Promise((r) => setTimeout(r, 10));
+		await new Promise((_r) => setTimeout(_r, 10));
 
 		expect(t1Aborted).toBe(true);
 		expect(t2Aborted).toBe(true);
@@ -153,8 +149,8 @@ describe("Scope", () => {
 		const s = scope({ timeout: 50 });
 
 		let aborted = false;
-		using t = s.spawn(async (signal) => {
-			return new Promise<string>((_, reject) => {
+		s.spawn(async (signal) => {
+			return new Promise<string>((_resolve, reject) => {
 				signal.addEventListener("abort", () => {
 					aborted = true;
 					reject(new Error("timeout"));
@@ -174,8 +170,8 @@ describe("Scope", () => {
 		const s = scope({ signal: parentController.signal });
 
 		let aborted = false;
-		using t = s.spawn(async (signal) => {
-			return new Promise<string>((_, reject) => {
+		s.spawn(async (signal) => {
+			return new Promise<string>((_resolve, reject) => {
 				signal.addEventListener("abort", () => {
 					aborted = true;
 					reject(new Error("parent aborted"));
@@ -236,7 +232,7 @@ describe("Scope", () => {
 			return { value: 42 };
 		};
 
-		const disposeResource = async (r: { value: number }) => {
+		const disposeResource = async (_r: { value: number }) => {
 			disposed = true;
 		};
 
@@ -260,17 +256,23 @@ describe("Scope", () => {
 
 			await s.acquire(
 				async () => "first",
-				async () => order.push("first-disposed"),
+				async () => {
+					order.push("first-disposed");
+				},
 			);
 
 			await s.acquire(
 				async () => "second",
-				async () => order.push("second-disposed"),
+				async () => {
+					order.push("second-disposed");
+				},
 			);
 
 			await s.acquire(
 				async () => "third",
-				async () => order.push("third-disposed"),
+				async () => {
+					order.push("third-disposed");
+				},
 			);
 		}
 
@@ -598,7 +600,7 @@ describe("parallel()", () => {
 
 describe("parallelResults()", () => {
 	test("returns Results for all tasks", async () => {
-		const results = await parallelResults([
+		const results = await parallelResults<string | number>([
 			() => Promise.resolve("success"),
 			() => Promise.reject(new Error("failure")),
 			() => Promise.resolve(42),
@@ -610,8 +612,10 @@ describe("parallelResults()", () => {
 		expect(results[0]).toEqual([undefined, "success"]);
 
 		// Failure case
-		expect(results[1][0]).toBe("failure");
-		expect(results[1][1]).toBeUndefined();
+		const failure = results[1];
+		expect(failure).toBeDefined();
+		expect(failure?.[0]).toBe("failure");
+		expect(failure?.[1]).toBeUndefined();
 
 		// Another success
 		expect(results[2]).toEqual([undefined, 42]);
@@ -623,8 +627,8 @@ describe("parallelResults()", () => {
 			() => Promise.reject(new Error("error2")),
 		]);
 
-		expect(results[0][0]).toBe("error1");
-		expect(results[1][0]).toBe("error2");
+		expect(results[0]?.[0]).toBe("error1");
+		expect(results[1]?.[0]).toBe("error2");
 	});
 
 	test("returns empty array for empty input", async () => {
@@ -685,6 +689,9 @@ describe("Type exports", () => {
 
 		expect(success).toEqual([undefined, "value"]);
 		expect(failure).toEqual(["error", undefined]);
+		// Suppress unused warnings by using the values
+		void success;
+		void failure;
 	});
 });
 
@@ -700,18 +707,22 @@ describe("Integration scenarios", () => {
 			await s.acquire(
 				async () => {
 					events.push("db-connected");
-					return { query: async (sql: string) => `result-of-${sql}` };
+					return { query: async (_sql: string) => `result-of-${_sql}` };
 				},
-				async () => events.push("db-disconnected"),
+				async () => {
+					events.push("db-disconnected");
+				},
 			);
 
 			// Simulate cache connection
 			await s.acquire(
 				async () => {
 					events.push("cache-connected");
-					return { get: async (key: string) => `cached-${key}` };
+					return { get: async (_key: string) => `cached-${_key}` };
 				},
-				async () => events.push("cache-disconnected"),
+				async () => {
+					events.push("cache-disconnected");
+				},
 			);
 
 			// Run parallel queries
@@ -782,10 +793,10 @@ describe("Integration scenarios", () => {
 		await using outer = scope();
 
 		// Outer task
-		using outerTask = outer.spawn(async (outerSignal) => {
+		outer.spawn(async (outerSignal) => {
 			await using inner = scope({ signal: outerSignal });
 
-			using innerTask = inner.spawn(async (innerSignal) => {
+			inner.spawn(async (innerSignal) => {
 				return new Promise<string>((_, reject) => {
 					innerSignal.addEventListener("abort", () => {
 						innerAborted = true;
@@ -796,7 +807,7 @@ describe("Integration scenarios", () => {
 			});
 
 			try {
-				return await innerTask;
+				return await inner;
 			} catch {
 				return "inner-cancelled";
 			}
