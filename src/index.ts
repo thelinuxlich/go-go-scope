@@ -283,6 +283,7 @@ export class Scope<
 	private readonly context?: Context;
 	private taskCount = 0;
 	private spanHasError = false;
+	private readonly activeTasks = new Set<Task<unknown>>();
 	private readonly startTime: number;
 	private readonly id: number;
 	private readonly name: string;
@@ -781,13 +782,18 @@ export class Scope<
 			}
 		}, this.abortController.signal);
 
-		// Record span status on completion
+		// Track active task
+		this.activeTasks.add(task as Task<unknown>);
+
+		// Record span status on completion and remove from active tasks
 		task.then(
 			() => {
+				this.activeTasks.delete(task as Task<unknown>);
 				taskSpan?.setStatus?.({ code: SpanStatusCode.OK });
 				taskSpan?.end?.();
 			},
 			() => {
+				this.activeTasks.delete(task as Task<unknown>);
 				taskSpan?.setStatus?.({
 					code: SpanStatusCode.ERROR,
 					message: "task failed",
@@ -947,6 +953,23 @@ export class Scope<
 		const disposedCount = this.disposables.length;
 		this.disposables.length = 0;
 		debugScope("[%s] cleared %d disposables", this.name, disposedCount);
+
+		// Wait for all active tasks to settle before ending the span
+		// This ensures the scope duration includes all task execution time
+		if (this.activeTasks.size > 0) {
+			debugScope(
+				"[%s] waiting for %d active tasks to settle",
+				this.name,
+				this.activeTasks.size,
+			);
+			await Promise.allSettled(
+				Array.from(this.activeTasks).map((t) =>
+					Promise.resolve(t).catch(() => {}),
+				),
+			);
+			this.activeTasks.clear();
+			debugScope("[%s] all tasks settled", this.name);
+		}
 
 		// End the scope span
 		if (errors.length > 0) {
