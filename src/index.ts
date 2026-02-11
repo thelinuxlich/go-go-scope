@@ -296,7 +296,10 @@ export class AsyncDisposableResource<T> implements AsyncDisposable {
  */
 let scopeIdCounter = 0;
 
-export class Scope implements AsyncDisposable {
+export class Scope<
+	Services extends Record<string, unknown> = Record<string, never>,
+> implements AsyncDisposable
+{
 	private readonly abortController: AbortController;
 	private readonly disposables: (Disposable | AsyncDisposable)[] = [];
 	private readonly timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -310,6 +313,7 @@ export class Scope implements AsyncDisposable {
 	private readonly name: string;
 	private readonly concurrencySemaphore?: Semaphore;
 	private readonly scopeCircuitBreaker?: CircuitBreaker;
+	private services: Services = {} as Services;
 
 	constructor(options?: ScopeOptions) {
 		this.id = ++scopeIdCounter;
@@ -424,7 +428,7 @@ export class Scope implements AsyncDisposable {
 	 * Scope-level concurrency and circuit breaker (if configured) are automatically applied.
 	 */
 	spawn<T>(
-		fn: (signal: AbortSignal) => Promise<T>,
+		fn: (ctx: { services: Services; signal: AbortSignal }) => Promise<T>,
 		options?: TaskOptions,
 	): Task<T> {
 		if (this.disposed) {
@@ -482,8 +486,13 @@ export class Scope implements AsyncDisposable {
 				throw signal.reason;
 			}
 
+			// Helper to call fn with or without services injection
+			const callFn = (sig: AbortSignal): Promise<T> => {
+				return fn({ services: this.services, signal: sig });
+			};
+
 			// 1. Apply circuit breaker if configured at scope level
-			let executeFn = fn;
+			let executeFn = callFn;
 			if (this.scopeCircuitBreaker) {
 				const cb = this.scopeCircuitBreaker;
 				const circuitState = cb.currentState;
@@ -495,7 +504,7 @@ export class Scope implements AsyncDisposable {
 				executeFn = async (sig) => {
 					debugTask("[%s] executing through circuit breaker", taskName);
 					try {
-						const result = await cb.execute(() => fn(sig));
+						const result = await cb.execute(() => callFn(sig));
 						debugTask("[%s] circuit breaker: success", taskName);
 						return result;
 					} catch (error) {
@@ -793,7 +802,7 @@ export class Scope implements AsyncDisposable {
 		options?: TaskOptions,
 	): Task<Result<string, T>> {
 		return this.spawn(
-			async (signal) => {
+			async ({ signal }) => {
 				// Build execution pipeline inside task's try/catch
 				let executeFn = fn;
 
@@ -919,28 +928,70 @@ export class Scope implements AsyncDisposable {
 	}
 
 	/**
-	 * Acquire a resource that will be automatically disposed when the scope exits.
+	 * Provide a service that will be available to tasks in this scope.
+	 * Services are automatically cleaned up when the scope exits.
 	 *
-	 * @param acquire - Function to acquire the resource
-	 * @param dispose - Function to dispose the resource
-	 * @returns The acquired resource
+	 * @param key - Unique key for the service
+	 * @param factory - Function to create the service
+	 * @param cleanup - Optional cleanup function (defaults to no-op)
+	 * @returns The scope with the service added (for chaining)
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *   .provide('db', () => openDatabase(), (db) => db.close())
+	 *   .provide('cache', () => createCache())
+	 *
+	 * const result = await s.spawn((svcs) => svcs.db.query('SELECT 1'))
+	 * ```
 	 */
-	async acquire<T>(
-		acquire: () => Promise<T>,
-		dispose: (resource: T) => Promise<void>,
-	): Promise<T> {
+	provide<K extends string, T>(
+		key: K,
+		factory: () => T,
+		cleanup?: (service: T) => void | Promise<void>,
+	): Scope<Services & Record<K, T>> {
 		if (this.disposed) {
-			throw new Error("Cannot acquire resource on disposed scope");
+			throw new Error("Cannot provide service on disposed scope");
 		}
 
-		const resource = new AsyncDisposableResource(acquire, dispose);
-		this.disposables.push(resource);
+		const service = factory();
+
+		// Store service
+		(this.services as Record<string, unknown>)[key] = service;
+
+		// Register cleanup if provided
+		if (cleanup) {
+			const cleanupDisposable: AsyncDisposable = {
+				async [Symbol.asyncDispose]() {
+					// Errors propagate to scope disposal to be recorded in span
+					await cleanup(service);
+				},
+			};
+			this.disposables.push(cleanupDisposable);
+		}
+
 		debugScope(
-			"[%s] acquired resource (total disposables: %d)",
+			"[%s] provided service '%s' (total disposables: %d)",
 			this.name,
+			key,
 			this.disposables.length,
 		);
-		return resource.acquire();
+
+		// Return with updated type
+		return this as Scope<Services & Record<K, T>>;
+	}
+
+	/**
+	 * Get a service by key.
+	 *
+	 * @param key - The service key
+	 * @returns The service
+	 */
+	use<K extends keyof Services>(key: K): Services[K] {
+		if (this.disposed) {
+			throw new Error("Cannot use service on disposed scope");
+		}
+		return this.services[key];
 	}
 
 	/**
@@ -1051,10 +1102,11 @@ export class Scope implements AsyncDisposable {
 	/** Create a channel within this scope. */
 	channel<T>(capacity?: number): Channel<T> {
 		const ch = new Channel<T>(capacity ?? 0, this.signal);
-		this.acquire(
-			async () => ch,
-			async () => ch[Symbol.asyncDispose](),
-		).catch(() => {});
+		this.disposables.push({
+			async [Symbol.asyncDispose]() {
+				await ch[Symbol.asyncDispose]();
+			},
+		});
 		return ch;
 	}
 
@@ -1216,8 +1268,8 @@ export interface RaceOptions {
  * @example
  * ```typescript
  * const winner = await race([
- *   (signal) => fetch('https://a.com', { signal }),
- *   (signal) => fetch('https://b.com', { signal }),
+ *   ({ signal }) => fetch('https://a.com', { signal }),
+ *   ({ signal }) => fetch('https://b.com', { signal }),
  * ])
  * ```
  */
@@ -1262,7 +1314,7 @@ export async function race<T>(
 
 		// Spawn all tasks with tracking
 		const tasks = factories.map((factory, idx) =>
-			s.spawn(async (signal) => {
+			s.spawn(async ({ signal }) => {
 				const result = await factory(signal);
 				settledCount++;
 				if (winnerIndex === -1) {
@@ -1304,7 +1356,7 @@ export async function race<T>(
  * @example
  * ```typescript
  * const results = await parallel(
- *   urls.map(url => (signal) => fetch(url, { signal })),
+ *   urls.map(url => ({ signal }) => fetch(url, { signal })),
  *   { concurrency: 3 }
  * )
  * ```
@@ -1367,7 +1419,7 @@ export async function parallel<T>(
 			idx: number,
 		): Promise<{ result?: T; error?: unknown; index: number }> => {
 			try {
-				const result = await s.spawn((signal) => factory(signal));
+				const result = await s.spawn(({ signal }) => factory(signal));
 				completedCount++;
 				debugScope(
 					"[parallel] task %d/%d completed",
@@ -1492,8 +1544,8 @@ export async function parallel<T>(
  * @example
  * ```typescript
  * const results = await parallelResults([
- *   (signal) => fetchUser(1, { signal }),
- *   (signal) => fetchUser(2, { signal }),
+ *   ({ signal }) => fetchUser(1, { signal }),
+ *   ({ signal }) => fetchUser(2, { signal }),
  * ])
  * // results is [Result<string, User>, Result<string, User>]
  * ```
@@ -1535,7 +1587,7 @@ export async function parallelResults<T>(
 
 		// Create a task for each factory that catches errors
 		const createTask = (factory: (signal: AbortSignal) => Promise<T>) =>
-			s.spawn(async (signal) => {
+			s.spawn(async ({ signal }) => {
 				try {
 					const result = await factory(signal);
 					return [undefined, result] as Success<T>;
@@ -2155,7 +2207,7 @@ export interface PollController {
  * ```typescript
  * await using s = scope()
  *
- * const controller = s.poll(async (signal) => {
+ * const controller = s.poll(async ({ signal }) => {
  *   const config = await fetchConfig({ signal })
  *   updateConfig(config)
  * }, { interval: 30000 })

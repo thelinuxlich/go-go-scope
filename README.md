@@ -34,27 +34,40 @@ import { goTry } from 'go-go-try'
 async function fetchUserData(userId: string) {
   await using s = scope({ timeout: 5000 })
   
-  using userTask = s.spawn(() => fetchUser(userId))
-  using postsTask = s.spawn(() => fetchPosts(userId))
+  using userTask = s.spawn(({ signal }) => fetchUser(userId, { signal }))
+  using postsTask = s.spawn(({ signal }) => fetchPosts(userId, { signal }))
   
   const [user, posts] = await Promise.all([userTask, postsTask])
   return { user, posts }
   // Tasks auto-cancelled if scope exits (timeout, error, or return)
 }
 
+// With dependency injection
+async function fetchWithDatabase(userId: string) {
+  await using s = scope()
+    .provide('db', () => openDatabase(), db => db.close())
+  
+  using task = s.spawn(async ({ services, signal }) => {
+    return services.db.query('SELECT * FROM users WHERE id = ?', [userId], { signal })
+  })
+  
+  return await task
+  // Database closes automatically when scope exits
+}
+
 // Race multiple operations - signal available for cancellation
 await using s = scope()
 const fastest = await s.race([
-  (signal) => fetch('https://replica-a.com', { signal }),
-  (signal) => fetch('https://replica-b.com', { signal }),
-  (signal) => fetch('https://replica-c.com', { signal }),
+  ({ signal }) => fetch('https://replica-a.com', { signal }),
+  ({ signal }) => fetch('https://replica-b.com', { signal }),
+  ({ signal }) => fetch('https://replica-c.com', { signal }),
 ])
 // Slow replicas are automatically cancelled!
 
 // Task-level timeout
 await using s = scope()
 const result = await s.spawn(
-  async (signal) => {
+  async ({ signal }) => {
     const response = await fetch(url, { signal })
     return response.json()
   },
@@ -64,9 +77,9 @@ const result = await s.spawn(
 // Parallel with error tolerance - returns Result tuples
 await using s = scope()
 const results = await s.parallelTasks([
-  (signal) => fetchUser(1, { signal }),  // might fail
-  (signal) => fetchUser(2, { signal }),  // might fail
-  (signal) => fetchUser(3, { signal }),  // might fail
+  ({ signal }) => fetchUser(1, { signal }),  // might fail
+  ({ signal }) => fetchUser(2, { signal }),  // might fail
+  ({ signal }) => fetchUser(3, { signal }),  // might fail
 ])
 // Each result is [string | undefined, User | undefined]
 for (const [err, user] of results) {
@@ -103,8 +116,10 @@ Spawns a task within the scope. Task is cancelled when scope exits.
 
 Supports retry and timeout via TaskOptions. Inherits scope's concurrency and circuit breaker settings.
 
+The task function receives a context object with `{ services, signal }`:
+
 ```typescript
-using task = s.spawn(async (signal) => {
+using task = s.spawn(async ({ services, signal }) => {
   const response = await fetch(url, { signal })
   return response.json()
 })
@@ -112,10 +127,20 @@ using task = s.spawn(async (signal) => {
 const result = await task
 ```
 
+With services from `provide()`:
+```typescript
+await using s = scope()
+  .provide('db', () => openDatabase())
+
+using task = s.spawn(async ({ services }) => {
+  return services.db.query('SELECT 1')
+})
+```
+
 With retry:
 ```typescript
 using task = s.spawn(
-  async (signal) => fetchUser(id, { signal }),
+  async ({ signal }) => fetchUser(id, { signal }),
   { 
     retry: {
       maxRetries: 3,
@@ -129,7 +154,7 @@ using task = s.spawn(
 With OpenTelemetry:
 ```typescript
 using task = s.spawn(
-  async (signal) => fetchUser(id, { signal }),
+  async ({ signal }) => fetchUser(id, { signal }),
   { 
     otel: {
       name: 'fetch-user',
@@ -194,7 +219,7 @@ interface TaskOptions {
 await using s = scope()
 
 using task = s.spawn(
-  async (signal) => {
+  async ({ signal }) => {
     const conn = await openConnection()
     return conn.query('SELECT * FROM users')
   },
@@ -220,16 +245,31 @@ When multiple options are specified, they execute in this order:
 4. Timeout (enforce time limit)
 5. Result Wrapping (`task()` only)
 
-### `Scope.acquire(acquire, dispose)`
+### `Scope.provide(key, factory, cleanup?)`
 
-Manages a resource with automatic cleanup.
+Registers a service/dependency that can be used by tasks in this scope. Services are automatically cleaned up when the scope exits.
 
 ```typescript
-const conn = await s.acquire(
-  () => openDatabase(),    // called immediately
-  (c) => c.close()         // called when scope exits
-)
+await using s = scope()
+  .provide('db', () => openDatabase(), (db) => db.close())
+  .provide('cache', () => createCache())
+
+// Access in tasks
+await s.spawn(({ services }) => {
+  return services.db.query('SELECT 1')
+})
 ```
+
+### `Scope.use(key)`
+
+Retrieves a previously registered service by key.
+
+```typescript
+const db = s.use('db')
+await db.query('SELECT 1')
+```
+
+**Note:** `provide()` returns the scope with updated types for type-safe dependency injection. Services are disposed in LIFO order when the scope exits.
 
 ### `Scope.race(factories)`
 
@@ -238,8 +278,8 @@ Race multiple operations - first wins, others cancelled. Uses the scope's signal
 ```typescript
 await using s = scope()
 const winner = await s.race([
-  (signal) => fetch('https://fast.com', { signal }),
-  (signal) => fetch('https://slow.com', { signal }),
+  ({ signal }) => fetch('https://fast.com', { signal }),
+  ({ signal }) => fetch('https://slow.com', { signal }),
 ])
 ```
 
@@ -250,8 +290,8 @@ Like `race`, but returns a `Result` tuple that never throws.
 ```typescript
 await using s = scope()
 const [err, winner] = await s.raceTasks([
-  (signal) => fetch('https://api1.com', { signal }),
-  (signal) => fetch('https://api2.com', { signal }),
+  ({ signal }) => fetch('https://api1.com', { signal }),
+  ({ signal }) => fetch('https://api2.com', { signal }),
 ])
 if (err) {
   console.log('All racers failed:', err)
@@ -267,7 +307,7 @@ Run factories in parallel. Uses the scope's concurrency limit and signal.
 ```typescript
 await using s = scope({ concurrency: 3 })
 const results = await s.parallel(
-  urls.map(url => (signal) => fetch(url, { signal }))
+  urls.map(url => ({ signal }) => fetch(url, { signal }))
 )
 ```
 
@@ -302,8 +342,8 @@ Like `parallel`, but returns `Result` tuples. By default, never throws.
 ```typescript
 await using s = scope()
 const results = await s.parallelTasks([
-  (signal) => fetchUser(1, { signal }),  // might fail
-  (signal) => fetchUser(2, { signal }),  // might fail
+  ({ signal }) => fetchUser(1, { signal }),  // might fail
+  ({ signal }) => fetchUser(2, { signal }),  // might fail
 ])
 // Each result is [string | undefined, T | undefined]
 for (const [err, user] of results) {
@@ -342,8 +382,8 @@ All factory functions receive an `AbortSignal` that allows you to:
    ```typescript
    await using s = scope()
    await s.race([
-     (signal) => fetch('/api/a', { signal }),
-     (signal) => fetch('/api/b', { signal }),
+     ({ signal }) => fetch('/api/a', { signal }),
+     ({ signal }) => fetch('/api/b', { signal }),
    ])
    ```
 
@@ -351,7 +391,7 @@ All factory functions receive an `AbortSignal` that allows you to:
    ```typescript
    await using s = scope()
    await s.parallel([
-     (signal) => new Promise((resolve, reject) => {
+     ({ signal }) => new Promise((resolve, reject) => {
        const ws = new WebSocket('wss://example.com')
        ws.onopen = () => resolve(ws)
        
@@ -366,7 +406,7 @@ All factory functions receive an `AbortSignal` that allows you to:
 3. **Check if already aborted**:
    ```typescript
    await using s = scope()
-   using task = s.spawn(async (signal) => {
+   using task = s.spawn(async ({ signal }) => {
      if (signal.aborted) throw new Error('Already cancelled')
      return fetchData({ signal })
    }, { timeout: 1000 })
@@ -511,7 +551,7 @@ Auto-refresh data at intervals with a controllable poll:
 await using s = scope()
 
 const controller = s.poll(
-  (signal) => fetchConfig({ signal }),
+  ({ signal }) => fetchConfig({ signal }),
   (config) => updateUI(config),
   { interval: 30000 }  // Every 30 seconds
 )
@@ -603,8 +643,8 @@ Resources are disposed in **LIFO order** (reverse of creation):
 ```typescript
 await using s = scope()
 
-const r1 = await s.acquire(() => openA(), (a) => a.close())  // opened first
-const r2 = await s.acquire(() => openB(), (b) => b.close())  // opened second
+s.provide('a', () => openA(), (a) => a.close())  // opened first
+s.provide('b', () => openB(), (b) => b.close())  // opened second
 
 // On exit: B closes first, then A
 ```
@@ -617,7 +657,7 @@ All tasks receive an `AbortSignal` that is aborted when:
 - A parent signal is aborted
 
 ```typescript
-using task = s.spawn(async (signal) => {
+using task = s.spawn(async ({ signal }) => {
   // Check if already aborted
   if (signal.aborted) throw new Error('Already cancelled')
   
@@ -696,9 +736,9 @@ async function fetchFastestMirror() {
 async function fetchFastestMirror() {
   await using s = scope()
   return s.race([
-    (signal) => fetch('https://a.com', { signal }),
-    (signal) => fetch('https://b.com', { signal }),
-    (signal) => fetch('https://c.com', { signal })
+    ({ signal }) => fetch('https://a.com', { signal }),
+    ({ signal }) => fetch('https://b.com', { signal }),
+    ({ signal }) => fetch('https://c.com', { signal })
   ])
   // Slow requests are automatically cancelled!
 }
@@ -739,14 +779,10 @@ async function processBatch(items: string[]) {
 ```typescript
 async function processBatch(items: string[]) {
   await using s = scope({ concurrency: 5 })
-  
-  const db = await s.acquire(
-    () => openDatabase(),
-    (db) => db.close()
-  )
+    .provide('db', () => openDatabase(), (db) => db.close())
   
   return s.parallel(
-    items.map(item => () => db.query(item))
+    items.map(item => ({ services }) => services.db.query(item))
     // Uses scope's concurrency limit
   )
 }
@@ -840,21 +876,18 @@ async function processFile(filepath: string) {
 ```typescript
 async function processFile(filepath: string) {
   await using s = scope({ concurrency: 3 })
-  
-  const file = await s.acquire(
-    () => openFile(filepath),
-    (f) => f.close()
-  )
+    .provide('file', () => openFile(filepath), (f) => f.close())
   
   const tempFiles: string[] = []
   
   // Register cleanup for temp files
-  s.acquire(
-    () => Promise.resolve(),
+  s.provide(
+    'temp-cleanup',
+    () => ({}),  // dummy service
     () => Promise.all(tempFiles.map(t => unlink(t).catch(() => {})))
   )
   
-  const data = await file.read()
+  const data = await s.use('file').read()
   
   return s.parallel(
     data.items.map(item => async () => {
@@ -962,14 +995,10 @@ import { scope } from 'go-go-scope'
 
 async function getUserData() {
   await using s = scope()
+    .provide('db', () => openDatabase(), (db) => db.close())
   
-  const db = await s.acquire(
-    () => openDatabase(),
-    (db) => db.close()
-  )
-  
-  using userTask = s.spawn(() => db.query('SELECT * FROM users WHERE id = ?', [1]))
-  using postsTask = s.spawn(() => db.query('SELECT * FROM posts WHERE user_id = ?', [1]))
+  using userTask = s.spawn(({ services }) => services.db.query('SELECT * FROM users WHERE id = ?', [1]))
+  using postsTask = s.spawn(({ services }) => services.db.query('SELECT * FROM posts WHERE user_id = ?', [1]))
   
   const [user, posts] = await Promise.all([userTask, postsTask])
   return { user, posts }
@@ -1183,7 +1212,7 @@ async function startPolling() {
   
   // Poll every 30 seconds
   s.poll(
-    (signal) => fetchConfig({ signal }),
+    ({ signal }) => fetchConfig({ signal }),
     (config) => updateUI(config),
     { interval: 30000 }
   )
@@ -1246,7 +1275,7 @@ for await (const msg of ch) {
 // go-go-scope - Simple polling with immediate stop
 await using s = scope()
 s.poll(
-  (signal) => fetchStatus({ signal }),
+  ({ signal }) => fetchStatus({ signal }),
   (status) => updateUI(status),
   { interval: 5000 }
 )
@@ -1270,7 +1299,7 @@ s.poll(
 | **Error handling** | Built-in error channel | go-go-try Result tuples |
 | **Observability** | Built-in tracing, metrics | Bring your own |
 | **Retry/Schedule** | Excellent built-in support | Manual implementation |
-| **Dependency injection** | Sophisticated (Layers) | Simple (acquire) |
+| **Dependency injection** | Sophisticated (Layers) | Simple (provide/use) |
 | **Channels** | Via Queue/Hub | Native with async iteration |
 | **Polling** | Via Schedule | Built-in |
 | **Circuit breaker** | Via @effect/cluster | Built-in |

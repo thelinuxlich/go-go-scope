@@ -31,7 +31,7 @@ describe("Task", () => {
 		let aborted = false;
 
 		void Promise.resolve(
-			s.spawn(async (signal) => {
+			s.spawn(async ({ signal }) => {
 				started = true;
 				return new Promise<string>((_resolve, reject) => {
 					signal.addEventListener("abort", () => {
@@ -59,7 +59,7 @@ describe("Task", () => {
 		const s = scope();
 
 		let aborted = false;
-		const t = s.spawn(async (signal) => {
+		const t = s.spawn(async ({ signal }) => {
 			return new Promise<string>((_resolve, reject) => {
 				signal.addEventListener("abort", () => {
 					aborted = true;
@@ -115,7 +115,7 @@ describe("Scope", () => {
 		let t2Aborted = false;
 
 		void Promise.resolve(
-			s.spawn(async (signal) => {
+			s.spawn(async ({ signal }) => {
 				return new Promise<string>((_resolve, reject) => {
 					signal.addEventListener("abort", () => {
 						t1Aborted = true;
@@ -127,7 +127,7 @@ describe("Scope", () => {
 		).catch(() => {});
 
 		void Promise.resolve(
-			s.spawn(async (signal) => {
+			s.spawn(async ({ signal }) => {
 				return new Promise<string>((_resolve, reject) => {
 					signal.addEventListener("abort", () => {
 						t2Aborted = true;
@@ -153,7 +153,7 @@ describe("Scope", () => {
 
 		let aborted = false;
 		void Promise.resolve(
-			s.spawn(async (signal) => {
+			s.spawn(async ({ signal }) => {
 				return new Promise<string>((_resolve, reject) => {
 					signal.addEventListener("abort", () => {
 						aborted = true;
@@ -176,7 +176,7 @@ describe("Scope", () => {
 
 		let aborted = false;
 		void Promise.resolve(
-			s.spawn(async (signal) => {
+			s.spawn(async ({ signal }) => {
 				return new Promise<string>((_resolve, reject) => {
 					signal.addEventListener("abort", () => {
 						aborted = true;
@@ -230,29 +230,30 @@ describe("Scope", () => {
 		expect(failResult[1]).toBeUndefined();
 	});
 
-	test("acquire() manages resources", async () => {
-		let acquired = false;
-		let disposed = false;
+	test("provide() manages resources with cleanup", async () => {
+		let created = false;
+		let cleanedUp = false;
 
-		const createResource = async () => {
-			acquired = true;
+		const createResource = () => {
+			created = true;
 			return { value: 42 };
 		};
 
-		const disposeResource = async (_r: { value: number }) => {
-			disposed = true;
+		const cleanupResource = () => {
+			cleanedUp = true;
 		};
 
 		{
 			await using s = scope();
-			const resource = await s.acquire(createResource, disposeResource);
+			s.provide("resource", createResource, cleanupResource);
+			const resource = s.use("resource");
 
-			expect(acquired).toBe(true);
+			expect(created).toBe(true);
 			expect(resource.value).toBe(42);
-			expect(disposed).toBe(false);
+			expect(cleanedUp).toBe(false);
 		}
 
-		expect(disposed).toBe(true);
+		expect(cleanedUp).toBe(true);
 	});
 
 	test("resources are disposed in LIFO order", async () => {
@@ -261,23 +262,26 @@ describe("Scope", () => {
 		{
 			await using s = scope();
 
-			await s.acquire(
-				async () => "first",
-				async () => {
+			s.provide(
+				"first",
+				() => "first-value",
+				() => {
 					order.push("first-disposed");
 				},
 			);
 
-			await s.acquire(
-				async () => "second",
-				async () => {
+			s.provide(
+				"second",
+				() => "second-value",
+				() => {
 					order.push("second-disposed");
 				},
 			);
 
-			await s.acquire(
-				async () => "third",
-				async () => {
+			s.provide(
+				"third",
+				() => "third-value",
+				() => {
 					order.push("third-disposed");
 				},
 			);
@@ -707,23 +711,25 @@ describe("Integration scenarios", () => {
 			await using s = scope({ timeout: 1000 });
 
 			// Simulate database connection
-			await s.acquire(
-				async () => {
+			s.provide(
+				"db",
+				() => {
 					events.push("db-connected");
 					return { query: async (_sql: string) => `result-of-${_sql}` };
 				},
-				async () => {
+				() => {
 					events.push("db-disconnected");
 				},
 			);
 
 			// Simulate cache connection
-			await s.acquire(
-				async () => {
+			s.provide(
+				"cache",
+				() => {
 					events.push("cache-connected");
 					return { get: async (_key: string) => `cached-${_key}` };
 				},
-				async () => {
+				() => {
 					events.push("cache-disconnected");
 				},
 			);
@@ -793,11 +799,11 @@ describe("Integration scenarios", () => {
 		await using outer = scope();
 
 		// Outer task
-		outer.spawn(async (outerSignal) => {
+		outer.spawn(async ({ signal: outerSignal }) => {
 			await using inner = scope({ signal: outerSignal });
 
 			void Promise.resolve(
-				inner.spawn(async (innerSignal) => {
+				inner.spawn(async ({ signal: innerSignal }) => {
 					return new Promise<string>((_, reject) => {
 						innerSignal.addEventListener("abort", () => {
 							innerAborted = true;
@@ -1312,7 +1318,8 @@ describe("OpenTelemetry Integration", () => {
 
 		try {
 			await using s = scope({ tracer });
-			await s.acquire(
+			s.provide(
+				"resource",
 				async () => "resource",
 				async () => {
 					throw new Error("disposal failed");
