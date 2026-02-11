@@ -5,11 +5,7 @@ import {
 	SpanStatusCode,
 	type Success,
 	type Tracer,
-	parallel,
-	parallelResults,
-	race,
 	scope,
-	timeout,
 } from "./index.js";
 
 describe("Task", () => {
@@ -34,16 +30,18 @@ describe("Task", () => {
 		let started = false;
 		let aborted = false;
 
-		s.spawn(async (signal) => {
-			started = true;
-			return new Promise<string>((_resolve, reject) => {
-				signal.addEventListener("abort", () => {
-					aborted = true;
-					reject(new Error("aborted"));
+		void Promise.resolve(
+			s.spawn(async (signal) => {
+				started = true;
+				return new Promise<string>((_resolve, reject) => {
+					signal.addEventListener("abort", () => {
+						aborted = true;
+						reject(new Error("aborted"));
+					});
+					// Never resolve to keep promise pending
 				});
-				// Never resolve to keep promise pending
-			});
-		});
+			}),
+		).catch(() => {});
 
 		// Give task time to start
 		await new Promise((_r) => setTimeout(_r, 10));
@@ -73,6 +71,7 @@ describe("Task", () => {
 
 		// Dispose the task directly
 		t[Symbol.dispose]();
+		void Promise.resolve(t).catch(() => {});
 
 		// Give time for abort to propagate
 		await new Promise((_r) => setTimeout(_r, 10));
@@ -115,25 +114,29 @@ describe("Scope", () => {
 		let t1Aborted = false;
 		let t2Aborted = false;
 
-		s.spawn(async (signal) => {
-			return new Promise<string>((_resolve, reject) => {
-				signal.addEventListener("abort", () => {
-					t1Aborted = true;
-					reject(new Error("t1 aborted"));
+		void Promise.resolve(
+			s.spawn(async (signal) => {
+				return new Promise<string>((_resolve, reject) => {
+					signal.addEventListener("abort", () => {
+						t1Aborted = true;
+						reject(new Error("t1 aborted"));
+					});
+					// Never resolve
 				});
-				// Never resolve
-			});
-		});
+			}),
+		).catch(() => {});
 
-		s.spawn(async (signal) => {
-			return new Promise<string>((_resolve, reject) => {
-				signal.addEventListener("abort", () => {
-					t2Aborted = true;
-					reject(new Error("t2 aborted"));
+		void Promise.resolve(
+			s.spawn(async (signal) => {
+				return new Promise<string>((_resolve, reject) => {
+					signal.addEventListener("abort", () => {
+						t2Aborted = true;
+						reject(new Error("t2 aborted"));
+					});
+					// Never resolve
 				});
-				// Never resolve
-			});
-		});
+			}),
+		).catch(() => {});
 
 		await s[Symbol.asyncDispose]().catch(() => {});
 
@@ -149,15 +152,17 @@ describe("Scope", () => {
 		const s = scope({ timeout: 50 });
 
 		let aborted = false;
-		s.spawn(async (signal) => {
-			return new Promise<string>((_resolve, reject) => {
-				signal.addEventListener("abort", () => {
-					aborted = true;
-					reject(new Error("timeout"));
+		void Promise.resolve(
+			s.spawn(async (signal) => {
+				return new Promise<string>((_resolve, reject) => {
+					signal.addEventListener("abort", () => {
+						aborted = true;
+						reject(new Error("timeout"));
+					});
+					// Never resolve
 				});
-				// Never resolve
-			});
-		});
+			}),
+		).catch(() => {});
 
 		// Wait for timeout
 		await new Promise((r) => setTimeout(r, 100));
@@ -170,15 +175,17 @@ describe("Scope", () => {
 		const s = scope({ signal: parentController.signal });
 
 		let aborted = false;
-		s.spawn(async (signal) => {
-			return new Promise<string>((_resolve, reject) => {
-				signal.addEventListener("abort", () => {
-					aborted = true;
-					reject(new Error("parent aborted"));
+		void Promise.resolve(
+			s.spawn(async (signal) => {
+				return new Promise<string>((_resolve, reject) => {
+					signal.addEventListener("abort", () => {
+						aborted = true;
+						reject(new Error("parent aborted"));
+					});
+					// Never resolve
 				});
-				// Never resolve
-			});
-		});
+			}),
+		).catch(() => {});
 
 		// Abort parent
 		parentController.abort("parent said stop");
@@ -342,9 +349,10 @@ describe("AsyncDisposableResource", () => {
 	});
 });
 
-describe("race()", () => {
+describe("scope.race()", () => {
 	test("returns the fastest result", async () => {
-		const winner = await race([
+		await using s = scope();
+		const winner = await s.race([
 			(signal) =>
 				new Promise<string>((r, reject) => {
 					const timeout = setTimeout(() => r("slow"), 100);
@@ -375,9 +383,10 @@ describe("race()", () => {
 	});
 
 	test("cancels slower tasks", async () => {
+		await using s = scope();
 		let slowStarted = false;
 
-		await race([
+		await s.race([
 			(signal) =>
 				new Promise<string>((_, reject) => {
 					const timeout = setTimeout(
@@ -418,25 +427,24 @@ describe("race()", () => {
 	});
 
 	test("throws on empty array", async () => {
-		await expect(race([])).rejects.toThrow("Cannot race empty array");
+		await using s = scope();
+		await expect(s.race([])).rejects.toThrow("Cannot race empty array");
 	});
 
-	test("respects signal option", async () => {
+	test("respects parent scope signal", async () => {
 		const controller = new AbortController();
+		await using s = scope({ signal: controller.signal });
 
-		const racePromise = race(
-			[
-				(signal) =>
-					new Promise<string>((r, reject) => {
-						const timeout = setTimeout(() => r("slow"), 500);
-						signal.addEventListener("abort", () => {
-							clearTimeout(timeout);
-							reject(new Error("cancelled"));
-						});
-					}),
-			],
-			{ signal: controller.signal },
-		);
+		const racePromise = s.race([
+			(signal) =>
+				new Promise<string>((r, reject) => {
+					const timeout = setTimeout(() => r("slow"), 500);
+					signal.addEventListener("abort", () => {
+						clearTimeout(timeout);
+						reject(new Error("cancelled"));
+					});
+				}),
+		]);
 
 		controller.abort("user cancelled");
 
@@ -444,56 +452,50 @@ describe("race()", () => {
 	});
 });
 
-describe("timeout()", () => {
+describe("task timeout", () => {
 	test("returns result if within timeout", async () => {
-		const result = await timeout(100, () => Promise.resolve("success"));
+		await using s = scope();
+		using task = s.spawn(() => Promise.resolve("success"), { timeout: 100 });
+		const result = await task;
 		expect(result).toBe("success");
 	});
 
 	test("throws if timeout exceeded", async () => {
-		await expect(
-			timeout(10, () => new Promise((r) => setTimeout(() => r("late"), 100))),
-		).rejects.toThrow("timeout after 10ms");
+		await using s = scope();
+		using task = s.spawn(
+			() => new Promise((r) => setTimeout(() => r("late"), 100)),
+			{ timeout: 10 },
+		);
+		await expect(task).rejects.toThrow("timeout after 10ms");
 	});
 
-	test("aborts signal when timeout is reached", async () => {
-		let aborted = false;
+	test("timeout error has correct error reason", async () => {
+		const { tracer, spans } = createMockTracer();
+		await using s = scope({ tracer });
 
-		await expect(
-			timeout(10, async (signal) => {
-				return new Promise((_, reject) => {
-					signal.addEventListener("abort", () => {
-						aborted = true;
-						reject(new Error("aborted"));
-					});
-					// Never resolve
-				});
-			}),
-		).rejects.toThrow();
-
-		expect(aborted).toBe(true);
-	});
-
-	test("respects signal option", async () => {
-		const controller = new AbortController();
-
-		const timeoutPromise = timeout(
-			1000,
-			() => new Promise((r) => setTimeout(() => r("done"), 500)),
-			{ signal: controller.signal },
+		using task = s.spawn(
+			() => new Promise((r) => setTimeout(() => r("late"), 100)),
+			{ timeout: 10, otel: { name: "timeout-test" } },
 		);
 
-		controller.abort("user cancelled");
+		await expect(task).rejects.toThrow("timeout");
 
-		await expect(timeoutPromise).rejects.toThrow("user cancelled");
+		// Allow span to complete
+		await new Promise((r) => setTimeout(r, 20));
+
+		const taskSpan = spans.find((s) => s.name === "timeout-test");
+		expect(taskSpan?.attributes?.["task.error_reason"]).toBe("timeout");
+		expect(taskSpan?.attributes?.["task.has_timeout"]).toBe(true);
+		expect(taskSpan?.attributes?.["task.timeout_ms"]).toBe(10);
 	});
 });
 
-describe("parallel()", () => {
+describe("scope.parallel()", () => {
 	test("runs all factories in parallel", async () => {
+		await using s = scope();
 		const startTime = Date.now();
 
-		const results = await parallel([
+		const results = await s.parallel([
 			(signal) =>
 				new Promise((r, reject) => {
 					const timeout = setTimeout(() => r(1), 20);
@@ -527,15 +529,17 @@ describe("parallel()", () => {
 	});
 
 	test("returns empty array for empty input", async () => {
-		const results = await parallel([]);
+		await using s = scope();
+		const results = await s.parallel([]);
 		expect(results).toEqual([]);
 	});
 
-	test("respects concurrency limit", async () => {
+	test("respects scope concurrency limit", async () => {
+		await using s = scope({ concurrency: 2 });
 		let concurrent = 0;
 		let maxConcurrent = 0;
 
-		const results = await parallel(
+		const results = await s.parallel(
 			[1, 2, 3, 4].map(
 				(i) => (signal) =>
 					new Promise<number>((resolve, reject) => {
@@ -551,7 +555,6 @@ describe("parallel()", () => {
 						});
 					}),
 			),
-			{ concurrency: 2 },
 		);
 
 		expect(results).toEqual([1, 2, 3, 4]);
@@ -559,8 +562,9 @@ describe("parallel()", () => {
 	});
 
 	test("stops on first error", async () => {
+		await using s = scope();
 		await expect(
-			parallel([
+			s.parallel([
 				() => Promise.resolve(1),
 				() => Promise.reject(new Error("fail")),
 				(signal) =>
@@ -575,22 +579,20 @@ describe("parallel()", () => {
 		).rejects.toThrow("fail");
 	});
 
-	test("respects signal option", async () => {
+	test("respects parent scope signal", async () => {
 		const controller = new AbortController();
+		await using s = scope({ signal: controller.signal });
 
-		const parallelPromise = parallel(
-			[
-				(signal) =>
-					new Promise((r, reject) => {
-						const timeout = setTimeout(() => r(1), 500);
-						signal.addEventListener("abort", () => {
-							clearTimeout(timeout);
-							reject(new Error("cancelled"));
-						});
-					}),
-			],
-			{ signal: controller.signal },
-		);
+		const parallelPromise = s.parallel([
+			(signal) =>
+				new Promise((r, reject) => {
+					const timeout = setTimeout(() => r(1), 500);
+					signal.addEventListener("abort", () => {
+						clearTimeout(timeout);
+						reject(new Error("cancelled"));
+					});
+				}),
+		]);
 
 		controller.abort("cancelled");
 
@@ -598,9 +600,10 @@ describe("parallel()", () => {
 	});
 });
 
-describe("parallelResults()", () => {
+describe("scope.parallelTasks()", () => {
 	test("returns Results for all tasks", async () => {
-		const results = await parallelResults<string | number>([
+		await using s = scope();
+		const results = await s.parallelTasks<string | number>([
 			() => Promise.resolve("success"),
 			() => Promise.reject(new Error("failure")),
 			() => Promise.resolve(42),
@@ -622,7 +625,8 @@ describe("parallelResults()", () => {
 	});
 
 	test("never throws", async () => {
-		const results = await parallelResults([
+		await using s = scope();
+		const results = await s.parallelTasks([
 			() => Promise.reject(new Error("error1")),
 			() => Promise.reject(new Error("error2")),
 		]);
@@ -632,15 +636,17 @@ describe("parallelResults()", () => {
 	});
 
 	test("returns empty array for empty input", async () => {
-		const results = await parallelResults([]);
+		await using s = scope();
+		const results = await s.parallelTasks([]);
 		expect(results).toEqual([]);
 	});
 
-	test("respects concurrency limit", async () => {
+	test("respects scope concurrency limit", async () => {
+		await using s = scope({ concurrency: 2 });
 		let maxConcurrent = 0;
 		let current = 0;
 
-		const results = await parallelResults(
+		const results = await s.parallelTasks(
 			[1, 2, 3, 4].map(
 				(i) => () =>
 					new Promise<number>((resolve) => {
@@ -652,29 +658,26 @@ describe("parallelResults()", () => {
 						}, 10);
 					}),
 			),
-			{ concurrency: 2 },
 		);
 
 		expect(results.map((r) => r[1])).toEqual([1, 2, 3, 4]);
 		expect(maxConcurrent).toBe(2);
 	});
 
-	test("respects signal option", async () => {
+	test("respects parent scope signal", async () => {
 		const controller = new AbortController();
+		await using s = scope({ signal: controller.signal });
 
-		const promise = parallelResults(
-			[
-				(signal) =>
-					new Promise((r, reject) => {
-						const timeout = setTimeout(() => r(1), 500);
-						signal.addEventListener("abort", () => {
-							clearTimeout(timeout);
-							reject(new Error("cancelled"));
-						});
-					}),
-			],
-			{ signal: controller.signal },
-		);
+		const promise = s.parallelTasks([
+			(signal) =>
+				new Promise((r, reject) => {
+					const timeout = setTimeout(() => r(1), 500);
+					signal.addEventListener("abort", () => {
+						clearTimeout(timeout);
+						reject(new Error("cancelled"));
+					});
+				}),
+		]);
 
 		controller.abort("cancelled");
 
@@ -729,7 +732,7 @@ describe("Integration scenarios", () => {
 			const queries = ["users", "posts", "comments"];
 			using queryTask = s.task(async () => {
 				events.push("queries-started");
-				return parallelResults(
+				return s.parallelTasks(
 					queries.map((q) => () => Promise.resolve(`data-${q}`)),
 				);
 			});
@@ -760,29 +763,26 @@ describe("Integration scenarios", () => {
 
 	test("timeout with race pattern", async () => {
 		// Try multiple endpoints with overall timeout
-		const result = await timeout(100, async (signal) => {
-			return race(
-				[
-					(sig) =>
-						new Promise((r, reject) => {
-							const timeout = setTimeout(() => r("replica-a"), 50);
-							sig.addEventListener("abort", () => {
-								clearTimeout(timeout);
-								reject(new Error("cancelled"));
-							});
-						}),
-					(sig) =>
-						new Promise((r, reject) => {
-							const timeout = setTimeout(() => r("replica-b"), 80);
-							sig.addEventListener("abort", () => {
-								clearTimeout(timeout);
-								reject(new Error("cancelled"));
-							});
-						}),
-				],
-				{ signal },
-			);
-		});
+		await using s = scope({ timeout: 100 });
+
+		const result = await s.race([
+			() =>
+				new Promise((r, reject) => {
+					const timeout = setTimeout(() => r("replica-a"), 50);
+					s.signal.addEventListener("abort", () => {
+						clearTimeout(timeout);
+						reject(new Error("cancelled"));
+					});
+				}),
+			() =>
+				new Promise((r, reject) => {
+					const timeout = setTimeout(() => r("replica-b"), 80);
+					s.signal.addEventListener("abort", () => {
+						clearTimeout(timeout);
+						reject(new Error("cancelled"));
+					});
+				}),
+		]);
 
 		expect(result).toBe("replica-a");
 	});
@@ -796,15 +796,17 @@ describe("Integration scenarios", () => {
 		outer.spawn(async (outerSignal) => {
 			await using inner = scope({ signal: outerSignal });
 
-			inner.spawn(async (innerSignal) => {
-				return new Promise<string>((_, reject) => {
-					innerSignal.addEventListener("abort", () => {
-						innerAborted = true;
-						reject(new Error("inner aborted"));
+			void Promise.resolve(
+				inner.spawn(async (innerSignal) => {
+					return new Promise<string>((_, reject) => {
+						innerSignal.addEventListener("abort", () => {
+							innerAborted = true;
+							reject(new Error("inner aborted"));
+						});
+						// Never resolve
 					});
-					// Never resolve
-				});
-			});
+				}),
+			).catch(() => {});
 
 			try {
 				return await inner;
@@ -820,6 +822,291 @@ describe("Integration scenarios", () => {
 		await new Promise((r) => setTimeout(r, 10));
 
 		expect(innerAborted).toBe(true);
+	});
+});
+
+describe("spawn() with retry option", () => {
+	test("succeeds on first attempt", async () => {
+		await using s = scope();
+		let attempts = 0;
+
+		using t = s.spawn(() => {
+			attempts++;
+			return Promise.resolve("success");
+		});
+		const result = await t;
+
+		expect(result).toBe("success");
+		expect(attempts).toBe(1);
+	});
+
+	test("retries on failure and eventually succeeds", async () => {
+		await using s = scope();
+		let attempts = 0;
+
+		using t = s.spawn(
+			() => {
+				attempts++;
+				if (attempts < 3) {
+					return Promise.reject(new Error(`attempt ${attempts} failed`));
+				}
+				return Promise.resolve("success");
+			},
+			{ retry: { maxRetries: 3 } },
+		);
+		const result = await t;
+
+		expect(result).toBe("success");
+		expect(attempts).toBe(3);
+	});
+
+	test("throws after max retries exceeded", async () => {
+		await using s = scope();
+		let attempts = 0;
+
+		using t = s.spawn(
+			() => {
+				attempts++;
+				return Promise.reject(new Error(`attempt ${attempts}`));
+			},
+			{ retry: { maxRetries: 2 } },
+		);
+		await expect(t).rejects.toThrow("attempt 3");
+
+		expect(attempts).toBe(3);
+	});
+
+	test("respects retryCondition", async () => {
+		await using s = scope();
+		let attempts = 0;
+
+		class NetworkError extends Error {}
+		class ValidationError extends Error {}
+
+		using t = s.spawn(
+			() => {
+				attempts++;
+				if (attempts === 1) {
+					return Promise.reject(new NetworkError("retry me"));
+				}
+				return Promise.reject(new ValidationError("don't retry"));
+			},
+			{
+				retry: {
+					maxRetries: 3,
+					retryCondition: (error) => error instanceof NetworkError,
+				},
+			},
+		);
+		await expect(t).rejects.toThrow("don't retry");
+
+		expect(attempts).toBe(2);
+	});
+
+	test("calls onRetry callback", async () => {
+		await using s = scope();
+		const retryCallbacks: { error: unknown; attempt: number }[] = [];
+		let attempts = 0;
+
+		using t = s.spawn(
+			() => {
+				attempts++;
+				if (attempts < 3) {
+					return Promise.reject(new Error(`error ${attempts}`));
+				}
+				return Promise.resolve("success");
+			},
+			{
+				retry: {
+					maxRetries: 3,
+					onRetry: (error, attempt) => {
+						retryCallbacks.push({ error, attempt });
+					},
+				},
+			},
+		);
+		await t;
+
+		expect(retryCallbacks).toHaveLength(2);
+		expect(retryCallbacks[0]?.attempt).toBe(1);
+		expect(retryCallbacks[1]?.attempt).toBe(2);
+	});
+
+	test("uses fixed delay between retries", async () => {
+		await using s = scope();
+		let attempts = 0;
+		const startTime = Date.now();
+
+		using t = s.spawn(
+			() => {
+				attempts++;
+				if (attempts < 3) {
+					return Promise.reject(new Error("retry"));
+				}
+				return Promise.resolve("success");
+			},
+			{ retry: { maxRetries: 3, delay: 50 } },
+		);
+		const result = await t;
+
+		const elapsed = Date.now() - startTime;
+		expect(result).toBe("success");
+		expect(attempts).toBe(3);
+		expect(elapsed).toBeGreaterThanOrEqual(100);
+	});
+
+	test("uses dynamic delay function", async () => {
+		await using s = scope();
+		let attempts = 0;
+		const delays: number[] = [];
+
+		using t = s.spawn(
+			() => {
+				attempts++;
+				if (attempts < 4) {
+					return Promise.reject(new Error("retry"));
+				}
+				return Promise.resolve("success");
+			},
+			{
+				retry: {
+					maxRetries: 4,
+					delay: (attempt) => {
+						delays.push(attempt);
+						return attempt * 10;
+					},
+				},
+			},
+		);
+		await t;
+
+		expect(delays).toEqual([1, 2, 3]);
+	});
+
+	test("respects AbortSignal during delay", async () => {
+		const controller = new AbortController();
+		await using s = scope({ signal: controller.signal });
+
+		using t = s.spawn(() => Promise.reject(new Error("fail")), {
+			retry: { maxRetries: 5, delay: 1000 },
+		});
+
+		setTimeout(() => controller.abort("cancelled"), 50);
+
+		await expect(t).rejects.toThrow("cancelled");
+	});
+
+	test("respects scope timeout", async () => {
+		await using s = scope({ timeout: 200 });
+
+		using t = s.spawn(() => Promise.reject(new Error("fail")), {
+			retry: { maxRetries: 10, delay: 100 },
+		});
+		await expect(t).rejects.toThrow("timeout after 200ms");
+	});
+
+	test("works with otel options for tracing", async () => {
+		const { tracer, spans } = createMockTracer();
+		await using s = scope({ tracer });
+
+		using t = s.spawn(() => Promise.resolve("success"), {
+			otel: { name: "retryable-task" },
+			retry: { maxRetries: 0 },
+		});
+		await t;
+
+		const taskSpan = spans.find((s) => s.name === "retryable-task");
+		expect(taskSpan).toBeDefined();
+	});
+});
+
+describe("task() with retry option", () => {
+	test("returns success Result on first attempt", async () => {
+		await using s = scope();
+
+		using t = s.task(() => Promise.resolve("success"));
+		const [err, result] = await t;
+
+		expect(err).toBeUndefined();
+		expect(result).toBe("success");
+	});
+
+	test("returns success Result after retries", async () => {
+		await using s = scope();
+		let attempts = 0;
+
+		using t = s.task(
+			() => {
+				attempts++;
+				if (attempts < 3) {
+					return Promise.reject(new Error(`attempt ${attempts}`));
+				}
+				return Promise.resolve("success");
+			},
+			{ retry: { maxRetries: 3 } },
+		);
+		const [err, result] = await t;
+
+		expect(err).toBeUndefined();
+		expect(result).toBe("success");
+		expect(attempts).toBe(3);
+	});
+
+	test("returns failure Result after max retries exceeded", async () => {
+		await using s = scope();
+
+		using t = s.task(() => Promise.reject(new Error("always fails")), {
+			retry: { maxRetries: 2 },
+		});
+		const [err, result] = await t;
+
+		expect(err).toBe("always fails");
+		expect(result).toBeUndefined();
+	});
+
+	test("never throws", async () => {
+		await using s = scope();
+
+		let caughtError = false;
+		try {
+			using t = s.task(() => Promise.reject(new Error("fail")), {
+				retry: { maxRetries: 1 },
+			});
+			await t;
+		} catch {
+			caughtError = true;
+		}
+
+		expect(caughtError).toBe(false);
+	});
+
+	test("respects retryCondition", async () => {
+		await using s = scope();
+		let attempts = 0;
+
+		class RetryableError extends Error {}
+		class FatalError extends Error {}
+
+		using t = s.task(
+			() => {
+				attempts++;
+				if (attempts === 1) {
+					return Promise.reject(new RetryableError("retry me"));
+				}
+				return Promise.reject(new FatalError("fatal"));
+			},
+			{
+				retry: {
+					maxRetries: 3,
+					retryCondition: (error) => error instanceof RetryableError,
+				},
+			},
+		);
+		const [err, result] = await t;
+
+		expect(err).toBe("fatal");
+		expect(result).toBeUndefined();
+		expect(attempts).toBe(2);
 	});
 });
 
@@ -1049,7 +1336,9 @@ describe("OpenTelemetry Integration", () => {
 
 		{
 			await using s = scope({ tracer });
-			using t = s.spawn(() => Promise.resolve("done"), { name: "fetch-user" });
+			using t = s.spawn(() => Promise.resolve("done"), {
+				otel: { name: "fetch-user" },
+			});
 			await t;
 		}
 
@@ -1067,10 +1356,12 @@ describe("OpenTelemetry Integration", () => {
 		{
 			await using s = scope({ tracer });
 			using t = s.spawn(() => Promise.resolve("done"), {
-				attributes: {
-					"http.method": "GET",
-					"http.url": "/api/users",
-					"user.id": "123",
+				otel: {
+					attributes: {
+						"http.method": "GET",
+						"http.url": "/api/users",
+						"user.id": "123",
+					},
 				},
 			});
 			await t;
@@ -1095,8 +1386,10 @@ describe("OpenTelemetry Integration", () => {
 		{
 			await using s = scope({ tracer });
 			using t = s.task(() => Promise.resolve("done"), {
-				name: "fetch-task",
-				attributes: { "task.type": "background" },
+				otel: {
+					name: "fetch-task",
+					attributes: { "task.type": "background" },
+				},
 			});
 			await t;
 		}

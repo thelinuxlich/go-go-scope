@@ -44,13 +44,49 @@ export interface SpanOptions {
  */
 export interface TaskOptions {
 	/**
-	 * Optional name for the task span. Defaults to "scope.task".
+	 * OpenTelemetry tracing options.
 	 */
-	name?: string;
+	otel?: {
+		/**
+		 * Optional name for the task span. Defaults to "scope.task".
+		 */
+		name?: string;
+		/**
+		 * Optional additional attributes to add to the task span.
+		 */
+		attributes?: Record<string, unknown>;
+	};
 	/**
-	 * Optional additional attributes to add to the task span.
+	 * Retry options for automatic retry logic.
 	 */
-	attributes?: Record<string, unknown>;
+	retry?: {
+		/**
+		 * Maximum number of retry attempts. Default: 3
+		 */
+		maxRetries?: number;
+		/**
+		 * Delay between retries in milliseconds.
+		 * Can be a fixed number or a function that receives the attempt number (1-based) and error.
+		 * Default: 0 (no delay)
+		 */
+		delay?: number | ((attempt: number, error: unknown) => number);
+		/**
+		 * Function to determine if an error should trigger a retry.
+		 * Return true to retry, false to throw immediately.
+		 * Default: retry all errors
+		 */
+		retryCondition?: (error: unknown) => boolean;
+		/**
+		 * Callback invoked when a retry is about to happen.
+		 * Receives the error and the attempt number (1-based).
+		 */
+		onRetry?: (error: unknown, attempt: number) => void;
+	};
+	/**
+	 * Timeout in milliseconds for this task.
+	 * If set, the task will be aborted after this duration.
+	 */
+	timeout?: number;
 }
 
 /**
@@ -84,6 +120,16 @@ export interface ScopeOptions {
 	 * Optional name for the scope span. Defaults to "scope".
 	 */
 	name?: string;
+	/**
+	 * Optional concurrency limit for tasks spawned within this scope.
+	 * If set, tasks will acquire a permit before executing.
+	 */
+	concurrency?: number;
+	/**
+	 * Optional circuit breaker configuration for this scope.
+	 * When set, all tasks will execute through a circuit breaker with these options.
+	 */
+	circuitBreaker?: CircuitBreakerOptions;
 }
 
 /**
@@ -257,19 +303,49 @@ export class Scope implements AsyncDisposable {
 	private readonly startTime: number;
 	private readonly id: number;
 	private readonly name: string;
+	private readonly concurrencySemaphore?: Semaphore;
+	private readonly scopeCircuitBreaker?: CircuitBreaker;
 
 	constructor(options?: ScopeOptions) {
 		this.id = ++scopeIdCounter;
 		this.name = options?.name ?? `scope-${this.id}`;
 		debugScope(
-			"[%s] creating scope (timeout: %d, parent signal: %s)",
+			"[%s] creating scope (timeout: %d, parent signal: %s, concurrency: %s, circuitBreaker: %s)",
 			this.name,
 			options?.timeout ?? 0,
 			options?.signal ? "yes" : "no",
+			options?.concurrency ?? "unlimited",
+			options?.circuitBreaker ? "yes" : "no",
 		);
 		this.abortController = new AbortController();
 		this.tracer = options?.tracer;
 		this.startTime = performance.now();
+
+		// Create concurrency semaphore if specified
+		if (options?.concurrency !== undefined && options.concurrency > 0) {
+			this.concurrencySemaphore = new Semaphore(
+				options.concurrency,
+				this.abortController.signal,
+			);
+			debugScope(
+				"[%s] created concurrency semaphore with %d permits",
+				this.name,
+				options.concurrency,
+			);
+		}
+
+		// Create circuit breaker if specified
+		if (options?.circuitBreaker) {
+			this.scopeCircuitBreaker = new CircuitBreaker(
+				options.circuitBreaker,
+				this.abortController.signal,
+			);
+			debugScope(
+				"[%s] created circuit breaker (failureThreshold: %d)",
+				this.name,
+				options.circuitBreaker.failureThreshold ?? 5,
+			);
+		}
 
 		// Create span if tracer is provided
 		if (this.tracer) {
@@ -277,6 +353,7 @@ export class Scope implements AsyncDisposable {
 				attributes: {
 					"scope.timeout": options?.timeout,
 					"scope.has_parent_signal": !!options?.signal,
+					"scope.concurrency": options?.concurrency,
 				},
 			});
 		}
@@ -336,7 +413,10 @@ export class Scope implements AsyncDisposable {
 	}
 
 	/**
-	 * Options for spawning a task.
+	 * Spawn a task within the scope.
+	 *
+	 * Supports retry and timeout via TaskOptions.
+	 * Scope-level concurrency and circuit breaker (if configured) are automatically applied.
 	 */
 	spawn<T>(
 		fn: (signal: AbortSignal) => Promise<T>,
@@ -351,27 +431,296 @@ export class Scope implements AsyncDisposable {
 
 		this.taskCount++;
 		const taskIndex = this.taskCount;
-		const taskName = options?.name ?? `task-${taskIndex}`;
+		const taskName = options?.otel?.name ?? `task-${taskIndex}`;
 		debugScope('[%s] spawning task #%d "%s"', this.name, taskIndex, taskName);
 
-		// Merge default attributes with custom ones
+		// Build attributes with task configuration
 		const attributes: Record<string, unknown> = {
 			"task.index": taskIndex,
-			...options?.attributes,
+			"task.has_retry": !!options?.retry,
+			"task.has_timeout": !!options?.timeout,
+			"task.has_circuit_breaker": !!this.scopeCircuitBreaker,
+			"task.scope_concurrency": this.concurrencySemaphore?.totalPermits ?? 0,
 		};
 
-		const taskSpan = this.tracer?.startSpan(options?.name ?? "scope.task", {
-			attributes,
-		});
+		// Add retry configuration attributes
+		if (options?.retry) {
+			attributes["task.retry.max_retries"] = options.retry.maxRetries ?? 3;
+			attributes["task.retry.has_delay"] = !!options.retry.delay;
+			attributes["task.retry.has_condition"] = !!options.retry.retryCondition;
+		}
+
+		// Add timeout attribute
+		if (options?.timeout) {
+			attributes["task.timeout_ms"] = options.timeout;
+		}
+
+		// Merge with custom attributes
+		Object.assign(attributes, options?.otel?.attributes);
+
+		const taskSpan = this.tracer?.startSpan(
+			options?.otel?.name ?? "scope.task",
+			{
+				attributes,
+			},
+		);
 
 		const taskStartTime = performance.now();
+		let retryAttempt = 0;
 
+		// Build the execution pipeline from innermost to outermost
 		const wrappedFn = async (signal: AbortSignal): Promise<T> => {
+			// Check if signal is already aborted
+			if (signal.aborted) {
+				const reason = signal.aborted ? signal.reason : "unknown";
+				debugTask("[%s] task aborted before execution: %s", taskName, reason);
+				throw signal.reason;
+			}
+
+			// 1. Apply circuit breaker if configured at scope level
+			let executeFn = fn;
+			if (this.scopeCircuitBreaker) {
+				const cb = this.scopeCircuitBreaker;
+				const circuitState = cb.currentState;
+				debugTask("[%s] circuit breaker state: %s", taskName, circuitState);
+				taskSpan?.setAttributes?.({
+					"task.circuit_breaker.state": circuitState,
+					"task.circuit_breaker.failure_count": cb.failureCount,
+				});
+				executeFn = async (sig) => {
+					debugTask("[%s] executing through circuit breaker", taskName);
+					try {
+						const result = await cb.execute(() => fn(sig));
+						debugTask("[%s] circuit breaker: success", taskName);
+						return result;
+					} catch (error) {
+						if (
+							error instanceof Error &&
+							error.message === "Circuit breaker is open"
+						) {
+							debugTask("[%s] circuit breaker: OPEN - rejecting", taskName);
+							taskSpan?.setAttributes?.({
+								"task.circuit_breaker.rejected": true,
+							});
+						}
+						throw error;
+					}
+				};
+			}
+
+			// 3. Apply retry logic if specified
+			if (options?.retry) {
+				const retryOpts = options.retry;
+				const innerFn = executeFn;
+				executeFn = async (sig) => {
+					const maxRetries = retryOpts.maxRetries ?? 3;
+					const delay = retryOpts.delay ?? 0;
+					const retryCondition = retryOpts.retryCondition ?? (() => true);
+					const onRetry = retryOpts.onRetry;
+
+					debugTask(
+						"[%s] starting retry loop (maxRetries: %d)",
+						taskName,
+						maxRetries,
+					);
+					taskSpan?.setAttributes?.({
+						"task.retry.max_retries_configured": maxRetries,
+					});
+
+					for (let attempt = 0; attempt <= maxRetries; attempt++) {
+						retryAttempt = attempt;
+						if (sig.aborted) {
+							debugTask("[%s] retry loop aborted", taskName);
+							throw sig.reason;
+						}
+
+						try {
+							debugTask(
+								"[%s] attempt %d/%d",
+								taskName,
+								attempt + 1,
+								maxRetries + 1,
+							);
+							const result = await innerFn(sig);
+							if (attempt > 0) {
+								debugTask(
+									"[%s] succeeded on attempt %d",
+									taskName,
+									attempt + 1,
+								);
+								taskSpan?.setAttributes?.({
+									"task.retry.succeeded_after": attempt + 1,
+								});
+							}
+							return result;
+						} catch (error) {
+							if (!retryCondition(error)) {
+								debugTask(
+									"[%s] error rejected by retryCondition, throwing",
+									taskName,
+								);
+								taskSpan?.setAttributes?.({
+									"task.retry.condition_rejected": true,
+									"task.retry.attempts_made": attempt + 1,
+								});
+								throw error;
+							}
+
+							if (attempt >= maxRetries) {
+								debugTask(
+									"[%s] max retries (%d) exceeded",
+									taskName,
+									maxRetries,
+								);
+								taskSpan?.setAttributes?.({
+									"task.retry.max_retries_exceeded": true,
+									"task.retry.attempts_made": attempt + 1,
+								});
+								throw error;
+							}
+
+							const delayMs =
+								typeof delay === "function" ? delay(attempt + 1, error) : delay;
+
+							debugTask(
+								"[%s] attempt %d failed: %s, waiting %dms",
+								taskName,
+								attempt + 1,
+								error instanceof Error ? error.message : String(error),
+								delayMs,
+							);
+							taskSpan?.setAttributes?.({
+								"task.retry.current_attempt": attempt + 1,
+								"task.retry.delay_ms": delayMs,
+							});
+
+							if (onRetry) {
+								try {
+									onRetry(error, attempt + 1);
+								} catch {
+									// Ignore errors in onRetry
+								}
+							}
+
+							if (delayMs > 0) {
+								await new Promise((resolve, reject) => {
+									const timeoutId = setTimeout(resolve, delayMs);
+									sig.addEventListener(
+										"abort",
+										() => {
+											clearTimeout(timeoutId);
+											reject(sig.reason);
+										},
+										{ once: true },
+									);
+								});
+							}
+						}
+					}
+
+					// Should never reach here
+					throw new Error("Retry loop exited unexpectedly");
+				};
+			}
+
+			// 3. Apply timeout if specified
+			if (options?.timeout !== undefined && options.timeout > 0) {
+				const timeoutMs = options.timeout;
+				const innerFn = executeFn;
+				debugTask("[%s] applying timeout: %dms", taskName, timeoutMs);
+				executeFn = (sig) =>
+					new Promise((resolve, reject) => {
+						const timeoutId = setTimeout(() => {
+							const timeoutError = new Error(`timeout after ${timeoutMs}ms`);
+							debugTask("[%s] timeout reached: %dms", taskName, timeoutMs);
+							reject(timeoutError);
+						}, timeoutMs);
+
+						innerFn(sig)
+							.then((result) => {
+								clearTimeout(timeoutId);
+								resolve(result);
+							})
+							.catch((err) => {
+								clearTimeout(timeoutId);
+								reject(err);
+							});
+					});
+			}
+
+			// 4. Apply scope-level concurrency if configured
+			if (this.concurrencySemaphore) {
+				const sem = this.concurrencySemaphore;
+				const innerFn = executeFn;
+				executeFn = async (sig) => {
+					const availableBefore = sem.available;
+					const waitingBefore = sem.waiting;
+					debugTask(
+						"[%s] acquiring concurrency permit (available: %d, waiting: %d)",
+						taskName,
+						availableBefore,
+						waitingBefore,
+					);
+					taskSpan?.setAttributes?.({
+						"task.concurrency.available_before": availableBefore,
+						"task.concurrency.waiting_before": waitingBefore,
+					});
+					try {
+						const result = await sem.acquire(() => innerFn(sig));
+						debugTask(
+							"[%s] concurrency permit acquired and released",
+							taskName,
+						);
+						return result;
+					} catch (error) {
+						debugTask(
+							"[%s] concurrency acquisition failed: %s",
+							taskName,
+							error,
+						);
+						throw error;
+					}
+				};
+			}
+
+			// Execute the wrapped function with tracing
 			try {
-				const result = await fn(signal);
+				const result = await executeFn(signal);
 				taskSpan?.setStatus({ code: SpanStatusCode.OK });
 				return result;
 			} catch (error) {
+				// Determine error reason for OTel attributes
+				let errorReason = "exception";
+				let errorType = "unknown";
+
+				if (error instanceof Error) {
+					const message = error.message.toLowerCase();
+					if (message.includes("timeout")) {
+						errorReason = "timeout";
+						errorType = "task_timeout";
+					} else if (
+						message.includes("aborted") ||
+						message.includes("cancelled")
+					) {
+						errorReason = "aborted";
+						errorType = "parent_aborted";
+					} else if (message.includes("circuit breaker is open")) {
+						errorReason = "circuit_breaker_open";
+						errorType = "circuit_breaker";
+					} else {
+						errorReason = "exception";
+						errorType = error.constructor.name;
+					}
+				}
+
+				debugTask(
+					"[%s] task failed - reason: %s, type: %s, error: %s",
+					taskName,
+					errorReason,
+					errorType,
+					error instanceof Error ? error.message : String(error),
+				);
+
 				taskSpan?.recordException(
 					error instanceof Error ? error : new Error(String(error)),
 				);
@@ -379,11 +728,18 @@ export class Scope implements AsyncDisposable {
 					code: SpanStatusCode.ERROR,
 					message: error instanceof Error ? error.message : String(error),
 				});
+				taskSpan?.setAttributes?.({
+					"task.error_reason": errorReason,
+					"task.error_type": errorType,
+					"task.retry_attempts": retryAttempt,
+				});
 				throw error;
 			} finally {
-				// Calculate and record task duration in milliseconds
 				const duration = performance.now() - taskStartTime;
-				taskSpan?.setAttributes?.({ "task.duration_ms": duration });
+				taskSpan?.setAttributes?.({
+					"task.duration_ms": duration,
+					"task.final_retry_attempt": retryAttempt,
+				});
 				taskSpan?.end();
 			}
 		};
@@ -403,23 +759,141 @@ export class Scope implements AsyncDisposable {
 	 * Spawn a task that returns a Result tuple.
 	 * Automatically wraps the function with error handling.
 	 *
+	 * Supports retry and timeout via TaskOptions.
+	 * Scope-level concurrency and circuit breaker (if configured) are automatically applied.
+	 *
 	 * @param fn - Function that receives an AbortSignal and returns a Promise
-	 * @param options - Optional task configuration for tracing
+	 * @param options - Optional task configuration for tracing and execution
 	 * @returns A disposable Task that resolves to a Result
 	 */
 	task<T>(
 		fn: (signal: AbortSignal) => Promise<T>,
 		options?: TaskOptions,
 	): Task<Result<string, T>> {
-		return this.spawn(async (signal) => {
-			try {
-				const result = await fn(signal);
-				return [undefined, result] as Success<T>;
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return [message, undefined] as Failure<string>;
-			}
-		}, options);
+		return this.spawn(
+			async (signal) => {
+				// Build execution pipeline inside task's try/catch
+				let executeFn = fn;
+
+				// 1. Apply circuit breaker if configured at scope level
+				if (this.scopeCircuitBreaker) {
+					const cb = this.scopeCircuitBreaker;
+					const innerFn = executeFn;
+					executeFn = (sig) => cb.execute(() => innerFn(sig));
+				}
+
+				// 2. Apply retry logic if specified
+				if (options?.retry) {
+					const retryOpts = options.retry;
+					const innerFn = executeFn;
+					executeFn = async (sig) => {
+						const maxRetries = retryOpts.maxRetries ?? 3;
+						const delay = retryOpts.delay ?? 0;
+						const retryCondition = retryOpts.retryCondition ?? (() => true);
+						const onRetry = retryOpts.onRetry;
+
+						for (let attempt = 0; attempt <= maxRetries; attempt++) {
+							if (sig.aborted) {
+								throw sig.reason;
+							}
+
+							try {
+								debugTask("[retry] attempt %d/%d", attempt + 1, maxRetries + 1);
+								const result = await innerFn(sig);
+								if (attempt > 0) {
+									debugTask("[retry] succeeded on attempt %d", attempt + 1);
+								}
+								return result;
+							} catch (error) {
+								if (!retryCondition(error)) {
+									debugTask(
+										"[retry] error rejected by retryCondition, throwing",
+									);
+									throw error;
+								}
+
+								if (attempt >= maxRetries) {
+									debugTask(
+										"[retry] max retries (%d) exceeded, throwing",
+										maxRetries,
+									);
+									throw error;
+								}
+
+								const delayMs =
+									typeof delay === "function"
+										? delay(attempt + 1, error)
+										: delay;
+
+								debugTask(
+									"[retry] attempt %d failed, waiting %dms before retry",
+									attempt + 1,
+									delayMs,
+								);
+
+								if (onRetry) {
+									try {
+										onRetry(error, attempt + 1);
+									} catch {
+										// Ignore errors in onRetry
+									}
+								}
+
+								if (delayMs > 0) {
+									await new Promise((resolve, reject) => {
+										const timeoutId = setTimeout(resolve, delayMs);
+										sig.addEventListener(
+											"abort",
+											() => {
+												clearTimeout(timeoutId);
+												reject(sig.reason);
+											},
+											{ once: true },
+										);
+									});
+								}
+							}
+						}
+
+						// Should never reach here
+						throw new Error("Retry loop exited unexpectedly");
+					};
+				}
+
+				// 4. Apply timeout if specified
+				if (options?.timeout !== undefined && options.timeout > 0) {
+					const timeoutMs = options.timeout;
+					const innerFn = executeFn;
+					executeFn = (sig) =>
+						new Promise((resolve, reject) => {
+							const timeoutId = setTimeout(() => {
+								reject(new Error(`timeout after ${timeoutMs}ms`));
+							}, timeoutMs);
+
+							innerFn(sig)
+								.then((result) => {
+									clearTimeout(timeoutId);
+									resolve(result);
+								})
+								.catch((err) => {
+									clearTimeout(timeoutId);
+									reject(err);
+								});
+						});
+				}
+
+				// Execute with Result wrapping
+				try {
+					const result = await executeFn(signal);
+					return [undefined, result] as Success<T>;
+				} catch (error) {
+					const message =
+						error instanceof Error ? error.message : String(error);
+					return [message, undefined] as Failure<string>;
+				}
+			},
+			{ otel: options?.otel }, // Only pass otel options to spawn
+		);
 	}
 
 	/**
@@ -562,26 +1036,6 @@ export class Scope implements AsyncDisposable {
 		return ch;
 	}
 
-	/** Create a semaphore within this scope. */
-	semaphore(permits: number): Semaphore {
-		const sem = new Semaphore(permits, this.signal);
-		this.acquire(
-			async () => sem,
-			async () => sem[Symbol.asyncDispose](),
-		).catch(() => {});
-		return sem;
-	}
-
-	/** Create a circuit breaker within this scope. */
-	circuitBreaker(options?: CircuitBreakerOptions): CircuitBreaker {
-		const cb = new CircuitBreaker(options, this.signal);
-		this.acquire(
-			async () => cb,
-			async () => cb[Symbol.asyncDispose](),
-		).catch(() => {});
-		return cb;
-	}
-
 	/** Wrap an AsyncIterable with scope cancellation. */
 	stream<T>(source: AsyncIterable<T>): AsyncGenerator<T> {
 		return stream(source, this.signal);
@@ -594,6 +1048,91 @@ export class Scope implements AsyncDisposable {
 		options?: Omit<PollOptions, "signal">,
 	): Promise<void> {
 		return poll(fn, onValue, { ...options, signal: this.signal });
+	}
+
+	/**
+	 * Race multiple tasks - the first to settle wins, others are cancelled.
+	 * Tasks run within this scope and inherit its configuration.
+	 *
+	 * @param factories - Array of factory functions that create promises
+	 * @returns A Promise that resolves to the value of the first settled task
+	 */
+	async race<T>(
+		factories: readonly ((signal: AbortSignal) => Promise<T>)[],
+	): Promise<T> {
+		return race(factories, {
+			signal: this.signal,
+		});
+	}
+
+	/**
+	 * Race multiple tasks and return Result tuples.
+	 * The first to settle wins, others are cancelled.
+	 * Never throws - errors are returned as [error, undefined].
+	 *
+	 * @param factories - Array of factory functions that create promises
+	 * @returns A Promise that resolves to a Result tuple of the first settled task
+	 */
+	async raceTasks<T>(
+		factories: readonly ((signal: AbortSignal) => Promise<T>)[],
+	): Promise<Result<string, T>> {
+		try {
+			const result = await this.race(factories);
+			return [undefined, result];
+		} catch (error) {
+			return [
+				error instanceof Error ? error.message : String(error),
+				undefined,
+			];
+		}
+	}
+
+	/**
+	 * Run multiple tasks in parallel.
+	 * Tasks run within this scope and inherit its configuration.
+	 *
+	 * @param factories - Array of factory functions that create promises
+	 * @param options - Optional configuration (failFast defaults to true)
+	 * @returns A Promise that resolves to an array of results
+	 */
+	async parallel<T>(
+		factories: readonly ((signal: AbortSignal) => Promise<T>)[],
+		options?: { failFast?: boolean },
+	): Promise<T[]> {
+		return parallel(factories, {
+			signal: this.signal,
+			concurrency: this.concurrencySemaphore?.totalPermits,
+			failFast: options?.failFast ?? true,
+		});
+	}
+
+	/**
+	 * Run multiple tasks in parallel and return Result tuples.
+	 * By default, never throws - individual task errors are returned as [error, undefined].
+	 *
+	 * @param factories - Array of factory functions that create promises
+	 * @param options - Optional configuration (failFast defaults to false)
+	 * @returns A Promise that resolves to an array of Result tuples, or throws if failFast is true
+	 */
+	async parallelTasks<T>(
+		factories: readonly ((signal: AbortSignal) => Promise<T>)[],
+		options?: { failFast?: boolean },
+	): Promise<Result<string, T>[]> {
+		// If failFast is true, use parallel and convert results
+		if (options?.failFast) {
+			const results = await parallel(factories, {
+				signal: this.signal,
+				concurrency: this.concurrencySemaphore?.totalPermits,
+				failFast: true,
+			});
+			// All succeeded, convert to Results
+			return results.map((r) => [undefined, r]);
+		}
+		// Default: use parallelResults which never throws
+		return parallelResults(factories, {
+			signal: this.signal,
+			concurrency: this.concurrencySemaphore?.totalPermits,
+		});
 	}
 }
 
@@ -654,16 +1193,23 @@ export async function race<T>(
 	factories: readonly ((signal: AbortSignal) => Promise<T>)[],
 	options?: RaceOptions,
 ): Promise<T> {
-	if (factories.length === 0) {
+	const totalTasks = factories.length;
+
+	if (totalTasks === 0) {
 		throw new Error("Cannot race empty array of factories");
 	}
 
+	debugScope("[race] starting race with %d competitors", totalTasks);
+
 	// Check if signal is already aborted
 	if (options?.signal?.aborted) {
+		debugScope("[race] already aborted, throwing");
 		throw options.signal.reason;
 	}
 
 	const s = new Scope({ signal: options?.signal });
+	let settledCount = 0;
+	let winnerIndex = -1;
 
 	try {
 		// Create abort promise that rejects when signal aborts
@@ -671,89 +1217,46 @@ export async function race<T>(
 			s.signal.addEventListener(
 				"abort",
 				() => {
+					debugScope(
+						"[race] aborted, %d/%d tasks settled",
+						settledCount,
+						totalTasks,
+					);
 					reject(s.signal.reason);
 				},
 				{ once: true },
 			);
 		});
 
-		// Spawn all tasks, passing the scope's signal
-		const tasks = factories.map((factory) =>
-			s.spawn((signal) => factory(signal)),
+		// Spawn all tasks with tracking
+		const tasks = factories.map((factory, idx) =>
+			s.spawn(async (signal) => {
+				const result = await factory(signal);
+				settledCount++;
+				if (winnerIndex === -1) {
+					winnerIndex = idx;
+					debugScope(
+						"[race] winner! task %d/%d won the race",
+						idx + 1,
+						totalTasks,
+					);
+				} else {
+					debugScope("[race] task %d/%d settled (loser)", idx + 1, totalTasks);
+				}
+				return result;
+			}),
 		);
 
 		// Race all tasks against abort
-		return await Promise.race([...tasks, abortPromise]);
+		const result = await Promise.race([...tasks, abortPromise]);
+		debugScope(
+			"[race] race complete, winner was task %d/%d",
+			winnerIndex + 1,
+			totalTasks,
+		);
+		return result;
 	} finally {
 		// Clean up scope - cancels all tasks
-		await s[Symbol.asyncDispose]();
-	}
-}
-
-/**
- * Options for the timeout function
- */
-export interface TimeoutOptions {
-	/**
-	 * Optional signal to cancel the timeout.
-	 */
-	signal?: AbortSignal;
-}
-
-/**
- * Run a function with a timeout.
- * The function receives an AbortSignal that's aborted when the timeout expires.
- *
- * @param ms - Timeout in milliseconds
- * @param fn - Function to execute
- * @param options - Optional configuration
- * @returns A Promise that resolves to the function's return value
- * @throws Error if the timeout is reached
- *
- * @example
- * ```typescript
- * const result = await timeout(5000, async (signal) => {
- *   const response = await fetch(url, { signal })
- *   return response.json()
- * })
- * ```
- */
-export async function timeout<T>(
-	ms: number,
-	fn: (signal: AbortSignal) => Promise<T>,
-	options?: TimeoutOptions,
-): Promise<T> {
-	// Check if signal is already aborted
-	if (options?.signal?.aborted) {
-		throw options.signal.reason;
-	}
-
-	const s = new Scope({ signal: options?.signal });
-
-	try {
-		// Create the user promise
-		const userPromise = fn(s.signal);
-
-		// Create the timeout promise
-		const timeoutPromise = new Promise<never>((_, reject) => {
-			const timeoutId = setTimeout(() => {
-				reject(new Error(`timeout after ${ms}ms`));
-			}, ms);
-
-			// Clean up timeout if scope is aborted
-			s.signal.addEventListener(
-				"abort",
-				() => {
-					clearTimeout(timeoutId);
-					reject(s.signal.reason);
-				},
-				{ once: true },
-			);
-		});
-
-		// Race between user function and timeout
-		return await Promise.race([userPromise, timeoutPromise]);
-	} finally {
 		await s[Symbol.asyncDispose]();
 	}
 }
@@ -776,20 +1279,33 @@ export async function timeout<T>(
  */
 export async function parallel<T>(
 	factories: readonly ((signal: AbortSignal) => Promise<T>)[],
-	options?: { concurrency?: number; signal?: AbortSignal },
+	options?: { concurrency?: number; signal?: AbortSignal; failFast?: boolean },
 ): Promise<T[]> {
 	if (factories.length === 0) {
+		debugScope("[parallel] no factories, returning empty array");
 		return [];
 	}
 
 	const concurrency = options?.concurrency ?? 0;
+	const failFast = options?.failFast ?? true;
+	const totalTasks = factories.length;
+
+	debugScope(
+		"[parallel] starting parallel execution (tasks: %d, concurrency: %d, failFast: %s)",
+		totalTasks,
+		concurrency > 0 ? concurrency : "unlimited",
+		failFast,
+	);
 
 	// Check if signal is already aborted
 	if (options?.signal?.aborted) {
+		debugScope("[parallel] already aborted, throwing");
 		throw options.signal.reason;
 	}
 
 	const s = new Scope({ signal: options?.signal });
+	let completedCount = 0;
+	let errorCount = 0;
 
 	try {
 		// Create abort promise that rejects when signal aborts
@@ -797,54 +1313,144 @@ export async function parallel<T>(
 			s.signal.addEventListener(
 				"abort",
 				() => {
+					debugScope(
+						"[parallel] aborted, completed %d/%d tasks",
+						completedCount,
+						totalTasks,
+					);
 					reject(s.signal.reason);
 				},
 				{ once: true },
 			);
 		});
 
+		// Helper to process a single task
+		const processTask = async (
+			factory: (signal: AbortSignal) => Promise<T>,
+			idx: number,
+		): Promise<{ result?: T; error?: unknown; index: number }> => {
+			try {
+				const result = await s.spawn((signal) => factory(signal));
+				completedCount++;
+				debugScope(
+					"[parallel] task %d/%d completed",
+					completedCount,
+					totalTasks,
+				);
+				return { result, index: idx };
+			} catch (error) {
+				errorCount++;
+				debugScope(
+					"[parallel] task %d/%d failed (failFast: %s)",
+					errorCount,
+					totalTasks,
+					failFast,
+				);
+				return { error, index: idx };
+			}
+		};
+
 		// If no concurrency limit, run all in parallel
 		if (concurrency <= 0 || concurrency >= factories.length) {
-			const tasks = factories.map((factory) =>
-				s.spawn((signal) => factory(signal)),
-			);
-			return await Promise.race([Promise.all(tasks), abortPromise]);
+			debugScope("[parallel] running all tasks in parallel");
+			const settled = await Promise.race([
+				Promise.all(factories.map((f, i) => processTask(f, i))),
+				abortPromise,
+			]);
+
+			// Check for errors if failFast
+			if (failFast) {
+				const firstError = settled.find((s) => s.error);
+				if (firstError) {
+					throw firstError.error;
+				}
+			}
+
+			// Extract results in order
+			return settled.map((s) => s.result as T);
 		}
 
 		// Run with limited concurrency using a worker pool
-		const results: T[] = new Array(factories.length);
+		debugScope("[parallel] running with concurrency limit: %d", concurrency);
+		const results: (T | undefined)[] = new Array(factories.length);
+		const errors: (unknown | undefined)[] = new Array(factories.length);
 		let index = 0;
+		let hasError = false;
 
-		async function worker(): Promise<void> {
+		async function worker(workerId: number): Promise<void> {
+			debugScope("[parallel] worker %d started", workerId);
+			let tasksProcessed = 0;
 			while (index < factories.length) {
+				// Check if we should stop due to error in failFast mode
+				if (failFast && hasError) {
+					debugScope("[parallel] worker %d stopping due to error", workerId);
+					break;
+				}
+
 				const currentIndex = index++;
 				const factory = factories[currentIndex];
 				if (!factory) continue;
-				const task = s.spawn((signal) => factory(signal));
-				results[currentIndex] = await task;
+
+				debugScope(
+					"[parallel] worker %d processing task %d",
+					workerId,
+					currentIndex,
+				);
+
+				const settled = await processTask(factory, currentIndex);
+				if (settled.error) {
+					errors[currentIndex] = settled.error;
+					hasError = true;
+					if (failFast) {
+						debugScope("[parallel] worker %d aborting due to error", workerId);
+						break;
+					}
+				} else {
+					results[currentIndex] = settled.result;
+				}
+				tasksProcessed++;
 			}
+			debugScope(
+				"[parallel] worker %d finished, processed %d tasks",
+				workerId,
+				tasksProcessed,
+			);
 		}
 
 		const workers: Promise<void>[] = [];
 		const workerCount = Math.min(concurrency, factories.length);
 		for (let i = 0; i < workerCount; i++) {
-			workers.push(worker());
+			workers.push(worker(i));
 		}
 
 		await Promise.race([Promise.all(workers), abortPromise]);
-		return results;
+
+		// Check for errors if failFast
+		if (failFast && hasError) {
+			const firstError = errors.find((e) => e !== undefined);
+			if (firstError) throw firstError;
+		}
+
+		debugScope(
+			"[parallel] all tasks completed: %d/%d, errors: %d",
+			completedCount,
+			totalTasks,
+			errorCount,
+		);
+		return results as T[];
 	} finally {
 		await s[Symbol.asyncDispose]();
 	}
 }
 
 /**
- * Run multiple tasks in parallel and return Results (never throws).
- * Failed tasks return Failure, successful tasks return Success.
+ * Run multiple tasks in parallel and return Results.
+ * By default, never throws - failed tasks return Failure, successful tasks return Success.
+ * When failFast is true, throws on first error instead.
  *
  * @param factories - Array of factory functions that receive AbortSignal and create promises
- * @param options - Optional configuration including concurrency limit
- * @returns A Promise that resolves to an array of Results
+ * @param options - Optional configuration including concurrency limit and failFast
+ * @returns A Promise that resolves to an array of Results (or throws if failFast is true)
  *
  * @example
  * ```typescript
@@ -857,13 +1463,14 @@ export async function parallel<T>(
  */
 export async function parallelResults<T>(
 	factories: readonly ((signal: AbortSignal) => Promise<T>)[],
-	options?: { concurrency?: number; signal?: AbortSignal },
+	options?: { concurrency?: number; signal?: AbortSignal; failFast?: boolean },
 ): Promise<Result<string, T>[]> {
 	if (factories.length === 0) {
 		return [];
 	}
 
 	const concurrency = options?.concurrency ?? 0;
+	const failFast = options?.failFast ?? false;
 
 	// Check if signal is already aborted
 	if (options?.signal?.aborted) {
@@ -896,6 +1503,16 @@ export async function parallelResults<T>(
 					return [message, undefined] as Failure<string>;
 				}
 			});
+
+		// If failFast is true, use parallel and convert to Results
+		if (failFast) {
+			const results = await parallel(factories, {
+				signal: options?.signal,
+				concurrency,
+				failFast: true,
+			});
+			return results.map((r) => [undefined, r]);
+		}
 
 		// If no concurrency limit, run all in parallel
 		if (concurrency <= 0 || concurrency >= factories.length) {
@@ -1140,20 +1757,25 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
  * A Semaphore for limiting concurrent access to a resource.
  * Respects scope cancellation.
  *
+ * Note: For most use cases, use `scope({ concurrency: n })` instead
+ * of creating a Semaphore directly. This applies concurrency limits
+ * automatically to all tasks spawned in the scope.
+ *
  * @example
  * ```typescript
- * await using s = scope()
- * const sem = s.semaphore(3)
+ * // Automatic concurrency via scope
+ * await using s = scope({ concurrency: 3 })
  *
  * await parallel([
- *   () => sem.acquire(() => heavyTask1()),
- *   () => sem.acquire(() => heavyTask2()),
- *   () => sem.acquire(() => heavyTask3()),
+ *   () => s.spawn(() => heavyTask1()),
+ *   () => s.spawn(() => heavyTask2()),
+ *   () => s.spawn(() => heavyTask3()),
  * ])
  * ```
  */
 export class Semaphore implements AsyncDisposable {
 	private permits: number;
+	private initialPermits: number;
 	private queue: Array<{
 		resolve: () => void;
 		reject: (reason: unknown) => void;
@@ -1163,6 +1785,7 @@ export class Semaphore implements AsyncDisposable {
 
 	constructor(initialPermits: number, parentSignal?: AbortSignal) {
 		this.permits = initialPermits;
+		this.initialPermits = initialPermits;
 
 		if (parentSignal) {
 			parentSignal.addEventListener(
@@ -1238,6 +1861,13 @@ export class Semaphore implements AsyncDisposable {
 	}
 
 	/**
+	 * Get the total number of permits (initial capacity).
+	 */
+	get totalPermits(): number {
+		return this.initialPermits;
+	}
+
+	/**
 	 * Dispose the semaphore, aborting all pending acquires.
 	 */
 	async [Symbol.asyncDispose](): Promise<void> {
@@ -1262,7 +1892,9 @@ export class Semaphore implements AsyncDisposable {
 export type CircuitState = "closed" | "open" | "half-open";
 
 /**
- * Options for the circuit breaker.
+ * Options for configuring a circuit breaker in a scope.
+ * Pass these to `scope({ circuitBreaker: {...} })` to enable circuit breaking
+ * for all tasks spawned within that scope.
  */
 export interface CircuitBreakerOptions {
 	/** Number of failures before opening the circuit. Default: 5 */
@@ -1272,21 +1904,11 @@ export interface CircuitBreakerOptions {
 }
 
 /**
- * A Circuit Breaker that prevents cascading failures.
- * Automatically transitions between closed, open, and half-open states.
- * Respects scope cancellation via AbortSignal.
- *
- * @example
- * ```typescript
- * await using s = scope()
- * const cb = s.circuitBreaker({ failureThreshold: 3, resetTimeout: 10000 })
- *
- * const result = await cb.execute((signal) =>
- *   fetchData({ signal })
- * )
- * ```
+ * Internal Circuit Breaker implementation.
+ * Created automatically when `circuitBreaker` options are passed to `scope()`.
+ * Not exposed directly - use `scope({ circuitBreaker: {...} })` instead.
  */
-export class CircuitBreaker implements AsyncDisposable {
+class CircuitBreaker implements AsyncDisposable {
 	private state: CircuitState = "closed";
 	private failures = 0;
 	private lastFailureTime?: number;
@@ -1483,41 +2105,71 @@ export async function poll<T>(
 	const interval = options.interval ?? 5000;
 	const immediate = options.immediate ?? true;
 
+	debugScope(
+		"[poll] starting poll (interval: %dms, immediate: %s)",
+		interval,
+		immediate,
+	);
+
 	// Check if already aborted
 	if (options.signal?.aborted) {
+		debugScope("[poll] already aborted, throwing");
 		throw options.signal.reason;
 	}
 
 	const s = new Scope({ signal: options.signal });
+	let pollCount = 0;
 
 	try {
 		let firstRun = true;
 		while (!s.signal.aborted) {
 			if (immediate || !firstRun) {
+				pollCount++;
+				debugScope("[poll] executing poll #%d", pollCount);
 				try {
+					const startTime = performance.now();
 					const value = await s.spawn((sig) => fn(sig));
+					const duration = performance.now() - startTime;
+					debugScope(
+						"[poll] poll #%d succeeded in %dms",
+						pollCount,
+						Math.round(duration),
+					);
 					await onValue(value);
 				} catch (error) {
+					debugScope(
+						"[poll] poll #%d failed: %s",
+						pollCount,
+						error instanceof Error ? error.message : String(error),
+					);
 					// Continue polling even on error
-					// Could add error callback option here
 				}
 			}
 			firstRun = false;
 
 			// Wait for interval or abort
-			await new Promise<void>((resolve, reject) => {
-				const timeoutId = setTimeout(resolve, interval);
-				s.signal.addEventListener(
-					"abort",
-					() => {
-						clearTimeout(timeoutId);
-						reject(s.signal.reason);
-					},
-					{ once: true },
+			try {
+				await new Promise<void>((resolve, reject) => {
+					const timeoutId = setTimeout(resolve, interval);
+					s.signal.addEventListener(
+						"abort",
+						() => {
+							clearTimeout(timeoutId);
+							reject(s.signal.reason);
+						},
+						{ once: true },
+					);
+				});
+			} catch {
+				debugScope(
+					"[poll] aborted during interval wait, total polls: %d",
+					pollCount,
 				);
-			});
+				break;
+			}
 		}
 	} finally {
+		debugScope("[poll] stopping poll, total executions: %d", pollCount);
 		await s[Symbol.asyncDispose]();
 	}
 }

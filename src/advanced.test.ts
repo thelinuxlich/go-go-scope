@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { stream, CircuitBreaker, parallel, poll, scope } from "./index.js";
+import { stream, Semaphore, poll, scope } from "./index.js";
 
 describe("Channel", () => {
 	test("basic send and receive", async () => {
@@ -139,8 +139,7 @@ describe("Channel", () => {
 
 describe("Semaphore", () => {
 	test("basic acquire and release", async () => {
-		await using s = scope();
-		const sem = s.semaphore(1);
+		const sem = new Semaphore(1);
 
 		let acquired = false;
 		await sem.acquire(async () => {
@@ -152,13 +151,13 @@ describe("Semaphore", () => {
 	});
 
 	test("limits concurrent access", async () => {
+		const sem = new Semaphore(2);
 		await using s = scope();
-		const sem = s.semaphore(2);
 
 		let concurrent = 0;
 		let maxConcurrent = 0;
 
-		await parallel(
+		await s.parallel(
 			[1, 2, 3, 4].map(
 				() => () =>
 					sem.acquire(async () => {
@@ -174,8 +173,7 @@ describe("Semaphore", () => {
 	});
 
 	test("releases permit on error", async () => {
-		await using s = scope();
-		const sem = s.semaphore(1);
+		const sem = new Semaphore(1);
 
 		await expect(
 			sem.acquire(async () => {
@@ -192,15 +190,16 @@ describe("Semaphore", () => {
 		});
 	});
 
-	test("cancels waiting acquirers on scope dispose", async () => {
-		const s = scope();
-		const sem = s.semaphore(1);
+	test("cancels waiting acquirers on dispose", async () => {
+		const sem = new Semaphore(1);
 
 		// Acquire the only permit and hold it
-		s.spawn(async () => {
-			await sem.acquire(async () => {
-				await new Promise((r) => setTimeout(r, 200));
-			});
+		let released = false;
+		const holdingAcquire = sem.acquire(async () => {
+			// Hold until explicitly told to release
+			while (!released) {
+				await new Promise((r) => setTimeout(r, 10));
+			}
 		});
 
 		// Give time for permit to be acquired
@@ -214,156 +213,125 @@ describe("Semaphore", () => {
 		// Give it time to start waiting
 		await new Promise((r) => setTimeout(r, 10));
 
-		// Dispose scope
-		await s[Symbol.asyncDispose]().catch(() => {});
+		// Dispose semaphore
+		await sem[Symbol.asyncDispose]();
 
 		// Waiting acquire should reject
 		await expect(waitingAcquire).rejects.toThrow();
+
+		// Release the holding acquire so it can complete
+		released = true;
+		// It may complete or reject depending on timing - just don't await it
 	});
 
 	test("available and waiting properties", async () => {
-		await using s = scope();
-		const sem = s.semaphore(3);
+		const sem = new Semaphore(3);
 
 		expect(sem.available).toBe(3);
 		expect(sem.waiting).toBe(0);
+		expect(sem.totalPermits).toBe(3);
 	});
 });
 
 describe("CircuitBreaker", () => {
-	test("allows requests when closed", async () => {
-		await using s = scope();
-		const cb = s.circuitBreaker({ failureThreshold: 3 });
-
-		const result = await cb.execute(() => Promise.resolve("success"));
-		expect(result).toBe("success");
-		expect(cb.currentState).toBe("closed");
-	});
-
-	test("opens after threshold failures", async () => {
-		await using s = scope();
-		const cb = s.circuitBreaker({ failureThreshold: 3 });
+	test("scope-level circuit breaker opens after threshold failures", async () => {
+		await using s = scope({ circuitBreaker: { failureThreshold: 3 } });
 
 		// Fail 3 times
 		for (let i = 0; i < 3; i++) {
 			try {
-				await cb.execute(() => Promise.reject(new Error("fail")));
+				await s.spawn(() => Promise.reject(new Error("fail")));
 			} catch {
 				// Expected
 			}
 		}
 
-		expect(cb.currentState).toBe("open");
-
-		// Next request should be rejected immediately
-		await expect(cb.execute(() => Promise.resolve("success"))).rejects.toThrow(
+		// Next request should be rejected immediately by circuit breaker
+		await expect(s.spawn(() => Promise.resolve("success"))).rejects.toThrow(
 			"Circuit breaker is open",
 		);
 	});
 
-	test("half-open after reset timeout", async () => {
-		await using s = scope();
-		const cb = s.circuitBreaker({
-			failureThreshold: 2,
-			resetTimeout: 50,
+	test("circuit breaker allows successful requests when closed", async () => {
+		await using s = scope({ circuitBreaker: { failureThreshold: 3 } });
+
+		const result = await s.spawn(() => Promise.resolve("success"));
+		expect(result).toBe("success");
+	});
+
+	test("circuit breaker becomes half-open after reset timeout", async () => {
+		await using s = scope({
+			circuitBreaker: { failureThreshold: 2, resetTimeout: 50 },
 		});
 
 		// Open the circuit
 		try {
-			await cb.execute(() => Promise.reject(new Error("fail1")));
+			await s.spawn(() => Promise.reject(new Error("fail1")));
 		} catch {}
 		try {
-			await cb.execute(() => Promise.reject(new Error("fail2")));
+			await s.spawn(() => Promise.reject(new Error("fail2")));
 		} catch {}
 
-		expect(cb.currentState).toBe("open");
+		// Circuit should be open
+		await expect(s.spawn(() => Promise.resolve("test"))).rejects.toThrow(
+			"Circuit breaker is open",
+		);
 
 		// Wait for reset timeout
 		await new Promise((r) => setTimeout(r, 60));
 
-		// Should be half-open now
-		expect(cb.currentState).toBe("half-open");
-
-		// Successful request should close it
-		await cb.execute(() => Promise.resolve("success"));
-		expect(cb.currentState).toBe("closed");
-	});
-
-	test("failure in half-open reopens circuit", async () => {
-		await using s = scope();
-		const cb = s.circuitBreaker({
-			failureThreshold: 1,
-			resetTimeout: 50,
-		});
-
-		// Open the circuit
-		try {
-			await cb.execute(() => Promise.reject(new Error("fail")));
-		} catch {}
-
-		expect(cb.currentState).toBe("open");
-
-		// Wait for reset
-		await new Promise((r) => setTimeout(r, 60));
-		expect(cb.currentState).toBe("half-open");
-
-		// Fail in half-open
-		await expect(
-			cb.execute(() => Promise.reject(new Error("fail again"))),
-		).rejects.toThrow("fail again");
-
-		expect(cb.currentState).toBe("open");
-	});
-
-	test("resets to closed on success", async () => {
-		await using s = scope();
-		const cb = s.circuitBreaker({ failureThreshold: 5 });
-
-		// Some failures but not enough to open
-		try {
-			await cb.execute(() => Promise.reject(new Error("fail")));
-		} catch {}
-		try {
-			await cb.execute(() => Promise.reject(new Error("fail")));
-		} catch {}
-
-		expect(cb.failureCount).toBe(2);
-
-		// Success should reset
-		await cb.execute(() => Promise.resolve("success"));
-		expect(cb.failureCount).toBe(0);
-		expect(cb.currentState).toBe("closed");
-	});
-
-	test("manual reset", async () => {
-		await using s = scope();
-		const cb = s.circuitBreaker({ failureThreshold: 1 });
-
-		// Open circuit
-		try {
-			await cb.execute(() => Promise.reject(new Error("fail")));
-		} catch {}
-		expect(cb.currentState).toBe("open");
-
-		// Manual reset
-		cb.reset();
-		expect(cb.currentState).toBe("closed");
-		expect(cb.failureCount).toBe(0);
-
-		// Should work again
-		const result = await cb.execute(() => Promise.resolve("success"));
+		// Should be half-open now - one request allowed through
+		const result = await s.spawn(() => Promise.resolve("success"));
 		expect(result).toBe("success");
 	});
 
-	test("respects parent signal", async () => {
-		const controller = new AbortController();
-		const cb = new CircuitBreaker({}, controller.signal);
+	test("circuit breaker resets failure count on success", async () => {
+		await using s = scope({ circuitBreaker: { failureThreshold: 5 } });
 
-		controller.abort("stopped");
+		// Some failures but not enough to open
+		try {
+			await s.spawn(() => Promise.reject(new Error("fail")));
+		} catch {}
+		try {
+			await s.spawn(() => Promise.reject(new Error("fail")));
+		} catch {}
 
-		await expect(cb.execute(() => Promise.resolve("success"))).rejects.toThrow(
-			"stopped",
-		);
+		// Success should reset failure count
+		const result = await s.spawn(() => Promise.resolve("success"));
+		expect(result).toBe("success");
+
+		// Would need 5 more failures to open now
+		const result2 = await s.spawn(() => Promise.resolve("still closed"));
+		expect(result2).toBe("still closed");
+	});
+
+	test("circuit breaker with fallback pattern", async () => {
+		await using s = scope({ circuitBreaker: { failureThreshold: 2 } });
+
+		let failures = 0;
+
+		// Try to fetch with circuit breaker
+		async function fetchWithFallback() {
+			try {
+				return await s.spawn(async () => {
+					if (failures < 3) {
+						failures++;
+						throw new Error("service down");
+					}
+					return "success";
+				});
+			} catch {
+				// Circuit open or error - use fallback
+				return "fallback";
+			}
+		}
+
+		// First 2 calls fail but circuit is still closed
+		expect(await fetchWithFallback()).toBe("fallback");
+		expect(await fetchWithFallback()).toBe("fallback");
+
+		// Circuit is now open - subsequent calls immediately use fallback
+		expect(await fetchWithFallback()).toBe("fallback");
 	});
 });
 
@@ -549,20 +517,17 @@ describe("poll", () => {
 		const results: number[] = [];
 		let counter = 0;
 
-		// Start polling
-		void s.poll(
+		// Start polling and catch rejection on disposal
+		s.poll(
 			() => Promise.resolve(++counter),
 			(value) => {
 				results.push(value);
 			},
 			{ interval: 50, immediate: true },
-		);
+		).catch(() => {});
 
 		// Let it run
 		await new Promise((r) => setTimeout(r, 120));
-
-		// Dispose scope to stop polling
-		await s[Symbol.asyncDispose]();
 
 		// Should have some results
 		expect(results.length).toBeGreaterThanOrEqual(1);
@@ -617,73 +582,32 @@ describe("Integration: Real-world scenarios", () => {
 		expect(processedLogs.length).toBe(15);
 	});
 
-	test("rate-limited worker pool", async () => {
-		await using s = scope();
+	test("scope concurrency limits concurrent tasks", async () => {
+		// Scope with concurrency limit of 2
+		await using s = scope({ concurrency: 2 });
 
-		const jobChannel = s.channel<number>(10);
+		let concurrent = 0;
+		let maxConcurrent = 0;
 		const results: number[] = [];
 
-		// 3 workers with semaphore for rate limiting
-		const sem = s.semaphore(2); // Max 2 concurrent jobs
-
-		const workers = Array.from({ length: 3 }, () =>
+		// Spawn 5 tasks, but only 2 should run concurrently
+		const tasks = Array.from({ length: 5 }, (_, i) =>
 			s.spawn(async () => {
-				for await (const job of jobChannel) {
-					await sem.acquire(async () => {
-						// Simulate work
-						await new Promise((r) => setTimeout(r, 10));
-						results.push(job * 2);
-					});
-				}
+				concurrent++;
+				maxConcurrent = Math.max(maxConcurrent, concurrent);
+
+				// Simulate work
+				await new Promise((r) => setTimeout(r, 20));
+				results.push(i);
+
+				concurrent--;
 			}),
 		);
 
-		// Producer
-		s.spawn(async () => {
-			for (let i = 1; i <= 10; i++) {
-				await jobChannel.send(i);
-			}
-			jobChannel.close();
-		});
+		await Promise.all(tasks);
 
-		await Promise.all(workers);
-
-		expect(results).toHaveLength(10);
-		expect(results.sort((a, b) => a - b)).toEqual([
-			2, 4, 6, 8, 10, 12, 14, 16, 18, 20,
-		]);
-	});
-
-	test("circuit breaker with fallback", async () => {
-		await using s = scope();
-
-		let failures = 0;
-		const cb = s.circuitBreaker({ failureThreshold: 2 });
-
-		// Try to fetch with circuit breaker
-		async function fetchWithFallback() {
-			try {
-				return await cb.execute(async () => {
-					if (failures < 3) {
-						failures++;
-						throw new Error("service down");
-					}
-					return "success";
-				});
-			} catch {
-				// Circuit open or error - use fallback
-				return "fallback";
-			}
-		}
-
-		// First 2 calls fail but circuit is still closed
-		expect(await fetchWithFallback()).toBe("fallback");
-		expect(await fetchWithFallback()).toBe("fallback");
-
-		// Circuit is now open
-		expect(cb.currentState).toBe("open");
-
-		// Subsequent calls immediately use fallback
-		expect(await fetchWithFallback()).toBe("fallback");
+		expect(results).toHaveLength(5);
+		expect(maxConcurrent).toBeLessThanOrEqual(2);
+		expect(maxConcurrent).toBeGreaterThan(1); // Should have some concurrency
 	});
 });

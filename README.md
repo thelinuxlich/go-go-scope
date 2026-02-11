@@ -27,10 +27,10 @@ npm install go-go-scope
 ## Basic Usage
 
 ```typescript
-import { scope, race, timeout, parallelResults } from 'go-go-scope'
+import { scope } from 'go-go-scope'
 import { goTry } from 'go-go-try'
 
-// Simple scoped operation
+// Simple scoped operation with timeout
 async function fetchUserData(userId: string) {
   await using s = scope({ timeout: 5000 })
   
@@ -43,27 +43,36 @@ async function fetchUserData(userId: string) {
 }
 
 // Race multiple operations - signal available for cancellation
-const fastest = await race([
+await using s = scope()
+const fastest = await s.race([
   (signal) => fetch('https://replica-a.com', { signal }),
   (signal) => fetch('https://replica-b.com', { signal }),
   (signal) => fetch('https://replica-c.com', { signal }),
 ])
 // Slow replicas are automatically cancelled!
 
-// Timeout wrapper - signal available for fetch cancellation
-const result = await timeout(3000, async (signal) => {
-  const response = await fetch(url, { signal })
-  return response.json()
-})
+// Task-level timeout
+await using s = scope()
+const result = await s.spawn(
+  async (signal) => {
+    const response = await fetch(url, { signal })
+    return response.json()
+  },
+  { timeout: 3000 }
+)
 
-// Parallel with error tolerance - signal available
-const [errors, results] = await parallelResults([
+// Parallel with error tolerance - returns Result tuples
+await using s = scope()
+const results = await s.parallelTasks([
   (signal) => fetchUser(1, { signal }),  // might fail
   (signal) => fetchUser(2, { signal }),  // might fail
   (signal) => fetchUser(3, { signal }),  // might fail
 ])
-// errors = [string | undefined, string | undefined, string | undefined]
-// results = [User | undefined, User | undefined, User | undefined]
+// Each result is [string | undefined, User | undefined]
+for (const [err, user] of results) {
+  if (err) console.log('Failed:', err)
+  else console.log('User:', user)
+}
 ```
 
 ## API
@@ -74,10 +83,15 @@ Creates a new scope for structured concurrency.
 
 ```typescript
 interface ScopeOptions {
-  timeout?: number      // Auto-abort after N milliseconds
-  signal?: AbortSignal  // Link to parent signal
-  tracer?: Tracer       // OpenTelemetry tracer for automatic tracing
-  name?: string         // Name for the scope span (default: "scope")
+  timeout?: number           // Auto-abort after N milliseconds
+  signal?: AbortSignal       // Link to parent signal
+  tracer?: Tracer            // OpenTelemetry tracer for automatic tracing
+  name?: string              // Name for the scope span (default: "scope")
+  concurrency?: number       // Max concurrent tasks (0 = unlimited)
+  circuitBreaker?: {         // Circuit breaker configuration
+    failureThreshold?: number // Failures before opening (default: 5)
+    resetTimeout?: number     // ms before retry (default: 30000)
+  }
 }
 
 await using s = scope({ timeout: 5000 })
@@ -86,6 +100,8 @@ await using s = scope({ timeout: 5000 })
 ### `Scope.spawn(fn, options?)`
 
 Spawns a task within the scope. Task is cancelled when scope exits.
+
+Supports retry and timeout via TaskOptions. Inherits scope's concurrency and circuit breaker settings.
 
 ```typescript
 using task = s.spawn(async (signal) => {
@@ -96,13 +112,29 @@ using task = s.spawn(async (signal) => {
 const result = await task
 ```
 
-With OpenTelemetry options:
+With retry:
 ```typescript
 using task = s.spawn(
   async (signal) => fetchUser(id, { signal }),
   { 
-    name: 'fetch-user',
-    attributes: { 'user.id': id }
+    retry: {
+      maxRetries: 3,
+      delay: 1000,
+      retryCondition: (err) => err instanceof NetworkError
+    }
+  }
+)
+```
+
+With OpenTelemetry:
+```typescript
+using task = s.spawn(
+  async (signal) => fetchUser(id, { signal }),
+  { 
+    otel: {
+      name: 'fetch-user',
+      attributes: { 'user.id': id }
+    }
   }
 )
 ```
@@ -111,18 +143,56 @@ using task = s.spawn(
 
 Like `spawn`, but returns a `Result` tuple compatible with go-go-try.
 
+Supports the same options as `spawn`.
+
 ```typescript
 using task = s.task(() => riskyOperation())
 const [err, value] = await task  // [string | undefined, T | undefined]
 ```
 
-With OpenTelemetry options:
+With retry:
 ```typescript
 using task = s.task(
   () => riskyOperation(),
-  { name: 'background-operation', attributes: { priority: 'high' } }
+  { 
+    retry: { maxRetries: 3, delay: 1000 },
+    otel: { name: 'background-operation' }
+  }
 )
 ```
+
+### TaskOptions
+
+Both `spawn()` and `task()` accept a `TaskOptions` object with the following properties:
+
+```typescript
+interface TaskOptions {
+  // OpenTelemetry tracing options
+  otel?: {
+    name?: string           // Task span name (default: "scope.task")
+    attributes?: Record<string, unknown>  // Custom span attributes
+  }
+  
+  // Retry configuration
+  retry?: {
+    maxRetries?: number     // Max retry attempts (default: 3)
+    delay?: number | ((attempt: number, error: unknown) => number)  // Delay between retries
+    retryCondition?: (error: unknown) => boolean  // Which errors to retry
+    onRetry?: (error: unknown, attempt: number) => void  // Callback on retry
+  }
+  
+  // Timeout for this specific task (in milliseconds)
+  timeout?: number
+}
+```
+
+**Execution Order:**
+When multiple options are specified, they execute in this order:
+1. Scope Circuit Breaker (if scope has `circuitBreaker` option)
+2. Scope Concurrency (if scope has `concurrency` option)
+3. Retry (retry on failure)
+4. Timeout (enforce time limit)
+5. Result Wrapping (`task()` only)
 
 ### `Scope.acquire(acquire, dispose)`
 
@@ -135,48 +205,107 @@ const conn = await s.acquire(
 )
 ```
 
-### `race(factories, options?)`
+### `Scope.race(factories)`
 
-Race multiple operations - first wins, others cancelled. Each factory receives an `AbortSignal`.
+Race multiple operations - first wins, others cancelled. Uses the scope's signal for cancellation.
 
 ```typescript
-const winner = await race([
+await using s = scope()
+const winner = await s.race([
   (signal) => fetch('https://fast.com', { signal }),
   (signal) => fetch('https://slow.com', { signal }),
 ])
 ```
 
-### `timeout(ms, fn, options?)`
+### `Scope.raceTasks(factories)`
 
-Run a function with a timeout. The function receives an `AbortSignal`.
+Like `race`, but returns a `Result` tuple that never throws.
 
 ```typescript
-const result = await timeout(5000, async (signal) => {
-  return fetchData({ signal })
-})
+await using s = scope()
+const [err, winner] = await s.raceTasks([
+  (signal) => fetch('https://api1.com', { signal }),
+  (signal) => fetch('https://api2.com', { signal }),
+])
+if (err) {
+  console.log('All racers failed:', err)
+} else {
+  console.log('Winner:', winner)
+}
 ```
 
-### `parallel(factories, options?)`
+### `Scope.parallel(factories, options?)`
 
-Run factories in parallel with optional concurrency limit. Each factory receives an `AbortSignal`.
+Run factories in parallel. Uses the scope's concurrency limit and signal.
 
 ```typescript
-const results = await parallel(
-  urls.map(url => (signal) => fetch(url, { signal })),
-  { concurrency: 3 }  // max 3 concurrent
+await using s = scope({ concurrency: 3 })
+const results = await s.parallel(
+  urls.map(url => (signal) => fetch(url, { signal }))
 )
 ```
 
-### `parallelResults(factories, options?)`
-
-Like `parallel`, but returns `Result` tuples that never throw. Each factory receives an `AbortSignal`.
+**Options:**
+- `failFast` (default: `true`) - If `true`, stops on first error (like `Promise.all`). If `false`, continues and returns all successful results, with `undefined` for failed tasks.
 
 ```typescript
-const results = await parallelResults([
+// failFast: true (default) - throws on first error
+try {
+  const results = await s.parallel([
+    () => Promise.resolve('a'),
+    () => Promise.reject(new Error('fail')),
+    () => Promise.resolve('c'),  // never runs
+  ])
+} catch (e) {
+  // e is 'fail'
+}
+
+// failFast: false - continues on error
+const results = await s.parallel([
+  () => Promise.resolve('a'),
+  () => Promise.reject(new Error('fail')),
+  () => Promise.resolve('c'),
+], { failFast: false })
+// results is ['a', undefined, 'c']
+```
+
+### `Scope.parallelTasks(factories, options?)`
+
+Like `parallel`, but returns `Result` tuples. By default, never throws.
+
+```typescript
+await using s = scope()
+const results = await s.parallelTasks([
   (signal) => fetchUser(1, { signal }),  // might fail
   (signal) => fetchUser(2, { signal }),  // might fail
 ])
 // Each result is [string | undefined, T | undefined]
+for (const [err, user] of results) {
+  if (err) console.log('Failed:', err)
+  else console.log('User:', user)
+}
+```
+
+**Options:**
+- `failFast` (default: `false`) - If `true`, throws on first error. If `false` (default), returns Results for all tasks.
+
+```typescript
+// failFast: false (default) - returns Results
+const results = await s.parallelTasks([
+  () => Promise.resolve('a'),
+  () => Promise.reject(new Error('fail')),
+])
+// results is [[undefined, 'a'], ['fail', undefined]]
+
+// failFast: true - throws on first error
+try {
+  await s.parallelTasks([
+    () => Promise.resolve('a'),
+    () => Promise.reject(new Error('fail')),
+  ], { failFast: true })
+} catch (e) {
+  // e is 'fail'
+}
 ```
 
 ## AbortSignal Access
@@ -185,7 +314,8 @@ All factory functions receive an `AbortSignal` that allows you to:
 
 1. **Pass to fetch** for automatic cancellation:
    ```typescript
-   await race([
+   await using s = scope()
+   await s.race([
      (signal) => fetch('/api/a', { signal }),
      (signal) => fetch('/api/b', { signal }),
    ])
@@ -193,7 +323,8 @@ All factory functions receive an `AbortSignal` that allows you to:
 
 2. **Listen for abort events** to clean up resources:
    ```typescript
-   await parallel([
+   await using s = scope()
+   await s.parallel([
      (signal) => new Promise((resolve, reject) => {
        const ws = new WebSocket('wss://example.com')
        ws.onopen = () => resolve(ws)
@@ -208,10 +339,12 @@ All factory functions receive an `AbortSignal` that allows you to:
 
 3. **Check if already aborted**:
    ```typescript
-   await timeout(1000, async (signal) => {
+   await using s = scope()
+   using task = s.spawn(async (signal) => {
      if (signal.aborted) throw new Error('Already cancelled')
      return fetchData({ signal })
-   })
+   }, { timeout: 1000 })
+   const result = await task
    ```
 
 ## Advanced Features
@@ -244,36 +377,37 @@ for await (const log of ch) {  // Async iterator
 }
 ```
 
-### Semaphore (Rate limiting)
+### Scope-level Concurrency
 
-Limit concurrent access to resources:
+Limit concurrent execution for all tasks in a scope:
 
 ```typescript
-await using s = scope()
-const sem = s.semaphore(5)  // Max 5 concurrent
+// All tasks spawned in this scope are limited to 5 concurrent
+await using s = scope({ concurrency: 5 })
 
-await parallel(
+await s.parallel(
   urls.map(url => () => 
-    sem.acquire(async () => {
-      return fetch(url)  // Only 5 concurrent fetches
-    })
+    fetch(url)  // Only 5 concurrent fetches
   )
 )
 ```
 
+The `concurrency` option automatically applies to all tasks spawned within the scope, making it easy to control resource usage across an entire operation.
+
 ### Circuit Breaker
 
-Prevent cascading failures:
+Prevent cascading failures by applying a circuit breaker to all tasks in a scope:
 
 ```typescript
-await using s = scope()
-const cb = s.circuitBreaker({
-  failureThreshold: 5,
-  resetTimeout: 30000
+await using s = scope({
+  circuitBreaker: {
+    failureThreshold: 5,
+    resetTimeout: 30000
+  }
 })
 
-const result = await cb.execute((signal) => 
-  fetchCriticalData({ signal })
+const result = await s.spawn(() => 
+  fetchCriticalData()
 )
 // Automatically stops calling after 5 failures
 // Retries after 30 seconds
@@ -306,6 +440,49 @@ s.poll(
 )
 // Automatically stops when scope exits
 ```
+
+### Retry
+
+Add automatic retry logic to any task via `TaskOptions`:
+
+```typescript
+await using s = scope()
+
+// With spawn() - throws on final failure
+using task = s.spawn(() => fetchData(), { retry: { maxRetries: 3 } })
+const result = await task
+
+// With task() - returns Result tuple
+using task = s.task(() => fetchData(), { retry: { maxRetries: 3 } })
+const [err, result] = await task
+
+// Custom retry with exponential backoff
+using task = s.spawn(
+  () => fetchData(),
+  {
+    retry: {
+      maxRetries: 5,
+      delay: (attempt) => Math.min(1000 * 2 ** attempt, 10000),
+      retryCondition: (error) => error instanceof NetworkError,
+      onRetry: (error, attempt) => console.log(`Retry ${attempt}: ${error}`)
+    }
+  }
+)
+```
+
+**Retry Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `maxRetries` | `number` | `3` | Maximum retry attempts |
+| `delay` | `number \| (attempt, error) => number` | `0` | Delay between retries (ms) |
+| `retryCondition` | `(error) => boolean` | `() => true` | Which errors to retry |
+| `onRetry` | `(error, attempt) => void` | - | Callback on each retry |
+
+**Features:**
+- Respects AbortSignal during delays (cancellable)
+- Works with OpenTelemetry tracing
+- Compatible with scope timeouts
 
 ## Resource Management
 
@@ -380,10 +557,9 @@ async function fetchWithTimeout() {
 **With go-go-scope** - Automatic cleanup, impossible to leak:
 ```typescript
 async function fetchWithTimeout() {
-  return timeout(5000, async (signal) => {
-    const response = await fetch('/api/data', { signal })
-    return response.json()
-  })
+  await using s = scope({ timeout: 5000 })
+  const response = await fetch('/api/data', { signal: s.signal })
+  return response.json()
 }
 ```
 
@@ -418,7 +594,8 @@ async function fetchFastestMirror() {
 **With go-go-scope** - Automatic cancellation of losers:
 ```typescript
 async function fetchFastestMirror() {
-  return race([
+  await using s = scope()
+  return s.race([
     (signal) => fetch('https://a.com', { signal }),
     (signal) => fetch('https://b.com', { signal }),
     (signal) => fetch('https://c.com', { signal })
@@ -461,16 +638,16 @@ async function processBatch(items: string[]) {
 **With go-go-scope** - Structured concurrency, automatic cleanup:
 ```typescript
 async function processBatch(items: string[]) {
-  await using s = scope()
+  await using s = scope({ concurrency: 5 })
   
   const db = await s.acquire(
     () => openDatabase(),
     (db) => db.close()
   )
   
-  return parallel(
-    items.map(item => () => db.query(item)),
-    { concurrency: 5 }  // Built-in concurrency control
+  return s.parallel(
+    items.map(item => () => db.query(item))
+    // Uses scope's concurrency limit
   )
 }
 // Database closes automatically, even on error!
@@ -562,7 +739,7 @@ async function processFile(filepath: string) {
 **With go-go-scope** - Cleanup declared upfront, always runs:
 ```typescript
 async function processFile(filepath: string) {
-  await using s = scope()
+  await using s = scope({ concurrency: 3 })
   
   const file = await s.acquire(
     () => openFile(filepath),
@@ -579,13 +756,13 @@ async function processFile(filepath: string) {
   
   const data = await file.read()
   
-  return parallel(
+  return s.parallel(
     data.items.map(item => async () => {
       const temp = `/tmp/${item.id}.tmp`
       tempFiles.push(temp)
       return processItem(item, temp)
-    }),
-    { concurrency: 3 }
+    })
+    // Uses scope's concurrency limit
   )
 }
 // All cleanup runs automatically in LIFO order!
@@ -640,16 +817,15 @@ const result = await Effect.runPromise(withRetry)
 
 **With go-go-scope** - Simple and direct:
 ```typescript
-import { scope, parallel } from 'go-go-scope'
+import { scope } from 'go-go-scope'
 
 async function fetchUsers() {
-  await using s = scope({ timeout: 5000 })
+  await using s = scope({ timeout: 5000, concurrency: 2 })
   
-  return parallel(
+  return s.parallel(
     [1, 2, 3, 4].map(id => () => 
       fetch(`/api/users/${id}`).then(r => r.json())
-    ),
-    { concurrency: 2 }
+    )
   )
 }
 ```
@@ -721,16 +897,18 @@ await Effect.runPromise(getConfig)
 
 **With go-go-scope** - Familiar async/await:
 ```typescript
-import { race, timeout } from 'go-go-scope'
+import { scope } from 'go-go-scope'
 import { goTryOr } from 'go-go-try'
 
 async function getConfig() {
+  await using s = scope({ timeout: 3000 })
+  
   const [err, config] = await goTryOr(
-    timeout(3000, (signal) => race([
-      (s) => fetchConfigFromPrimary(s),
-      (s) => fetchConfigFromSecondary(s),
-      (s) => fetchConfigFromCache(s)
-    ], { signal })),
+    s.race([
+      () => fetchConfigFromPrimary(s.signal),
+      () => fetchConfigFromSecondary(s.signal),
+      () => fetchConfigFromCache(s.signal)
+    ]),
     { default: true }
   )
   
@@ -801,7 +979,7 @@ async function processItems(items: string[]) {
 }
 ```
 
-### Example: Rate Limiting with Semaphore
+### Example: Rate Limiting
 
 **With Effect** - Using concurrency options:
 ```typescript
@@ -816,21 +994,19 @@ const fetchAll = Effect.forEach(
 await Effect.runPromise(fetchAll)
 ```
 
-**With go-go-scope** - Explicit semaphore control:
+**With go-go-scope** - Scope-level concurrency:
 ```typescript
-import { scope, parallel, Semaphore } from 'go-go-scope'
+import { scope } from 'go-go-scope'
 
 async function fetchAll(urls: string[]) {
-  await using s = scope()
-  const sem = s.semaphore(5)
+  // All tasks in this scope are limited to 5 concurrent
+  await using s = scope({ concurrency: 5 })
   
-  return parallel(
-    urls.map(url => () => 
-      sem.acquire(() => fetch(url))
-    )
+  return s.parallel(
+    urls.map(url => () => fetch(url))
   )
 }
-// Semaphore can be shared across different operations!
+// Concurrency applies automatically to all tasks!
 ```
 
 ### Example: Circuit Breaker Pattern
@@ -856,18 +1032,20 @@ const program = Effect.gen(function* (_) {
 await Effect.runPromise(program)
 ```
 
-**With go-go-scope** - Built-in:
+**With go-go-scope** - Scope-level circuit breaker:
 ```typescript
 import { scope } from 'go-go-scope'
 
 async function fetchWithCircuitBreaker() {
-  await using s = scope()
-  const cb = s.circuitBreaker({
-    failureThreshold: 5,
-    resetTimeout: 30000
+  await using s = scope({
+    circuitBreaker: {
+      failureThreshold: 5,
+      resetTimeout: 30000
+    }
   })
   
-  return cb.execute((signal) => fetchData({ signal }))
+  // All tasks in this scope automatically use the circuit breaker
+  return s.spawn(() => fetchData())
 }
 ```
 
@@ -1062,8 +1240,46 @@ async function fetchWithTracing(userId: string) {
 
 | Span Name | Description | Attributes |
 |-----------|-------------|------------|
-| `scope` (or custom name) | The scope lifecycle span | `scope.timeout`, `scope.has_parent_signal`, `scope.duration_ms` |
-| `scope.task` (or custom name) | Each spawned task | `task.index` (1-based counter), `task.duration_ms` |
+| `scope` (or custom name) | The scope lifecycle span | `scope.timeout`, `scope.has_parent_signal`, `scope.duration_ms`, `scope.errors` |
+| `scope.task` (or custom name) | Each spawned task | `task.index`, `task.duration_ms`, `task.error_reason`, `task.retry_attempts`, `task.has_retry`, `task.has_timeout`, `task.has_circuit_breaker`, `task.scope_concurrency` |
+
+### Task Error Reasons
+
+When a task fails, the `task.error_reason` attribute indicates the cause:
+
+| Error Reason | Description |
+|--------------|-------------|
+| `timeout` | Task exceeded its time limit |
+| `aborted` | Parent scope was disposed or signal was aborted |
+| `circuit_breaker_open` | Circuit breaker was open, request rejected |
+| `exception` | Task threw an exception |
+
+### Task Configuration Attributes
+
+**Retry Configuration:**
+- `task.has_retry` - Whether retry is enabled
+- `task.retry.max_retries` - Configured max retry attempts
+- `task.retry.has_delay` - Whether retry has delay configured
+- `task.retry.has_condition` - Whether retry has custom condition
+- `task.retry.succeeded_after` - Attempt number on success (only set if retries occurred)
+- `task.retry.max_retries_exceeded` - Set when all retries are exhausted
+- `task.retry.condition_rejected` - Set when error didn't pass retry condition
+- `task.retry.attempts_made` - Number of attempts made
+
+**Circuit Breaker:**
+- `task.has_circuit_breaker` - Whether circuit breaker is enabled
+- `task.circuit_breaker.state` - Current state (closed, open, half-open)
+- `task.circuit_breaker.failure_count` - Current failure count
+- `task.circuit_breaker.rejected` - Set when request was rejected due to open circuit
+
+**Scope Concurrency:**
+- `task.scope_concurrency` - The concurrency limit of the parent scope (0 = unlimited)
+- `task.concurrency.available_before` - Available permits before acquiring (when concurrency is enabled)
+- `task.concurrency.waiting_before` - Number of waiters before acquiring (when concurrency is enabled)
+
+**Timeout:**
+- `task.has_timeout` - Whether task timeout is enabled
+- `task.timeout_ms` - Timeout duration in milliseconds
 
 ### Duration Tracking
 
@@ -1130,7 +1346,7 @@ using t3 = s.task(() => riskyOperation(), {
 
 ```typescript
 import { trace } from '@opentelemetry/api'
-import { scope, parallelResults } from 'go-go-scope'
+import { scope } from 'go-go-scope'
 
 async function batchOperation(items: string[]) {
   const tracer = trace.getTracer('batch-processor')
@@ -1138,13 +1354,13 @@ async function batchOperation(items: string[]) {
   await using s = scope({ 
     tracer, 
     name: 'batch-operation',
-    timeout: 30000 
+    timeout: 30000,
+    concurrency: 5
   })
   
   // Each item gets its own traced task span
-  const results = await parallelResults(
-    items.map(item => () => processItem(item)),
-    { concurrency: 5 }
+  const results = await s.parallelTasks(
+    items.map(item => () => processItem(item))
   )
   
   // Failed tasks will have ERROR status with exception recorded
@@ -1194,24 +1410,27 @@ DEBUG=go-go-scope:scope,go-go-scope:task node your-app.js
 |-----------|-------------|
 | `go-go-scope:scope` | Scope lifecycle events (creation, spawning tasks, disposal) |
 | `go-go-scope:task` | Task lifecycle events (creation, completion, abortion, disposal) |
+| `go-go-scope:parallel` | Parallel execution events |
+| `go-go-scope:race` | Race execution events |
+| `go-go-scope:poll` | Polling events |
 
 ### Example Output
 
 ```
 go-go-scope:scope [scope-1] creating scope (timeout: 0, parent signal: no) +0ms
 go-go-scope:scope [scope-1] spawning task #1 "task-1" +1ms
-go-go-scope:task [1] creating task +0ms
-go-go-scope:scope [scope-1] task #1 added to disposables (total: 1) +0ms
-go-go-scope:task [1] completed successfully +5ms
-go-go-scope:scope [scope-1] disposing scope (tasks: 1, disposables: 1) +10ms
-go-go-scope:scope [scope-1] aborting all tasks +0ms
-go-go-scope:scope [scope-1] cleared 1 disposables +1ms
-go-go-scope:scope [scope-1] scope disposed (duration: 15ms, errors: 0) +0ms
+go-go-scope:task [task-1] starting retry loop (maxRetries: 3) +0ms
+go-go-scope:task [task-1] attempt 1/4 +0ms
+go-go-scope:task [task-1] attempt 1 failed: Network error, waiting 1000ms +5ms
+go-go-scope:task [task-1] attempt 2/4 +1005ms
+go-go-scope:task [task-1] succeeded on attempt 2 +50ms
+go-go-scope:scope [scope-1] disposing scope (tasks: 1, disposables: 1) +1100ms
+go-go-scope:scope [scope-1] scope disposed (duration: 1105ms, errors: 0) +0ms
 ```
 
-### Debug Events
+### Debug Events by Namespace
 
-**Scope events logged:**
+**Scope Namespace (`go-go-scope:scope`):**
 - Scope creation (with timeout/parent signal info)
 - Task spawning (with task index and name)
 - Resource acquisition
@@ -1220,11 +1439,46 @@ go-go-scope:scope [scope-1] scope disposed (duration: 15ms, errors: 0) +0ms
 - Parent signal abortion
 - Timeout triggers
 
-**Task events logged:**
-- Task creation (with auto-incrementing ID)
+**Task Namespace (`go-go-scope:task`):**
+- Task creation and disposal
 - Task completion (success/failure)
 - Task abortion (parent signal or disposal)
-- Task disposal
+- **Retry events:**
+  - Starting retry loop with configuration
+  - Attempt start/success/failure
+  - Retry delay waiting
+  - Max retries exceeded
+  - Condition rejection
+- **Timeout events:**
+  - Timeout reached
+- **Concurrency events:**
+  - Acquiring concurrency permit (available/waiting counts)
+  - Acquisition success/failure
+- **Circuit Breaker events:**
+  - Current state check
+  - Execution through circuit breaker
+  - Circuit open rejection
+- **Error details:**
+  - Error reason (timeout, aborted, circuit_breaker_open, exception)
+  - Error type and message
+
+**Parallel Namespace (`go-go-scope:parallel`):**
+- Parallel execution start (with task count and concurrency)
+- Task completion progress (completed/total)
+- Worker start/finish with tasks processed
+- Concurrency limit mode vs unlimited
+
+**Race Namespace (`go-go-scope:race`):**
+- Race start with competitor count
+- Winner announcement
+- Loser settlements
+- Abort during race
+
+**Poll Namespace (`go-go-scope:poll`):**
+- Polling start (with interval and immediate flag)
+- Poll execution count and duration
+- Poll success/failure
+- Polling stop with total executions
 
 ### Usage Tips
 
