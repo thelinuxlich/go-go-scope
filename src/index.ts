@@ -10,6 +10,53 @@ export type Success<T> = readonly [undefined, T];
 export type Failure<E> = readonly [E, undefined];
 
 /**
+ * OpenTelemetry Tracer interface (minimal subset for optional integration)
+ * This avoids a hard dependency on @opentelemetry/api
+ */
+export interface Tracer {
+	startSpan(name: string, options?: SpanOptions): Span;
+}
+
+/**
+ * OpenTelemetry Span interface (minimal subset)
+ */
+export interface Span {
+	end(): void;
+	recordException(exception: unknown): void;
+	setStatus(status: { code: number; message?: string }): void;
+}
+
+/**
+ * Options for span creation
+ */
+export interface SpanOptions {
+	attributes?: Record<string, unknown>;
+}
+
+/**
+ * Options for spawning a task with tracing.
+ */
+export interface TaskOptions {
+	/**
+	 * Optional name for the task span. Defaults to "scope.task".
+	 */
+	name?: string;
+	/**
+	 * Optional additional attributes to add to the task span.
+	 */
+	attributes?: Record<string, unknown>;
+}
+
+/**
+ * Span status codes (from OpenTelemetry)
+ */
+export const SpanStatusCode = {
+	UNSET: 0,
+	OK: 1,
+	ERROR: 2,
+} as const;
+
+/**
  * Options for creating a Scope
  */
 export interface ScopeOptions {
@@ -22,6 +69,15 @@ export interface ScopeOptions {
 	 * Optional parent AbortSignal to link cancellation.
 	 */
 	signal?: AbortSignal;
+	/**
+	 * Optional OpenTelemetry tracer for automatic tracing.
+	 * When provided, the scope will create spans for lifecycle events.
+	 */
+	tracer?: Tracer;
+	/**
+	 * Optional name for the scope span. Defaults to "scope".
+	 */
+	name?: string;
 }
 
 /**
@@ -167,15 +223,39 @@ export class Scope implements AsyncDisposable {
 	private readonly disposables: (Disposable | AsyncDisposable)[] = [];
 	private readonly timeoutId: ReturnType<typeof setTimeout> | undefined;
 	private disposed = false;
+	private readonly tracer?: Tracer;
+	private readonly span?: Span;
+	private taskCount = 0;
+	private spanHasError = false;
 
 	constructor(options?: ScopeOptions) {
 		this.abortController = new AbortController();
+		this.tracer = options?.tracer;
+
+		// Create span if tracer is provided
+		if (this.tracer) {
+			this.span = this.tracer.startSpan(options?.name ?? "scope", {
+				attributes: {
+					"scope.timeout": options?.timeout,
+					"scope.has_parent_signal": !!options?.signal,
+				},
+			});
+		}
 
 		// Link to parent signal if provided
 		if (options?.signal) {
 			const parentSignal = options.signal;
 			const parentHandler = () => {
-				this.abortController.abort(parentSignal.reason);
+				const reason = parentSignal.reason;
+				this.span?.recordException(
+					reason instanceof Error ? reason : new Error(String(reason)),
+				);
+				this.span?.setStatus({
+					code: SpanStatusCode.ERROR,
+					message: "aborted by parent",
+				});
+				this.spanHasError = true;
+				this.abortController.abort(reason);
 			};
 			if (options.signal.aborted) {
 				this.abortController.abort(options.signal.reason);
@@ -187,9 +267,14 @@ export class Scope implements AsyncDisposable {
 		// Set up timeout if provided
 		if (options?.timeout !== undefined && options.timeout > 0) {
 			this.timeoutId = setTimeout(() => {
-				this.abortController.abort(
-					new Error(`timeout after ${options.timeout}ms`),
-				);
+				const error = new Error(`timeout after ${options.timeout}ms`);
+				this.span?.recordException(error);
+				this.span?.setStatus({
+					code: SpanStatusCode.ERROR,
+					message: "timeout",
+				});
+				this.spanHasError = true;
+				this.abortController.abort(error);
 			}, options.timeout);
 		}
 	}
@@ -209,13 +294,12 @@ export class Scope implements AsyncDisposable {
 	}
 
 	/**
-	 * Spawn a new task within this scope.
-	 * The task will be cancelled if the scope is disposed.
-	 *
-	 * @param fn - Function that receives an AbortSignal and returns a Promise
-	 * @returns A disposable Task
+	 * Options for spawning a task.
 	 */
-	spawn<T>(fn: (signal: AbortSignal) => Promise<T>): Task<T> {
+	spawn<T>(
+		fn: (signal: AbortSignal) => Promise<T>,
+		options?: TaskOptions,
+	): Task<T> {
 		if (this.disposed) {
 			throw new Error("Cannot spawn task on disposed scope");
 		}
@@ -223,7 +307,39 @@ export class Scope implements AsyncDisposable {
 			throw new Error("Cannot spawn task on aborted scope");
 		}
 
-		const task = new Task(fn, this.abortController.signal);
+		this.taskCount++;
+		const taskIndex = this.taskCount;
+
+		// Merge default attributes with custom ones
+		const attributes: Record<string, unknown> = {
+			"task.index": taskIndex,
+			...options?.attributes,
+		};
+
+		const taskSpan = this.tracer?.startSpan(options?.name ?? "scope.task", {
+			attributes,
+		});
+
+		const wrappedFn = async (signal: AbortSignal): Promise<T> => {
+			try {
+				const result = await fn(signal);
+				taskSpan?.setStatus({ code: SpanStatusCode.OK });
+				return result;
+			} catch (error) {
+				taskSpan?.recordException(
+					error instanceof Error ? error : new Error(String(error)),
+				);
+				taskSpan?.setStatus({
+					code: SpanStatusCode.ERROR,
+					message: error instanceof Error ? error.message : String(error),
+				});
+				throw error;
+			} finally {
+				taskSpan?.end();
+			}
+		};
+
+		const task = new Task(wrappedFn, this.abortController.signal);
 		this.disposables.push(task);
 		return task;
 	}
@@ -233,9 +349,13 @@ export class Scope implements AsyncDisposable {
 	 * Automatically wraps the function with error handling.
 	 *
 	 * @param fn - Function that receives an AbortSignal and returns a Promise
+	 * @param options - Optional task configuration for tracing
 	 * @returns A disposable Task that resolves to a Result
 	 */
-	task<T>(fn: (signal: AbortSignal) => Promise<T>): Task<Result<string, T>> {
+	task<T>(
+		fn: (signal: AbortSignal) => Promise<T>,
+		options?: TaskOptions,
+	): Task<Result<string, T>> {
 		return this.spawn(async (signal) => {
 			try {
 				const result = await fn(signal);
@@ -244,7 +364,7 @@ export class Scope implements AsyncDisposable {
 				const message = error instanceof Error ? error.message : String(error);
 				return [message, undefined] as Failure<string>;
 			}
-		});
+		}, options);
 	}
 
 	/**
@@ -303,6 +423,28 @@ export class Scope implements AsyncDisposable {
 		// Clear the disposables list
 		this.disposables.length = 0;
 
+		// End the scope span
+		if (errors.length > 0) {
+			const errorMessages = errors.map((e) =>
+				e instanceof Error ? e.message : String(e),
+			);
+			this.span?.setStatus({
+				code: SpanStatusCode.ERROR,
+				message: `Disposal errors: ${errorMessages.join(", ")}`,
+			});
+			for (const error of errors) {
+				this.span?.recordException(
+					error instanceof Error ? error : new Error(String(error)),
+				);
+			}
+			this.spanHasError = true;
+		}
+		// Only set OK if we haven't already recorded an error
+		if (!this.spanHasError) {
+			this.span?.setStatus({ code: SpanStatusCode.OK });
+		}
+		this.span?.end();
+
 		// If any disposals threw, aggregate and rethrow
 		if (errors.length > 0) {
 			if (errors.length === 1) {
@@ -327,6 +469,16 @@ export class Scope implements AsyncDisposable {
  * await using s = scope({ timeout: 5000 })
  * using t = s.spawn(() => fetchData())
  * const result = await t
+ * ```
+ *
+ * @example With OpenTelemetry tracing
+ * ```typescript
+ * import { trace } from "@opentelemetry/api"
+ *
+ * await using s = scope({ tracer: trace.getTracer("my-app") })
+ * using t = s.spawn(() => fetchData())  // Creates "scope.task" span
+ * const result = await t
+ * // Scope disposal creates "scope" span with task count
  * ```
  */
 export function scope(options?: ScopeOptions): Scope {

@@ -4,8 +4,11 @@ import {
 	type Failure,
 	type Result,
 	Scope,
+	type Span,
+	SpanStatusCode,
 	type Success,
 	Task,
+	type Tracer,
 	parallel,
 	parallelResults,
 	race,
@@ -806,5 +809,288 @@ describe("Integration scenarios", () => {
 		await new Promise((r) => setTimeout(r, 10));
 
 		expect(innerAborted).toBe(true);
+	});
+});
+
+// Mock OpenTelemetry tracer for testing
+function createMockTracer(): { tracer: Tracer; spans: MockSpan[] } {
+	const spans: MockSpan[] = [];
+
+	const tracer: Tracer = {
+		startSpan(
+			name: string,
+			options?: { attributes?: Record<string, unknown> },
+		) {
+			const span = new MockSpan(name, options?.attributes);
+			spans.push(span);
+			return span;
+		},
+	};
+
+	return { tracer, spans };
+}
+
+class MockSpan {
+	name: string;
+	attributes: Record<string, unknown> | undefined;
+	ended = false;
+	exceptions: unknown[] = [];
+	status: { code: number; message?: string } | undefined;
+
+	constructor(name: string, attributes?: Record<string, unknown>) {
+		this.name = name;
+		this.attributes = attributes;
+	}
+
+	end(): void {
+		this.ended = true;
+	}
+
+	recordException(exception: unknown): void {
+		this.exceptions.push(exception);
+	}
+
+	setStatus(status: { code: number; message?: string }): void {
+		this.status = status;
+	}
+}
+
+describe("OpenTelemetry Integration", () => {
+	test("creates scope span when tracer is provided", async () => {
+		const { tracer, spans } = createMockTracer();
+
+		{
+			await using s = scope({ tracer, name: "test-scope" });
+			using t = s.spawn(() => Promise.resolve("done"));
+			await t;
+		}
+
+		// Allow disposal to complete
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(spans.length).toBeGreaterThanOrEqual(1);
+		const scopeSpan = spans.find((s) => s.name === "test-scope");
+		expect(scopeSpan).toBeDefined();
+		expect(scopeSpan?.ended).toBe(true);
+		expect(scopeSpan?.status?.code).toBe(SpanStatusCode.OK);
+	});
+
+	test("creates task spans for spawned tasks", async () => {
+		const { tracer, spans } = createMockTracer();
+
+		{
+			await using s = scope({ tracer });
+			using t1 = s.spawn(() => Promise.resolve("a"));
+			using t2 = s.spawn(() => Promise.resolve("b"));
+			await Promise.all([t1, t2]);
+		}
+
+		// Allow disposal to complete
+		await new Promise((r) => setTimeout(r, 10));
+
+		const taskSpans = spans.filter((s) => s.name === "scope.task");
+		expect(taskSpans.length).toBe(2);
+		expect(taskSpans.every((s) => s.ended)).toBe(true);
+		expect(taskSpans.every((s) => s.status?.code === SpanStatusCode.OK)).toBe(
+			true,
+		);
+	});
+
+	test("records exceptions on task failure", async () => {
+		const { tracer, spans } = createMockTracer();
+
+		try {
+			await using s = scope({ tracer });
+			using t = s.spawn(() => Promise.reject(new Error("task failed")));
+			await t;
+		} catch {
+			// Expected to throw
+		}
+
+		// Allow disposal to complete
+		await new Promise((r) => setTimeout(r, 10));
+
+		const taskSpan = spans.find((s) => s.name === "scope.task");
+		expect(taskSpan).toBeDefined();
+		expect(taskSpan?.status?.code).toBe(SpanStatusCode.ERROR);
+		expect(taskSpan?.exceptions.length).toBeGreaterThan(0);
+	});
+
+	test("records timeout as exception in scope span", async () => {
+		const { tracer, spans } = createMockTracer();
+
+		try {
+			await using s = scope({ tracer, timeout: 10 });
+			using t = s.spawn(() => new Promise((r) => setTimeout(r, 100)));
+			await t;
+		} catch {
+			// Expected to throw
+		}
+
+		// Allow disposal to complete
+		await new Promise((r) => setTimeout(r, 50));
+
+		const scopeSpan = spans.find((s) => s.name === "scope");
+		expect(scopeSpan).toBeDefined();
+		expect(scopeSpan?.exceptions.length).toBeGreaterThan(0);
+	});
+
+	test("sets error status when parent signal aborts", async () => {
+		const { tracer, spans } = createMockTracer();
+		const controller = new AbortController();
+
+		const s = scope({ tracer, signal: controller.signal });
+
+		try {
+			using t = s.spawn(() => new Promise((r) => setTimeout(r, 100)));
+			controller.abort("user cancelled");
+			await t;
+		} catch {
+			// Expected
+		}
+		await s[Symbol.asyncDispose]().catch(() => {});
+
+		// Allow disposal to complete
+		await new Promise((r) => setTimeout(r, 10));
+
+		const scopeSpan = spans.find((s) => s.name === "scope");
+		expect(scopeSpan).toBeDefined();
+		expect(scopeSpan?.status?.code).toBe(SpanStatusCode.ERROR);
+	});
+
+	test("includes scope attributes in span", async () => {
+		const { tracer, spans } = createMockTracer();
+
+		{
+			await using s = scope({ tracer, timeout: 5000 });
+			using t = s.spawn(() => Promise.resolve("done"));
+			await t;
+		}
+
+		const scopeSpan = spans.find((s) => s.name === "scope");
+		expect(scopeSpan?.attributes).toMatchObject({
+			"scope.timeout": 5000,
+			"scope.has_parent_signal": false,
+		});
+	});
+
+	test("includes task index in task span attributes", async () => {
+		const { tracer, spans } = createMockTracer();
+
+		{
+			await using s = scope({ tracer });
+			using t1 = s.spawn(() => Promise.resolve("a"));
+			using t2 = s.spawn(() => Promise.resolve("b"));
+			await Promise.all([t1, t2]);
+		}
+
+		const taskSpans = spans.filter((s) => s.name === "scope.task");
+		expect(taskSpans[0]?.attributes?.["task.index"]).toBe(1);
+		expect(taskSpans[1]?.attributes?.["task.index"]).toBe(2);
+	});
+
+	test("works without tracer (no-op)", async () => {
+		// This should not throw or cause any issues
+		try {
+			await using s = scope(); // No tracer
+			using t1 = s.spawn(() => Promise.resolve("a"));
+			using t2 = s.spawn(() => Promise.reject(new Error("fail")));
+			await t1;
+			await t2;
+		} catch {
+			// Expected t2 to fail
+		}
+
+		// If we got here without errors, the test passes
+		expect(true).toBe(true);
+	});
+
+	test("records disposal errors in scope span", async () => {
+		const { tracer, spans } = createMockTracer();
+
+		try {
+			await using s = scope({ tracer });
+			await s.acquire(
+				async () => "resource",
+				async () => {
+					throw new Error("disposal failed");
+				},
+			);
+		} catch {
+			// Expected disposal to throw
+		}
+
+		// Allow disposal to complete
+		await new Promise((r) => setTimeout(r, 10));
+
+		const scopeSpan = spans.find((s) => s.name === "scope");
+		expect(scopeSpan).toBeDefined();
+		expect(scopeSpan?.status?.code).toBe(SpanStatusCode.ERROR);
+		expect(scopeSpan?.exceptions.length).toBeGreaterThan(0);
+	});
+
+	test("spawn accepts custom task name", async () => {
+		const { tracer, spans } = createMockTracer();
+
+		{
+			await using s = scope({ tracer });
+			using t = s.spawn(() => Promise.resolve("done"), { name: "fetch-user" });
+			await t;
+		}
+
+		// Allow disposal to complete
+		await new Promise((r) => setTimeout(r, 10));
+
+		const taskSpan = spans.find((s) => s.name === "fetch-user");
+		expect(taskSpan).toBeDefined();
+		expect(taskSpan?.attributes?.["task.index"]).toBe(1);
+	});
+
+	test("spawn accepts custom attributes", async () => {
+		const { tracer, spans } = createMockTracer();
+
+		{
+			await using s = scope({ tracer });
+			using t = s.spawn(() => Promise.resolve("done"), {
+				attributes: {
+					"http.method": "GET",
+					"http.url": "/api/users",
+					"user.id": "123",
+				},
+			});
+			await t;
+		}
+
+		// Allow disposal to complete
+		await new Promise((r) => setTimeout(r, 10));
+
+		const taskSpan = spans.find((s) => s.name === "scope.task");
+		expect(taskSpan).toBeDefined();
+		expect(taskSpan?.attributes).toMatchObject({
+			"task.index": 1,
+			"http.method": "GET",
+			"http.url": "/api/users",
+			"user.id": "123",
+		});
+	});
+
+	test("task accepts TaskOptions", async () => {
+		const { tracer, spans } = createMockTracer();
+
+		{
+			await using s = scope({ tracer });
+			using t = s.task(() => Promise.resolve("done"), {
+				name: "fetch-task",
+				attributes: { "task.type": "background" },
+			});
+			await t;
+		}
+
+		// Allow disposal to complete
+		await new Promise((r) => setTimeout(r, 10));
+
+		const taskSpan = spans.find((s) => s.name === "fetch-task");
+		expect(taskSpan).toBeDefined();
+		expect(taskSpan?.attributes?.["task.type"]).toBe("background");
 	});
 });

@@ -8,6 +8,7 @@
 - 🔄 **Structured Concurrency** - Parent scopes automatically cancel child tasks
 - ⏱️ **Timeouts Built-in** - First-class timeout support with automatic cancellation
 - 🏁 **Race Support** - Structured racing where losers are cancelled
+- 📊 **OpenTelemetry** - Optional tracing integration for observability
 - 📦 **Zero Dependencies** - Lightweight with no runtime dependencies
 - 🔷 **Type-Safe** - Full TypeScript support with proper type inference
 
@@ -74,12 +75,14 @@ Creates a new scope for structured concurrency.
 interface ScopeOptions {
   timeout?: number      // Auto-abort after N milliseconds
   signal?: AbortSignal  // Link to parent signal
+  tracer?: Tracer       // OpenTelemetry tracer for automatic tracing
+  name?: string         // Name for the scope span (default: "scope")
 }
 
 await using s = scope({ timeout: 5000 })
 ```
 
-### `Scope.spawn(fn)`
+### `Scope.spawn(fn, options?)`
 
 Spawns a task within the scope. Task is cancelled when scope exits.
 
@@ -92,13 +95,32 @@ using task = s.spawn(async (signal) => {
 const result = await task
 ```
 
-### `Scope.task(fn)`
+With OpenTelemetry options:
+```typescript
+using task = s.spawn(
+  async (signal) => fetchUser(id, { signal }),
+  { 
+    name: 'fetch-user',
+    attributes: { 'user.id': id }
+  }
+)
+```
+
+### `Scope.task(fn, options?)`
 
 Like `spawn`, but returns a `Result` tuple compatible with go-go-try.
 
 ```typescript
 using task = s.task(() => riskyOperation())
 const [err, value] = await task  // [string | undefined, T | undefined]
+```
+
+With OpenTelemetry options:
+```typescript
+using task = s.task(
+  () => riskyOperation(),
+  { name: 'background-operation', attributes: { priority: 'high' } }
+)
 ```
 
 ### `Scope.acquire(acquire, dispose)`
@@ -1006,6 +1028,118 @@ async function resilientOperation() {
     console.log('User 1:', r1[1])
   }
 }
+```
+
+## OpenTelemetry Integration
+
+go-go-scope provides **optional** OpenTelemetry tracing integration. When you provide a tracer, the library automatically creates spans for scope lifecycle events and task execution.
+
+### Basic Tracing
+
+```typescript
+import { trace } from '@opentelemetry/api'
+import { scope } from 'go-go-scope'
+
+async function fetchWithTracing(userId: string) {
+  const tracer = trace.getTracer('my-app')
+  
+  // Creates a "fetch-user-data" span
+  await using s = scope({ tracer, name: 'fetch-user-data' })
+  
+  // Each spawn creates a "scope.task" child span
+  using userTask = s.spawn(() => fetchUser(userId))
+  using postsTask = s.spawn(() => fetchPosts(userId))
+  
+  const [user, posts] = await Promise.all([userTask, userTask])
+  
+  // Span automatically ends when scope exits
+  return { user, posts }
+}
+```
+
+### Traced Spans
+
+| Span Name | Description | Attributes |
+|-----------|-------------|------------|
+| `scope` (or custom name) | The scope lifecycle span | `scope.timeout`, `scope.has_parent_signal` |
+| `scope.task` (or custom name) | Each spawned task | `task.index` (1-based counter) |
+
+### Custom Task Span Names and Attributes
+
+You can customize individual task spans with the optional second parameter:
+
+```typescript
+await using s = scope({ tracer })
+
+// Custom task name
+using t1 = s.spawn(() => fetchUser(userId), { 
+  name: 'fetch-user' 
+})
+
+// Custom attributes for better observability
+using t2 = s.spawn(() => fetchPosts(userId), {
+  name: 'fetch-posts',
+  attributes: {
+    'http.method': 'GET',
+    'http.url': `/api/users/${userId}/posts`,
+    'user.id': userId,
+  }
+})
+
+// Works with task() too
+using t3 = s.task(() => riskyOperation(), {
+  name: 'background-job',
+  attributes: { 'job.type': 'cleanup' }
+})
+```
+
+### Status Recording
+
+- **OK**: Set when scope/task completes successfully
+- **ERROR**: Set when:
+  - Timeout is reached
+  - Parent signal is aborted
+  - Task throws an exception
+  - Resource disposal fails
+
+### Integration Example with Error Tracking
+
+```typescript
+import { trace } from '@opentelemetry/api'
+import { scope, parallelResults } from 'go-go-scope'
+
+async function batchOperation(items: string[]) {
+  const tracer = trace.getTracer('batch-processor')
+  
+  await using s = scope({ 
+    tracer, 
+    name: 'batch-operation',
+    timeout: 30000 
+  })
+  
+  // Each item gets its own traced task span
+  const results = await parallelResults(
+    items.map(item => () => processItem(item)),
+    { concurrency: 5 }
+  )
+  
+  // Failed tasks will have ERROR status with exception recorded
+  const failures = results.filter(r => r[0] !== undefined)
+  if (failures.length > 0) {
+    console.warn(`${failures.length} items failed`)
+  }
+  
+  return results
+}
+```
+
+### Requirements
+
+- Install `@opentelemetry/api` in your project (optional peer dependency)
+- The library uses a minimal interface that is compatible with the official OTel API
+
+```bash
+npm install @opentelemetry/api
 ```
 
 ## License
