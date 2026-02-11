@@ -1,0 +1,44 @@
+{
+  "name": "go-go-scope",
+  "version": "1.0.0",
+  "description": "Structured concurrency for TypeScript using Explicit Resource Management",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    "require": {
+      "types": "./dist/index.d.cts",
+      "default": "./dist/index.cjs"
+    },
+    "import": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "type": "module",
+  "scripts": {
+    "build": "pkgroll",
+    "lint": "biome check --write src/",
+    "test": "npm run build && npm run lint && vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "structured-concurrency",
+    "async",
+    "disposable",
+    "using",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^22.15.17",
+    "pkgroll": "^2.12.2",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.3"
+  },
+  "peerDependencies": {
+    "go-go-try": "^6.0.0"
+  }
+}
