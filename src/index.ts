@@ -1062,6 +1062,7 @@ export class Scope implements AsyncDisposable {
 	): Promise<T> {
 		return race(factories, {
 			signal: this.signal,
+			tracer: this.tracer,
 		});
 	}
 
@@ -1103,6 +1104,7 @@ export class Scope implements AsyncDisposable {
 			signal: this.signal,
 			concurrency: this.concurrencySemaphore?.totalPermits,
 			failFast: options?.failFast ?? true,
+			tracer: this.tracer,
 		});
 	}
 
@@ -1124,6 +1126,7 @@ export class Scope implements AsyncDisposable {
 				signal: this.signal,
 				concurrency: this.concurrencySemaphore?.totalPermits,
 				failFast: true,
+				tracer: this.tracer,
 			});
 			// All succeeded, convert to Results
 			return results.map((r) => [undefined, r]);
@@ -1132,6 +1135,7 @@ export class Scope implements AsyncDisposable {
 		return parallelResults(factories, {
 			signal: this.signal,
 			concurrency: this.concurrencySemaphore?.totalPermits,
+			tracer: this.tracer,
 		});
 	}
 }
@@ -1171,6 +1175,10 @@ export interface RaceOptions {
 	 * Optional signal to cancel the race.
 	 */
 	signal?: AbortSignal;
+	/**
+	 * Optional tracer for OpenTelemetry integration.
+	 */
+	tracer?: Tracer;
 }
 
 /**
@@ -1207,7 +1215,7 @@ export async function race<T>(
 		throw options.signal.reason;
 	}
 
-	const s = new Scope({ signal: options?.signal });
+	const s = new Scope({ signal: options?.signal, tracer: options?.tracer });
 	let settledCount = 0;
 	let winnerIndex = -1;
 
@@ -1279,7 +1287,12 @@ export async function race<T>(
  */
 export async function parallel<T>(
 	factories: readonly ((signal: AbortSignal) => Promise<T>)[],
-	options?: { concurrency?: number; signal?: AbortSignal; failFast?: boolean },
+	options?: {
+		concurrency?: number;
+		signal?: AbortSignal;
+		failFast?: boolean;
+		tracer?: Tracer;
+	},
 ): Promise<T[]> {
 	if (factories.length === 0) {
 		debugScope("[parallel] no factories, returning empty array");
@@ -1303,7 +1316,7 @@ export async function parallel<T>(
 		throw options.signal.reason;
 	}
 
-	const s = new Scope({ signal: options?.signal });
+	const s = new Scope({ signal: options?.signal, tracer: options?.tracer });
 	let completedCount = 0;
 	let errorCount = 0;
 
@@ -1463,7 +1476,12 @@ export async function parallel<T>(
  */
 export async function parallelResults<T>(
 	factories: readonly ((signal: AbortSignal) => Promise<T>)[],
-	options?: { concurrency?: number; signal?: AbortSignal; failFast?: boolean },
+	options?: {
+		concurrency?: number;
+		signal?: AbortSignal;
+		failFast?: boolean;
+		tracer?: Tracer;
+	},
 ): Promise<Result<string, T>[]> {
 	if (factories.length === 0) {
 		return [];
@@ -1477,7 +1495,7 @@ export async function parallelResults<T>(
 		throw options.signal.reason;
 	}
 
-	const s = new Scope({ signal: options?.signal });
+	const s = new Scope({ signal: options?.signal, tracer: options?.tracer });
 
 	try {
 		// Create abort promise that rejects when signal aborts
