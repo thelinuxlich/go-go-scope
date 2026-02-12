@@ -502,7 +502,7 @@ export class Scope<
 		debugScope('[%s] spawning task #%d "%s"', this.name, taskIndex, taskName);
 
 		// Build attributes with task configuration
-		const attributes: Record<string, unknown> = {
+		const attributes: Record<string, string | number | boolean | undefined> = {
 			"task.index": taskIndex,
 			"task.has_retry": !!options?.retry,
 			"task.has_timeout": !!options?.timeout,
@@ -524,7 +524,8 @@ export class Scope<
 			this.otelContext ?? otelContext.active(),
 		);
 
-		const taskStartTime = performance.now();
+		// Track timing for task execution
+		void performance.now(); // Placeholder for future timing enhancements
 		let retryAttempt = 0;
 
 		// Build the execution pipeline from innermost to outermost
@@ -773,7 +774,7 @@ export class Scope<
 		};
 
 		// Create the task with the full pipeline
-		const task = new Task<T>(async (signal) => {
+		const task = new Task<Result<unknown, T>>(async (signal) => {
 			try {
 				const result = await wrappedFn(signal);
 				return [undefined, result] as Success<T>;
@@ -1280,7 +1281,7 @@ export async function parallel<T>(
 		// Helper to process a single task - always returns Result
 		const processTask = async (
 			factory: (signal: AbortSignal) => Promise<T>,
-			idx: number,
+			_idx: number,
 		): Promise<Result<unknown, T>> => {
 			const result = await s.task(({ signal }) => factory(signal));
 			if (result[0]) {
@@ -1326,7 +1327,7 @@ export async function parallel<T>(
 		let index = 0;
 		let hasError = false;
 
-		async function worker(workerId: number): Promise<void> {
+		const worker = async (workerId: number): Promise<void> => {
 			debugScope("[parallel] worker %d started", workerId);
 			let tasksProcessed = 0;
 			while (index < factories.length) {
@@ -1362,7 +1363,7 @@ export async function parallel<T>(
 				workerId,
 				tasksProcessed,
 			);
-		}
+		};
 
 		const workers: Promise<void>[] = [];
 		const workerCount = Math.min(concurrency, factories.length);
@@ -1707,9 +1708,23 @@ export class Semaphore implements AsyncDisposable {
 	}
 
 	/**
+	 * Get the number of available permits (alias for available).
+	 */
+	get availablePermits(): number {
+		return this.permits;
+	}
+
+	/**
 	 * Get the number of waiting acquirers.
 	 */
 	get waiting(): number {
+		return this.queue.length;
+	}
+
+	/**
+	 * Get the number of waiting acquirers (alias for waiting).
+	 */
+	get waiterCount(): number {
 		return this.queue.length;
 	}
 
@@ -2035,7 +2050,7 @@ function createPoll<T>(
 
 		try {
 			const startTime = performance.now();
-			const [err, value] = await s.task((sig) => fn(sig));
+			const [err, value] = await s.task(({ signal }) => fn(signal));
 			const duration = performance.now() - startTime;
 			if (err) {
 				debugScope(

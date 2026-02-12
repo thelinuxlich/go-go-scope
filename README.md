@@ -10,7 +10,7 @@
 - 🏁 **Race Support** - Structured racing where losers are cancelled
 - 📊 **OpenTelemetry** - Optional tracing integration for observability
 - 🐛 **Debug Logging** - Built-in debug output for troubleshooting
-- 📦 **Zero Dependencies** - Lightweight with no runtime dependencies
+- 📦 **Minimal Dependencies** - Only depends on the `debug` logging utility
 - 🔷 **Type-Safe** - Full TypeScript support with proper type inference
 
 ## Install
@@ -83,11 +83,12 @@ async function fetchWithChildScope(userId: string) {
 
 // Race multiple operations - signal available for cancellation
 await using s = scope()
-const fastest = await s.race([
+const [err, fastest] = await s.race([
   ({ signal }) => fetch('https://replica-a.com', { signal }),
   ({ signal }) => fetch('https://replica-b.com', { signal }),
   ({ signal }) => fetch('https://replica-c.com', { signal }),
 ])
+if (err) throw err
 // Slow replicas are automatically cancelled!
 
 // Task-level timeout
@@ -358,10 +359,12 @@ All factory functions receive an `AbortSignal` that allows you to:
 1. **Pass to fetch** for automatic cancellation:
    ```typescript
    await using s = scope()
-   await s.race([
+   const [err, response] = await s.race([
      ({ signal }) => fetch('/api/a', { signal }),
      ({ signal }) => fetch('/api/b', { signal }),
    ])
+   if (err) throw err
+   // Use response
    ```
 
 2. **Listen for abort events** to clean up resources:
@@ -852,7 +855,7 @@ async function fetchUserData(userId: string) {
   
   // Child tasks inherit parent's signal
   const postsTask = s.task(() => fetchPosts(userId))
-  using commentsTask = s.task(() => fetchComments(userId))
+  const commentsTask = s.task(() => fetchComments(userId))
   
   const [postsResult, commentsResult] = await Promise.all([postsTask, commentsTask])
   const [postsErr, posts] = postsResult
@@ -1359,12 +1362,12 @@ import { scope } from 'go-go-scope'
 async function resilientOperation() {
   await using s = scope()
   
-  using task1 = s.task(() => fetchUser(1))
-  using task2 = s.task(() => fetchUser(2))
+  const task1 = s.task(() => fetchUser(1))
+  const task2 = s.task(() => fetchUser(2))
   
   const [r1, r2] = await Promise.all([task1, task2])
   
-  // r1 and r2 are Result<string, User>
+  // r1 and r2 are Result<unknown, User>
   if (isSuccess(r1)) {
     console.log('User 1:', r1[1])
   }
@@ -1479,12 +1482,12 @@ You can customize individual task spans with the optional second parameter:
 await using s = scope({ tracer })
 
 // Custom task name
-using t1 = s.task(() => fetchUser(userId), { 
+const t1 = s.task(() => fetchUser(userId), { 
   otel: { name: 'fetch-user' }
 })
 
 // Custom attributes for better observability
-using t2 = s.task(() => fetchPosts(userId), {
+const t2 = s.task(() => fetchPosts(userId), {
   otel: {
     name: 'fetch-posts',
     attributes: {
@@ -1496,12 +1499,15 @@ using t2 = s.task(() => fetchPosts(userId), {
 })
 
 // Works with task() too
-using t3 = s.task(() => riskyOperation(), {
+const t3 = s.task(() => riskyOperation(), {
   otel: {
     name: 'background-job',
     attributes: { 'job.type': 'cleanup' }
   }
 })
+
+// Await the tasks
+const [r1, r2, r3] = await Promise.all([t1, t2, t3])
 ```
 
 ### Status Recording

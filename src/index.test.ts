@@ -1,8 +1,8 @@
+import type { Context, Span, SpanOptions } from "@opentelemetry/api";
 import { describe, expect, test } from "vitest";
 import {
 	AsyncDisposableResource,
 	type Failure,
-	SpanStatusCode,
 	type Success,
 	scope,
 	type Tracer,
@@ -310,6 +310,9 @@ describe("Scope", () => {
 
 		// Child's signal should also be aborted (inherited from parent)
 		expect(child.signal.aborted).toBe(true);
+
+		// Verify the child task was actually aborted
+		expect(childAborted).toBe(true);
 	});
 
 	test("child scope can override parent options", async () => {
@@ -390,8 +393,11 @@ describe("Scope", () => {
 		};
 
 		{
-			await using s = scope();
-			s.provide("resource", createResource, cleanupResource);
+			await using s = scope().provide(
+				"resource",
+				createResource,
+				cleanupResource,
+			);
 			const resource = s.use("resource");
 
 			expect(created).toBe(true);
@@ -756,6 +762,19 @@ function createMockTracer(): { tracer: Tracer; spans: MockSpan[] } {
 			spans.push(span);
 			return span;
 		},
+		startActiveSpan<F extends (span: Span) => unknown>(
+			name: string,
+			optionsOrFn: SpanOptions | F,
+			_contextOrFn?: Context | F,
+			fn?: F,
+		): ReturnType<F> {
+			// Simple implementation - just call the function with a new span
+			const span = this.startSpan(name, optionsOrFn as SpanOptions);
+			const callback = (
+				typeof optionsOrFn === "function" ? optionsOrFn : fn
+			) as F;
+			return callback(span) as ReturnType<F>;
+		},
 	};
 
 	return { tracer, spans };
@@ -770,6 +789,7 @@ class MockSpan {
 	parent?: { traceId: string; spanId: string; traceFlags: number };
 	traceId: string;
 	spanId: string;
+	recording = true;
 
 	constructor(
 		name: string,
@@ -799,11 +819,53 @@ class MockSpan {
 		this.exceptions.push(exception);
 	}
 
-	setStatus(status: { code: number; message?: string }): void {
+	setStatus(status: { code: number; message?: string }): this {
 		this.status = status;
+		return this;
 	}
 
-	setAttributes(attributes: Record<string, unknown>): void {
+	setAttributes(attributes: Record<string, unknown>): this {
 		this.attributes = { ...this.attributes, ...attributes };
+		return this;
+	}
+
+	// Stub implementations for Span interface compatibility
+	setAttribute(_key: string, _value: unknown): this {
+		// Not implemented in mock
+		return this;
+	}
+
+	addEvent(
+		_name: string,
+		_attributesOrStartTime?: unknown,
+		_startTime?: unknown,
+	): this {
+		// Not implemented in mock
+		return this;
+	}
+
+	addLink(_context: {
+		context: { traceId: string; spanId: string; traceFlags: number };
+	}): this {
+		// Not implemented in mock
+		return this;
+	}
+
+	addLinks(
+		_contexts: {
+			context: { traceId: string; spanId: string; traceFlags: number };
+		}[],
+	): this {
+		// Not implemented in mock
+		return this;
+	}
+
+	updateName(_name: string): this {
+		// Not implemented in mock
+		return this;
+	}
+
+	isRecording(): boolean {
+		return this.recording;
 	}
 }

@@ -195,7 +195,7 @@ describe("Semaphore", () => {
 
 		// Acquire the only permit and hold it
 		let released = false;
-		const holdingAcquire = sem.acquire(async () => {
+		void sem.acquire(async () => {
 			// Hold until explicitly told to release
 			while (!released) {
 				await new Promise((r) => setTimeout(r, 10));
