@@ -6,11 +6,10 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
 
 - [Functions](#functions)
   - [`scope(options?)`](#scopeoptions)
-  - [`race(factories, options?)`](#racefactories-options)
-  - [`parallel(factories, options?)`](#parallelfactories-options)
-  - [`stream(source, signal?)`](#streamsource-signal)
+  - [ScopeOptions](#scopeoptions-type)
 - [Scope Methods](#scope-methods)
   - [`scope.task(fn, options?)`](#scopetaskfn-options)
+  - [TaskOptions](#taskoptions-type)
   - [`scope.provide(key, factory, cleanup?)`](#scopeprovidekey-factory-cleanup)
   - [`scope.use(key)`](#scopeusekey)
   - [`scope.race(factories)`](#scoperacefactories)
@@ -19,8 +18,6 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.stream(source)`](#scopestreamsource)
   - [`scope.poll(fn, onValue, options?)`](#scopepollfn-onvalue-options)
 - [Types](#types)
-  - [ScopeOptions](#scopeoptions)
-  - [TaskOptions](#taskoptions)
   - [Result](#result)
 - [Task Properties](#task-properties)
 - [Channel Methods](#channel-methods)
@@ -43,7 +40,7 @@ function scope<TServices extends Record<string, unknown> = Record<string, unknow
 
 | Name | Type | Description |
 |------|------|-------------|
-| `options` | `ScopeOptions` | Optional configuration (see below) |
+| `options` | `ScopeOptions` | Optional configuration |
 
 **Returns:** A `Scope` instance
 
@@ -56,114 +53,90 @@ await using s = scope()
 // With timeout
 await using s = scope({ timeout: 5000 })
 
-// With parent
-await using child = scope({ parent })
+// With OpenTelemetry tracing
+await using s = scope({
+  name: 'fetch-operation',
+  tracer: trace.getTracer('my-app')
+})
+
+// With concurrency limit
+await using s = scope({ concurrency: 3 })
+
+// Combined
+await using s = scope({
+  name: 'complex-operation',
+  timeout: 30000,
+  concurrency: 5,
+  tracer: trace.getTracer('my-app'),
+  circuitBreaker: { failureThreshold: 3 }
+})
 ```
 
 ---
 
-### `race(factories, options?)`
-
-Race multiple operations - first to complete wins, others are cancelled.
+### ScopeOptions (Type)
 
 ```typescript
-function race<T>(
-  factories: readonly ((signal: AbortSignal) => Promise<T>)[],
-  options?: RaceOptions
-): Promise<Result<unknown, T>>
-```
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `factories` | Array of functions | Each receives an `AbortSignal` and returns a `Promise` |
-| `options.signal` | `AbortSignal` | Optional signal for cancellation |
-| `options.tracer` | `Tracer` | Optional OpenTelemetry tracer |
-
-**Returns:** `Promise<Result<unknown, T>>` - Result tuple of the winner
-
-**Example:**
-
-```typescript
-const [err, winner] = await race([
-  (signal) => fetch('https://fast.com', { signal }),
-  (signal) => fetch('https://slow.com', { signal }),
-])
-```
-
----
-
-### `parallel(factories, options?)`
-
-Run factories in parallel with optional concurrency limit.
-
-```typescript
-function parallel<T>(
-  factories: readonly ((signal: AbortSignal) => Promise<T>)[],
-  options?: {
-    concurrency?: number
-    signal?: AbortSignal
-    failFast?: boolean
-    tracer?: Tracer
-  }
-): Promise<Result<unknown, T>[]>
-```
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `factories` | Array of functions | Each receives an `AbortSignal` and returns a `Promise` |
-| `options.concurrency` | `number` | Max concurrent operations (0 = unlimited) |
-| `options.signal` | `AbortSignal` | Optional signal for cancellation |
-| `options.failFast` | `boolean` | If true, stops on first error and throws |
-| `options.tracer` | `Tracer` | Optional OpenTelemetry tracer |
-
-**Returns:** `Promise<Result<unknown, T>[]>` - Array of result tuples
-
-**Example:**
-
-```typescript
-const results = await parallel(
-  urls.map(url => (signal) => fetch(url, { signal })),
-  { concurrency: 3 }
-)
-
-for (const [err, response] of results) {
-  if (err) console.log('Failed:', err)
-  else console.log('Success:', response)
-}
-```
-
----
-
-### `stream(source, signal?)`
-
-Wrap an AsyncIterable with cancellation support.
-
-```typescript
-function stream<T>(
-  source: AsyncIterable<T>,
+interface ScopeOptions<ParentServices extends Record<string, unknown> = Record<string, never>> {
+  /** 
+   * Auto-abort after N milliseconds.
+   * NOT inherited from parent.
+   */
+  timeout?: number
+  
+  /** 
+   * Link to parent signal for cancellation propagation.
+   */
   signal?: AbortSignal
-): AsyncGenerator<T>
+  
+  /** 
+   * OpenTelemetry tracer (inherited from parent).
+   */
+  tracer?: Tracer
+  
+  /** 
+   * Name for the scope span (default: "scope").
+   */
+  name?: string
+  
+  /** 
+   * Max concurrent tasks (inherited from parent).
+   */
+  concurrency?: number
+  
+  /** 
+   * Circuit breaker configuration (inherited from parent).
+   */
+  circuitBreaker?: {
+    /** Failures before opening (default: 5) */
+    failureThreshold?: number
+    /** Milliseconds before retry (default: 30000) */
+    resetTimeout?: number
+  }
+  
+  /** 
+   * Parent scope to inherit signal, services, and options.
+   */
+  parent?: Scope<ParentServices>
+}
 ```
 
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `source` | `AsyncIterable<T>` | The source iterable |
-| `signal` | `AbortSignal` | Optional signal for cancellation |
-
-**Returns:** `AsyncGenerator<T>` - Cancellable async generator
-
-**Example:**
+**Examples:**
 
 ```typescript
-for await (const chunk of stream(readableStream, signal)) {
-  await processChunk(chunk)
-}
+// Timeout only
+await using s = scope({ timeout: 5000 })
+
+// With circuit breaker
+await using s = scope({
+  circuitBreaker: {
+    failureThreshold: 3,
+    resetTimeout: 10000
+  }
+})
+
+// With parent (inherits services, tracer, etc.)
+await using child = scope({ parent })
 ```
 
 ---
@@ -190,22 +163,139 @@ task<T>(
 
 **Returns:** `Task<Result<unknown, T>>` - A lazy task (starts when awaited)
 
-**Example:**
+**Examples:**
 
 ```typescript
+// Simple task
+const [err, user] = await s.task(() => fetchUser(1))
+
+// With signal for cancellation
+const [err, data] = await s.task(async ({ signal }) => {
+  const response = await fetch('/api/data', { signal })
+  return response.json()
+})
+
+// With services from provide()
+const [err, result] = await s.task(async ({ services }) => {
+  return services.db.query('SELECT 1')
+})
+
+// With retry
 const [err, user] = await s.task(
-  async ({ services, signal }) => {
-    return fetchUser(1, { signal })
-  },
-  { retry: { maxRetries: 3 } }
+  () => fetchUser(id),
+  { retry: { maxRetries: 3, delay: 1000 } }
+)
+
+// With OpenTelemetry tracing
+const [err, user] = await s.task(
+  () => fetchUser(id),
+  {
+    otel: {
+      name: 'fetch-user',
+      attributes: { 'user.id': id }
+    }
+  }
 )
 ```
 
 ---
 
+### TaskOptions (Type)
+
+```typescript
+interface TaskOptions {
+  /** 
+   * OpenTelemetry tracing options.
+   */
+  otel?: {
+    /** Span name (default: "scope.task") */
+    name?: string
+    /** Custom span attributes */
+    attributes?: Record<string, unknown>
+  }
+  
+  /** 
+   * Retry configuration.
+   */
+  retry?: {
+    /** Max retry attempts (default: 3) */
+    maxRetries?: number
+    /** 
+     * Delay between retries in ms.
+     * Can be a number or function: (attempt, error) => number
+     */
+    delay?: number | ((attempt: number, error: unknown) => number)
+    /** Which errors to retry (default: all) */
+    retryCondition?: (error: unknown) => boolean
+    /** Callback on each retry */
+    onRetry?: (error: unknown, attempt: number) => void
+  }
+  
+  /** 
+   * Timeout for this specific task (milliseconds).
+   */
+  timeout?: number
+  
+  /** 
+   * Custom cleanup function - runs when parent scope exits.
+   */
+  onCleanup?: () => void | Promise<void>
+}
+```
+
+**Examples:**
+
+```typescript
+// Retry with exponential backoff
+const [err, result] = await s.task(
+  () => fetchData(),
+  {
+    retry: {
+      maxRetries: 5,
+      delay: (attempt) => Math.min(1000 * 2 ** attempt, 30000)
+    }
+  }
+)
+
+// Conditional retry
+const [err, result] = await s.task(
+  () => fetchData(),
+  {
+    retry: {
+      maxRetries: 3,
+      retryCondition: (err) => err instanceof NetworkError
+    }
+  }
+)
+
+// With cleanup
+const [err, result] = await s.task(
+  async ({ signal }) => {
+    const conn = await openConnection()
+    return conn.query('SELECT * FROM users')
+  },
+  {
+    onCleanup: () => {
+      console.log('Task cleanup ran')
+    }
+  }
+)
+```
+
+**Execution Order:**
+
+When multiple options are specified, they execute in this order:
+1. Scope Circuit Breaker (if scope has `circuitBreaker` option)
+2. Scope Concurrency (if scope has `concurrency` option)
+3. Retry (retry on failure)
+4. Timeout (enforce time limit)
+5. Result Wrapping (`task()` only)
+
+---
+
 ### `scope.provide(key, factory, cleanup?)`
 
-Registers a service for dependency injection.
+Registers a service/dependency that can be used by tasks in this scope. Services are automatically cleaned up when the scope exits.
 
 ```typescript
 provide<K extends string, T>(
@@ -232,17 +322,22 @@ await using s = scope()
   .provide('db', () => openDatabase(), (db) => db.close())
   .provide('cache', () => createCache())
 
-// Access in task
+// Access in tasks
 const [err, result] = await s.task(({ services }) => {
   return services.db.query('SELECT 1')
 })
+
+if (err) throw err
+return result
 ```
+
+**Note:** Resources are disposed in LIFO order (reverse of creation).
 
 ---
 
 ### `scope.use(key)`
 
-Retrieves a previously registered service.
+Retrieves a previously registered service by key.
 
 ```typescript
 use<K extends keyof Services>(key: K): Services[K]
@@ -267,7 +362,7 @@ await db.query('SELECT 1')
 
 ### `scope.race(factories)`
 
-Race multiple operations within this scope.
+Race multiple operations - first to complete wins, others are cancelled. Uses the scope's signal for cancellation.
 
 ```typescript
 race<T>(
@@ -275,13 +370,36 @@ race<T>(
 ): Promise<Result<unknown, T>>
 ```
 
-Same as standalone `race()` but uses the scope's signal and tracer.
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `factories` | Array of functions | Each receives an `AbortSignal` and returns a `Promise` |
+
+**Returns:** `Promise<Result<unknown, T>>` - Result tuple of the winner
+
+**Example:**
+
+```typescript
+await using s = scope()
+
+const [err, winner] = await s.race([
+  ({ signal }) => fetch('https://fast.com', { signal }),
+  ({ signal }) => fetch('https://slow.com', { signal }),
+])
+
+if (err) {
+  console.log('All racers failed:', err)
+} else {
+  console.log('Winner:', winner)
+}
+```
 
 ---
 
 ### `scope.parallel(factories, options?)`
 
-Run factories in parallel within this scope.
+Run factories in parallel. Uses the scope's concurrency limit and signal.
 
 ```typescript
 parallel<T>(
@@ -290,7 +408,42 @@ parallel<T>(
 ): Promise<Result<unknown, T>[]>
 ```
 
-Same as standalone `parallel()` but uses the scope's signal, tracer, and concurrency limit.
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `factories` | Array of functions | Each receives an `AbortSignal` and returns a `Promise` |
+| `options.failFast` | `boolean` | If `true`, stops on first error and throws |
+
+**Returns:** `Promise<Result<unknown, T>[]>` - Array of result tuples
+
+**Examples:**
+
+```typescript
+await using s = scope({ concurrency: 3 })
+
+// Default: failFast = false, returns Results for all tasks
+const results = await s.parallel([
+  () => fetchUser(1),  // might fail
+  () => fetchUser(2),  // might fail
+  () => fetchUser(3),  // might fail
+])
+
+for (const [err, user] of results) {
+  if (err) console.log('Failed:', err)
+  else console.log('User:', user)
+}
+
+// With failFast: throws on first error
+try {
+  await s.parallel([
+    () => Promise.resolve('a'),
+    () => Promise.reject(new Error('fail')),
+  ], { failFast: true })
+} catch (e) {
+  // e is the Error
+}
+```
 
 ---
 
@@ -319,14 +472,14 @@ const ch = s.channel<string>(100)
 // Producer
 s.task(async () => {
   for (const item of items) {
-    await ch.send(item)
+    await ch.send(item)  // Blocks if buffer full
   }
   ch.close()
 })
 
 // Consumer
 for await (const item of ch) {
-  console.log(item)
+  await process(item)
 }
 ```
 
@@ -340,7 +493,24 @@ Wrap an AsyncIterable with scope cancellation.
 stream<T>(source: AsyncIterable<T>): AsyncGenerator<T>
 ```
 
-Same as standalone `stream()` but uses the scope's signal.
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `source` | `AsyncIterable<T>` | Source iterable |
+
+**Returns:** `AsyncGenerator<T>` - Cancellable async generator
+
+**Example:**
+
+```typescript
+await using s = scope()
+
+for await (const chunk of s.stream(readableStream)) {
+  await processChunk(chunk)
+  // Automatically stops when scope is cancelled
+}
+```
 
 ---
 
@@ -376,8 +546,8 @@ poll<T>(
 await using s = scope()
 
 const controller = s.poll(
-  ({ signal }) => fetchStatus({ signal }),
-  (status) => updateUI(status),
+  ({ signal }) => fetchConfig({ signal }),
+  (config) => updateUI(config),
   { interval: 30000 }
 )
 
@@ -386,71 +556,14 @@ console.log(controller.status())
 
 // Stop polling
 controller.stop()
+
+// Restart polling
+controller.start()
 ```
 
 ---
 
 ## Types
-
-### ScopeOptions
-
-```typescript
-interface ScopeOptions<ParentServices extends Record<string, unknown> = Record<string, never>> {
-  /** Auto-abort after N milliseconds (NOT inherited from parent) */
-  timeout?: number
-  
-  /** Link to parent signal for cancellation propagation */
-  signal?: AbortSignal
-  
-  /** OpenTelemetry tracer (inherited from parent) */
-  tracer?: Tracer
-  
-  /** Name for the scope span (default: "scope") */
-  name?: string
-  
-  /** Max concurrent tasks (inherited from parent) */
-  concurrency?: number
-  
-  /** Circuit breaker configuration (inherited from parent) */
-  circuitBreaker?: {
-    failureThreshold?: number  // Default: 5
-    resetTimeout?: number      // Default: 30000
-  }
-  
-  /** Parent scope to inherit signal, services, and options */
-  parent?: Scope<ParentServices>
-}
-```
-
----
-
-### TaskOptions
-
-```typescript
-interface TaskOptions {
-  /** OpenTelemetry tracing options */
-  otel?: {
-    name?: string
-    attributes?: Record<string, unknown>
-  }
-  
-  /** Retry configuration */
-  retry?: {
-    maxRetries?: number
-    delay?: number | ((attempt: number, error: unknown) => number)
-    retryCondition?: (error: unknown) => boolean
-    onRetry?: (error: unknown, attempt: number) => void
-  }
-  
-  /** Timeout for this specific task (milliseconds) */
-  timeout?: number
-  
-  /** Custom cleanup function */
-  onCleanup?: () => void | Promise<void>
-}
-```
-
----
 
 ### Result
 
@@ -463,6 +576,20 @@ type Failure<E> = readonly [E, undefined]
 A Result tuple is always `[error, value]`:
 - On success: `[undefined, value]`
 - On failure: `[error, undefined]`
+
+**Example:**
+
+```typescript
+const [err, user] = await s.task(() => fetchUser(1))
+
+if (err) {
+  // Handle error
+  console.log('Failed:', err)
+} else {
+  // Use user
+  console.log('User:', user)
+}
+```
 
 ---
 
@@ -537,6 +664,6 @@ await ch.send(2)
 const val1 = await ch.receive()  // 1
 const val2 = await ch.receive()  // 2
 
-// Close
+// Manually close the channel (when the scope ends, it closes its channels automatically too)
 ch.close()
 ```

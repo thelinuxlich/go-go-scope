@@ -11,7 +11,7 @@ How to integrate `go-go-scope` with other libraries.
 
 ## go-go-try
 
-[go-go-try](https://github.com/thelinuxlich/go-go-try) provides Result type utilities that work seamlessly with `go-go-scope`.
+[go-go-try](https://github.com/thelinuxlich/go-go-try) provides Golang-style error handling that works seamlessly with `go-go-scope`.
 
 ### Installation
 
@@ -19,103 +19,122 @@ How to integrate `go-go-scope` with other libraries.
 npm install go-go-try
 ```
 
-### Basic Integration
+### Basic Usage
+
+Both `go-go-scope` and `go-go-try` use the same Result tuple format `[error, value]`, so they work together naturally:
 
 ```typescript
 import { scope } from 'go-go-scope'
-import { goTry, isSuccess, isFailure, unwrap, unwrapOr } from 'go-go-try'
+import { goTry, goTryRaw } from 'go-go-try'
 
 async function example() {
   await using s = scope()
   
-  const task1 = s.task(() => fetchUser(1))
-  const task2 = s.task(() => fetchUser(2))
+  // go-go-scope task returns [error, value]
+  const [taskErr, user] = await s.task(() => fetchUser(1))
   
-  const [r1, r2] = await Promise.all([task1, task2])
+  // go-go-try wraps functions to return [error, value]
+  const [parseErr, data] = goTry(() => JSON.parse(jsonString))
   
-  // r1 and r2 are Result<unknown, User>
-  if (isSuccess(r1)) {
-    console.log('User 1:', r1[1])
-  }
-  
-  if (isFailure(r2)) {
-    console.log('User 2 failed:', r2[0])
-  }
+  // Both use the same pattern!
+  if (taskErr) console.log('Task failed:', taskErr)
+  if (parseErr) console.log('Parse failed:', parseErr)
 }
 ```
 
-### Converting Results
+### goTry vs goTryRaw
+
+- **`goTry`** - Returns error as `string` (error message)
+- **`goTryRaw`** - Returns error as `Error` object
 
 ```typescript
-import { goTry, tryCatch } from 'go-go-try'
+import { goTry, goTryRaw } from 'go-go-try'
 
-async function example() {
-  await using s = scope()
+// goTry - error is string | undefined
+const [err, value] = goTry(() => JSON.parse('{invalid}'))
+console.log(err) // "Unexpected token i in JSON at position 1"
+
+// goTryRaw - error is Error | undefined
+const [err, value] = goTryRaw(() => JSON.parse('{invalid}'))
+console.log(err?.message) // "Unexpected token i in JSON at position 1"
+console.log(err?.stack)   // Full stack trace
+```
+
+### With Async Functions
+
+```typescript
+import { goTry } from 'go-go-try'
+
+async function fetchData() {
+  // Works with async functions too
+  const [err, response] = await goTry(fetch('/api/data'))
   
-  // go-go-scope returns Result
-  const [err, user] = await s.task(() => fetchUser(1))
+  if (err) {
+    console.log('Fetch failed:', err)
+    return null
+  }
   
-  // Convert to go-go-try Result
-  const result = tryCatch(
-    () => { if (err) throw err; return user },
-    (e) => e
+  const [parseErr, data] = await goTry(response.json())
+  if (parseErr) {
+    console.log('Parse failed:', parseErr)
+    return null
+  }
+  
+  return data
+}
+```
+
+### Combining with go-go-scope
+
+Use `goTry` for non-scope operations, `s.task()` for scope-managed operations:
+
+```typescript
+import { scope } from 'go-go-scope'
+import { goTry } from 'go-go-try'
+
+async function processUserData(userId: string) {
+  await using s = scope({ timeout: 10000 })
+  
+  // Parse local data with goTry
+  const [cacheErr, cached] = goTry(() => 
+    JSON.parse(localStorage.getItem(`user:${userId}`) || '')
   )
   
-  // Or use goTry
-  const result2 = await goTry(() => {
-    if (err) throw err
-    return user
+  if (!cacheErr && cached) {
+    return cached
+  }
+  
+  // Fetch from API with scope (has cancellation, tracing, etc.)
+  const [fetchErr, user] = await s.task(async ({ signal }) => {
+    const response = await fetch(`/api/users/${userId}`, { signal })
+    return response.json()
   })
+  
+  if (fetchErr) {
+    console.log('Failed to fetch user:', fetchErr)
+    return null
+  }
+  
+  // Store in cache with goTry
+  goTry(() => {
+    localStorage.setItem(`user:${userId}`, JSON.stringify(user))
+  })
+  
+  return user
 }
 ```
 
-### Unwrapping Results
+### Fallback Patterns
 
 ```typescript
-import { unwrap, unwrapOr, unwrapOrElse } from 'go-go-try'
+import { goTry } from 'go-go-try'
 
-async function example() {
-  await using s = scope()
-  
-  const [err, user] = await s.task(() => fetchUser(1))
-  
-  // Throw if error
-  const user1 = unwrap([err, user])
-  
-  // Default if error
-  const user2 = unwrapOr([err, user], { id: 0, name: 'Anonymous' })
-  
-  // Compute default if error
-  const user3 = unwrapOrElse([err, user], (err) => {
-    console.log('Failed:', err)
-    return { id: 0, name: 'Anonymous' }
-  })
-}
-```
+// Default value on error
+const [_, todos = []] = goTry(() => JSON.parse(localStorage.getItem('todos')))
 
-### Chaining Operations
-
-```typescript
-import { andThen, map, mapErr } from 'go-go-try'
-
-async function example() {
-  await using s = scope()
-  
-  const result = await s.task(() => fetchUser(1))
-  
-  // Transform success value
-  const withEmail = map(result, (user) => ({
-    ...user,
-    email: `${user.name}@example.com`
-  }))
-  
-  // Chain another operation
-  const withPosts = await andThen(withEmail, async (user) => {
-    const [err, posts] = await s.task(() => fetchPosts(user.id))
-    if (err) return [err, undefined]
-    return [undefined, { ...user, posts }]
-  })
-}
+// With scope task
+const [err, user] = await s.task(() => fetchUser(1))
+const safeUser = user ?? { id: 0, name: 'Anonymous' }
 ```
 
 ---
@@ -169,64 +188,9 @@ const [err, user] = await s.task(
 )
 ```
 
-### Complete Example with Jaeger
+### Complete Example
 
-```typescript
-import { NodeSDK } from '@opentelemetry/sdk-node'
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
-import { Resource } from '@opentelemetry/resources'
-import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions'
-import { trace } from '@opentelemetry/api'
-import { scope } from 'go-go-scope'
-
-// Initialize OpenTelemetry
-const sdk = new NodeSDK({
-  resource: new Resource({
-    [SemanticResourceAttributes.SERVICE_NAME]: 'my-service',
-    [SemanticResourceAttributes.SERVICE_VERSION]: '1.0.0',
-  }),
-  traceExporter: new OTLPTraceExporter({
-    url: 'http://localhost:4318/v1/traces',
-  }),
-})
-
-sdk.start()
-
-// Get tracer
-const tracer = trace.getTracer('my-service')
-
-// Use in your code
-async function processOrder(orderId: string) {
-  await using s = scope({ 
-    tracer, 
-    name: 'process-order',
-    timeout: 30000 
-  })
-  
-  const [validateErr] = await s.task(
-    () => validateOrder(orderId),
-    { otel: { name: 'validate-order' } }
-  )
-  if (validateErr) throw validateErr
-  
-  const [paymentErr] = await s.task(
-    () => processPayment(orderId),
-    { 
-      otel: { name: 'process-payment' },
-      retry: { maxRetries: 3 }
-    }
-  )
-  if (paymentErr) throw paymentErr
-  
-  const [notifyErr] = await s.task(
-    () => sendNotification(orderId),
-    { otel: { name: 'send-notification' } }
-  )
-  // Non-critical, don't throw
-  
-  return { success: true }
-}
-```
+See [examples/jaeger-tracing.ts](../examples/jaeger-tracing.ts) for a complete working example with Jaeger tracing.
 
 ### Spans Created
 

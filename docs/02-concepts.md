@@ -5,10 +5,11 @@ This document explains the fundamental concepts behind `go-go-scope`.
 ## Table of Contents
 
 1. [What is Structured Concurrency?](#what-is-structured-concurrency)
-2. [The Scope](#the-scope)
-3. [The Task](#the-task)
-4. [Result Tuples](#result-tuples)
-5. [Cancellation](#cancellation)
+2. [A Real-World Example](#a-real-world-example)
+3. [The Scope](#the-scope)
+4. [The Task](#the-task)
+5. [Result Tuples](#result-tuples)
+6. [Cancellation](#cancellation)
 
 ---
 
@@ -43,35 +44,95 @@ async function parent() {
 }
 ```
 
-### The Problem: Fire-and-Forget
+---
 
-Without structured concurrency:
+## A Real-World Example
+
+Let's see structured concurrency in action with a complete example that shows off all the features:
 
 ```typescript
-async function fetchUserData() {
-  // These run independently - no cleanup guarantee!
-  fetchUser(1)  // Might keep running forever
-  fetchUser(2)  // Even if we return early
+import { scope } from 'go-go-scope'
+import { trace } from '@opentelemetry/api'
+import createDebug from 'debug'
+
+const debug = createDebug('my-app:fetch-data')
+
+async function fetchDashboardData(userId: string) {
+  // Create a scope with tracing, timeout, and concurrency limit
+  await using s = scope({
+    name: 'fetch-dashboard',
+    timeout: 10000,
+    concurrency: 3,
+    tracer: trace.getTracer('my-app')
+  })
+    // Provide services with automatic cleanup
+    .provide('db', () => openDatabase(), (db) => db.close())
+    .provide('cache', () => createCache(), (cache) => cache.disconnect())
   
-  return 'done'  // Tasks might still be running!
+  debug('Starting to fetch dashboard data for user %s', userId)
+  
+  // Fetch profile (sequential)
+  const [profileErr, profile] = await s.task(
+    async ({ services, signal }) => {
+      debug('Fetching profile...')
+      // Try cache first
+      const cached = await services.cache.get(`user:${userId}`)
+      if (cached) return cached
+      
+      // Fetch from DB
+      const user = await services.db.query('SELECT * FROM users WHERE id = ?', [userId], { signal })
+      await services.cache.set(`user:${userId}`, user)
+      return user
+    },
+    { otel: { name: 'fetch-profile', attributes: { userId } } }
+  )
+  
+  if (profileErr) {
+    debug('Failed to fetch profile: %s', profileErr.message)
+    throw profileErr
+  }
+  
+  // Fetch posts, comments, and stats in parallel with concurrency limit
+  debug('Fetching posts, comments, and stats...')
+  const [postsResults, commentsResults, statsResults] = await s.parallel([
+    ({ services, signal }) => services.db.query('SELECT * FROM posts WHERE user_id = ?', [userId], { signal }),
+    ({ services, signal }) => services.db.query('SELECT * FROM comments WHERE user_id = ?', [userId], { signal }),
+    ({ services, signal }) => fetchUserStats(userId, { signal })
+  ])
+  
+  const [postsErr, posts] = postsResults
+  const [commentsErr, comments] = commentsResults
+  const [statsErr, stats] = statsResults
+  
+  if (postsErr) debug('Failed to fetch posts: %s', postsErr.message)
+  if (commentsErr) debug('Failed to fetch comments: %s', commentsErr.message)
+  if (statsErr) debug('Failed to fetch stats: %s', statsErr.message)
+  
+  debug('Dashboard data fetched successfully')
+  
+  return {
+    profile,
+    posts: postsErr ? [] : posts,
+    comments: commentsErr ? [] : comments,
+    stats: statsErr ? null : stats
+  }
+  
+  // When we reach here, the scope automatically:
+  // 1. Cancels any running tasks
+  // 2. Closes the database connection
+  // 3. Disconnects from cache
+  // 4. Ends the OpenTelemetry span
 }
 ```
 
-### The Solution: Scoped Operations
+**What just happened?**
 
-With structured concurrency:
-
-```typescript
-async function fetchUserData() {
-  await using s = scope()
-  
-  // These are bound to the scope
-  const [err1, user1] = await s.task(() => fetchUser(1))
-  const [err2, user2] = await s.task(() => fetchUser(2))
-  
-  return 'done'  // All tasks are done too!
-}
-```
+1. **Tracing** - Every task creates an OpenTelemetry span with timing and attributes
+2. **Debug logging** - We used the `debug` module to trace execution flow
+3. **Resource management** - Database and cache are automatically cleaned up
+4. **Concurrency control** - Only 3 parallel operations at a time
+5. **Timeout** - Everything must complete within 10 seconds
+6. **Error tolerance** - Partial failures don't crash the whole request
 
 ---
 
@@ -90,8 +151,31 @@ await using s = scope()
 // With timeout
 await using s = scope({ timeout: 5000 })
 
+// With OpenTelemetry tracing
+await using s = scope({
+  name: 'my-operation',
+  tracer: trace.getTracer('my-app')
+})
+
 // With concurrency limit
 await using s = scope({ concurrency: 3 })
+
+// With circuit breaker
+await using s = scope({
+  circuitBreaker: {
+    failureThreshold: 5,
+    resetTimeout: 30000
+  }
+})
+
+// Combined
+await using s = scope({
+  name: 'complex-operation',
+  timeout: 30000,
+  concurrency: 5,
+  tracer: trace.getTracer('my-app'),
+  circuitBreaker: { failureThreshold: 3 }
+})
 ```
 
 ### What Does a Scope Do?
@@ -100,21 +184,33 @@ await using s = scope({ concurrency: 3 })
 2. **Propagates cancellation** - When the scope ends, tasks are cancelled
 3. **Manages resources** - Services you provide are cleaned up automatically
 4. **Tracks execution** - Knows what tasks are running
+5. **Collects telemetry** - Creates spans for tracing (if tracer provided)
 
-### Scope Lifetime
+### Resource Cleanup Example
 
 ```typescript
-async function example() {
-  // Scope starts
-  await using s = scope({ timeout: 5000 })
+async function processFile(filePath: string) {
+  await using s = scope()
+    // Resources are cleaned up in LIFO order (reverse of creation)
+    .provide('tempDir', () => createTempDir(), (dir) => dir.cleanup())
+    .provide('fileHandle', () => openFile(filePath), (fh) => fh.close())
+    .provide('db', () => openDatabase(), (db) => db.close())
   
-  // Tasks run inside the scope
-  const [err, user] = await s.task(() => fetchUser(1))
+  // Use the resources
+  const data = await s.use('fileHandle').read()
+  const processed = await processData(data)
   
-  // At the end of the function, scope automatically:
-  // 1. Cancels any running tasks
-  // 2. Cleans up resources
-  // 3. Closes the scope
+  await s.task(({ services }) => 
+    services.db.query('INSERT INTO processed VALUES (?)', [processed])
+  )
+  
+  await s.use('tempDir').write('done.txt', 'Processing complete')
+  
+  // Cleanup order:
+  // 1. Database connection closes
+  // 2. File handle closes
+  // 3. Temp directory is cleaned up
+  // All happen automatically, even if an error occurs!
 }
 ```
 
@@ -123,16 +219,24 @@ async function example() {
 Scopes can inherit from parents:
 
 ```typescript
-await using parent = scope()
+await using parent = scope({
+  name: 'parent-operation',
+  tracer: trace.getTracer('my-app')
+})
   .provide('db', () => openDatabase())
 
-// Child inherits parent's services and cancellation
-await using child = scope({ parent })
+// Child inherits parent's services, tracer, and cancellation
+await using child = scope({ 
+  parent,
+  name: 'child-operation'  // Creates a child span
+})
 
 // Can use parent's services!
 const [err, result] = await child.task(({ services }) => {
   return services.db.query('SELECT 1')
 })
+
+// Parent span waits for child span to complete
 ```
 
 ---
@@ -179,21 +283,52 @@ if (err) {
 return result
 ```
 
-### Parallel Execution
+### Parallel Execution with s.parallel
 
-To run tasks in parallel, use `Promise.all`:
+Use `s.parallel()` for parallel execution with concurrency control and Result tuples:
 
 ```typescript
-await using s = scope()
+await using s = scope({ concurrency: 3 })
 
-const userTask = s.task(() => fetchUser(1))
-const postsTask = s.task(() => fetchPosts(1))
-
-// Both start now
-const [[userErr, user], [postsErr, posts]] = await Promise.all([
-  userTask,
-  postsTask
+// Run up to 3 tasks concurrently
+const results = await s.parallel([
+  ({ signal }) => fetchUser(1, { signal }),
+  ({ signal }) => fetchUser(2, { signal }),
+  ({ signal }) => fetchUser(3, { signal }),
+  ({ signal }) => fetchUser(4, { signal }),
+  ({ signal }) => fetchUser(5, { signal })
 ])
+
+// Each result is [error, value]
+for (const [err, user] of results) {
+  if (err) console.log('Failed:', err)
+  else console.log('User:', user)
+}
+```
+
+### Task with Tracing and Retry
+
+```typescript
+const [err, user] = await s.task(
+  async ({ services, signal }) => {
+    return fetchUser(id, { signal })
+  },
+  {
+    // OpenTelemetry span
+    otel: {
+      name: 'fetch-user',
+      attributes: { userId: id, source: 'database' }
+    },
+    // Retry configuration
+    retry: {
+      maxRetries: 3,
+      delay: 1000,
+      retryCondition: (err) => err instanceof NetworkError
+    },
+    // Task-specific timeout
+    timeout: 5000
+  }
+)
 ```
 
 ---
@@ -250,13 +385,20 @@ const [err, user] = await s.task(() => fetchUser(1))
 if (err) return handleError(err)
 
 // Multiple tasks with parallel
-const [userResult, postsResult] = await Promise.all([
-  s.task(() => fetchUser(1)),
-  s.task(() => fetchPosts(1))
+const results = await s.parallel([
+  () => fetchUser(1),
+  () => fetchUser(2),
+  () => fetchUser(3)
 ])
 
-const [userErr, user] = userResult
-const [postsErr, posts] = postsResult
+// Process each result
+for (const [err, user] of results) {
+  if (err) {
+    console.log('Failed:', err)
+  } else {
+    console.log('Got user:', user)
+  }
+}
 ```
 
 ---
@@ -289,14 +431,19 @@ await s.task(async ({ signal }) => {
 3. **Parent cancellation** - Parent scope is cancelled
 4. **Manual abort** - You call `scope.signal.abort()`
 
-### Example: Timeout
+### Example: Timeout with Cleanup
 
 ```typescript
 await using s = scope({ timeout: 5000 })
 
 const [err, data] = await s.task(async ({ signal }) => {
-  // fetch will be cancelled after 5 seconds
   const response = await fetch('/slow-endpoint', { signal })
+  
+  // Even if we get here, signal might be aborted
+  if (signal.aborted) {
+    throw new Error('Cancelled during processing')
+  }
+  
   return response.json()
 })
 
@@ -312,7 +459,9 @@ if (err) {
 | Concept | What it is | Key characteristic |
 |---------|------------|-------------------|
 | **Structured Concurrency** | Pattern for async code | Tasks are bounded by scopes |
-| **Scope** | Container for tasks | Manages lifetime and cancellation |
+| **Scope** | Container for tasks | Manages lifetime, cleanup, and cancellation |
 | **Task** | Unit of work | Lazy, cancellable, returns Result |
 | **Result Tuple** | `[error, value]` | Explicit error handling |
 | **Cancellation** | `AbortSignal` | Automatic cleanup on timeout/error |
+| **Tracing** | OpenTelemetry spans | Observability built-in |
+| **Debug** | `debug` module | Execution flow tracking |

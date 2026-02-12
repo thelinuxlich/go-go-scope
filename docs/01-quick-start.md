@@ -2,34 +2,6 @@
 
 Welcome! This guide will get you started with `go-go-scope` in 5 minutes.
 
-## What is go-go-scope?
-
-`go-go-scope` helps you write async code that:
-- Automatically cleans up resources
-- Cancels operations when they're no longer needed
-- Handles timeouts gracefully
-- Prevents memory leaks
-
-## Installation
-
-```bash
-npm install go-go-scope
-```
-
-**Requirements:**
-- TypeScript 5.2+ (for `using` syntax)
-- Node.js 18+
-
-Add this to your `tsconfig.json`:
-
-```json
-{
-  "compilerOptions": {
-    "lib": ["ES2022", "ESNext.Disposable"]
-  }
-}
-```
-
 ## Your First Example
 
 The simplest way to understand `go-go-scope` is with a timeout example:
@@ -121,6 +93,8 @@ const [err, result] = await s.task(
 
 ## Next Steps
 
-- Learn [Core Concepts](./02-concepts.md) - Understand Scope and Task
-- Read the [API Reference](./03-api-reference.md) - Complete API documentation
-- Explore [Advanced Features](./04-advanced-features.md) - Channels, circuit breakers, etc.
+Now that you've seen the basics:
+
+1. **[Core Concepts](./02-concepts.md)** - Learn why structured concurrency matters and understand Scope vs Task
+2. **[API Reference](./03-api-reference.md)** - Explore all available methods and options
+3. **[Advanced Features](./04-advanced-features.md)** - Discover channels, circuit breakers, and polling
