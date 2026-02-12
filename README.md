@@ -33,18 +33,15 @@ import { scope } from 'go-go-scope'
 async function fetchUserData(userId: string) {
   await using s = scope({ timeout: 5000 })
   
-  const userTask = s.task(({ signal }) => fetchUser(userId, { signal }))
-  const postsTask = s.task(({ signal }) => fetchPosts(userId, { signal }))
-  
-  // task() returns Result tuple [error, value]
-  const [userErr, user] = await userTask
-  const [postsErr, posts] = await postsTask
+  // task() returns a Result tuple [error, value]
+  const [userErr, user] = await s.task(({ signal }) => fetchUser(userId, { signal }))
+  const [postsErr, posts] = await s.task(({ signal }) => fetchPosts(userId, { signal }))
   
   if (userErr) throw userErr
   if (postsErr) throw postsErr
   
   return { user, posts }
-  // Tasks auto-cancelled if scope exits (timeout, error, or return)
+  // Started tasks are auto-cancelled if scope exits (timeout, error, or return)
 }
 
 // With dependency injection
@@ -52,11 +49,10 @@ async function fetchWithDatabase(userId: string) {
   await using s = scope()
     .provide('db', () => openDatabase(), db => db.close())
   
-  const task = s.task(async ({ services, signal }) => {
+  const [err, result] = await s.task(async ({ services, signal }) => {
     return services.db.query('SELECT * FROM users WHERE id = ?', [userId], { signal })
   })
   
-  const [err, result] = await task
   if (err) throw err
   return result
   // Database closes automatically when scope exits
@@ -70,12 +66,11 @@ async function fetchWithChildScope(userId: string) {
   // Child inherits signal AND services from parent
   await using child = scope({ parent })
   
-  const task = child.task(async ({ services }) => {
+  const [err, result] = await child.task(async ({ services }) => {
     // Can use parent's 'db' service directly
     return services.db.query('SELECT * FROM users WHERE id = ?', [userId])
   })
   
-  const [err, result] = await task
   if (err) throw err
   return result
   // Child cancels when parent exits, database closes last
@@ -116,6 +111,89 @@ for (const [err, user] of results) {
 }
 ```
 
+## Tasks vs Promises
+
+At first glance, `Task` looks similar to `Promise`, but there are key differences:
+
+### Similarities
+- **Awaitable**: Both can be awaited to get the result
+- **Chainable**: Both support `.then()` for chaining
+
+### Key Differences
+
+| Feature | Promise | Task |
+|---------|---------|------|
+| **Execution** | **Eager** - starts immediately | **Lazy** - starts when awaited or `.then()` is called |
+| **Error handling** | Throws on failure | Returns `Result` tuple `[error, value]` |
+| **Cancellation** | No built-in cancellation | Respects `AbortSignal` from scope |
+| **Scope-bound** | Independent | Auto-cancelled when parent scope exits |
+| **Structured concurrency** | Fire-and-forget | Part of structured concurrency tree |
+
+### Lazy Execution
+
+Unlike Promises, **tasks don't execute until you await them**:
+
+```typescript
+await using s = scope()
+
+// Task is CREATED but NOT started
+const userTask = s.task(() => fetchUser(id))
+console.log(userTask.isStarted)  // false
+
+// Task STARTS executing here
+const [err, user] = await userTask
+console.log(userTask.isStarted)  // true
+```
+
+This is powerful for control flow:
+
+```typescript
+await using s = scope()
+
+const primaryTask = s.task(() => fetchFromPrimary())
+const fallbackTask = s.task(() => fetchFromFallback())
+
+// Try primary first
+const [err, result] = await primaryTask
+if (err) {
+  // Only now does fallbackTask start executing
+  const [fallbackErr, fallbackResult] = await fallbackTask
+  if (fallbackErr) throw fallbackErr
+  return fallbackResult
+}
+return result
+```
+
+### Parallel Execution
+
+To run tasks in parallel, await them simultaneously with `Promise.all`:
+
+```typescript
+await using s = scope()
+
+const userTask = s.task(() => fetchUser(id))
+const postsTask = s.task(() => fetchPosts(id))
+
+// Both start executing now (in parallel)
+const [[userErr, user], [postsErr, posts]] = await Promise.all([
+  userTask,
+  postsTask
+])
+```
+
+Or inline:
+```typescript
+await using s = scope()
+
+// Both start immediately in parallel
+const [[userErr, user], [postsErr, posts]] = await Promise.all([
+  s.task(() => fetchUser(id)),
+  s.task(() => fetchPosts(id))
+])
+```
+
+The key insight: **Tasks are lazy, scope-bound promises** — they give you explicit control over *when* execution happens, combined with structured concurrency guarantees.
+
 ## API
 
 ### `scope(options?)`
@@ -148,12 +226,11 @@ Supports retry and timeout via TaskOptions. Inherits scope's concurrency and cir
 The task function receives a context object with `{ services, signal }`:
 
 ```typescript
-const task = s.task(async ({ services, signal }) => {
+const [err, result] = await s.task(async ({ services, signal }) => {
   const response = await fetch(url, { signal })
   return response.json()
 })
 
-const [err, result] = await task
 if (err) {
   console.error('Task failed:', err)
 } else {
@@ -166,18 +243,17 @@ With services from `provide()`:
 await using s = scope()
   .provide('db', () => openDatabase())
 
-const task = s.task(async ({ services }) => {
+const [err, result] = await s.task(async ({ services }) => {
   return services.db.query('SELECT 1')
 })
 
-const [err, result] = await task
 if (err) throw err
 return result
 ```
 
 With retry:
 ```typescript
-const task = s.task(
+const [err, user] = await s.task(
   async ({ signal }) => fetchUser(id, { signal }),
   { 
     retry: {
@@ -188,14 +264,13 @@ const task = s.task(
   }
 )
 
-const [err, user] = await task
 if (err) throw err
 // use user
 ```
 
 With OpenTelemetry:
 ```typescript
-const task = s.task(
+const [err, user] = await s.task(
   async ({ signal }) => fetchUser(id, { signal }),
   { 
     otel: {
@@ -204,8 +279,6 @@ const task = s.task(
     }
   }
 )
-
-const [err, user] = await task
 ```
 
 ### TaskOptions
@@ -240,7 +313,7 @@ interface TaskOptions {
 ```typescript
 await using s = scope()
 
-const task = s.task(
+const [err, result] = await s.task(
   async ({ signal }) => {
     const conn = await openConnection()
     return conn.query('SELECT * FROM users')
@@ -253,7 +326,6 @@ const task = s.task(
   }
 )
 
-const [err, result] = await task
 if (err) throw err
 // Task completes here...
 
@@ -386,11 +458,10 @@ All factory functions receive an `AbortSignal` that allows you to:
 3. **Check if already aborted**:
    ```typescript
    await using s = scope()
-   const task = s.task(async ({ signal }) => {
+   const [err, result] = await s.task(async ({ signal }) => {
      if (signal.aborted) throw new Error('Already cancelled')
      return fetchData({ signal })
    }, { timeout: 1000 })
-   const [err, result] = await task
    if (err) throw err
    ```
 
@@ -617,12 +688,11 @@ Add automatic retry logic to any task via `TaskOptions`:
 await using s = scope()
 
 // task() returns Result tuple [error, value]
-const task = s.task(() => fetchData(), { retry: { maxRetries: 3 } })
-const [err, result] = await task
+const [err, result] = await s.task(() => fetchData(), { retry: { maxRetries: 3 } })
 if (err) throw err  // Handle error explicitly
 
 // Custom retry with exponential backoff
-const task = s.task(
+await s.task(
   () => fetchData(),
   {
     retry: {
@@ -682,7 +752,7 @@ All tasks receive an `AbortSignal` that is aborted when:
 - A parent signal is aborted
 
 ```typescript
-const task = s.task(async ({ signal }) => {
+await s.task(async ({ signal }) => {
   // Check if already aborted
   if (signal.aborted) throw new Error('Already cancelled')
   

@@ -127,54 +127,43 @@ export interface ScopeOptions<
 /**
  * A disposable task that runs within a Scope.
  * Implements PromiseLike for await support and Disposable for cleanup.
+ * Execution is lazy - the task only starts when awaited or .then() is called.
  */
 let taskIdCounter = 0;
 
 export class Task<T> implements PromiseLike<T> {
-	private readonly promise: Promise<T>;
+	private promise: Promise<T> | undefined;
 	private readonly abortController: AbortController;
 	private settled = false;
 	private readonly id: number;
+	private readonly fn: (signal: AbortSignal) => Promise<T>;
+	private readonly parentSignal: AbortSignal;
+	private parentAbortHandler: (() => void) | undefined;
 
 	constructor(
 		fn: (signal: AbortSignal) => Promise<T>,
 		parentSignal: AbortSignal,
 	) {
 		this.id = ++taskIdCounter;
-		debugTask("[%d] creating task", this.id);
+		debugTask("[%d] creating lazy task", this.id);
 		this.abortController = new AbortController();
+		this.fn = fn;
+		this.parentSignal = parentSignal;
 
 		// Link to parent - if parent aborts, we abort
-		const parentAbortHandler = () => {
+		this.parentAbortHandler = () => {
 			debugTask("[%d] aborting due to parent signal", this.id);
 			this.abortController.abort(parentSignal.reason);
 		};
 
 		if (parentSignal.aborted) {
-			debugTask("[%d] parent already aborted, aborting immediately", this.id);
+			debugTask("[%d] parent already aborted", this.id);
 			this.abortController.abort(parentSignal.reason);
 		} else {
-			parentSignal.addEventListener("abort", parentAbortHandler, {
+			parentSignal.addEventListener("abort", this.parentAbortHandler, {
 				once: true,
 			});
 		}
-
-		// Create the promise
-		this.promise = fn(this.abortController.signal)
-			.then((value) => {
-				debugTask("[%d] completed successfully", this.id);
-				return value;
-			})
-			.catch((error) => {
-				debugTask("[%d] failed with error: %s", this.id, error);
-				throw error;
-			})
-			.finally(() => {
-				this.settled = true;
-				if (!parentSignal.aborted) {
-					parentSignal.removeEventListener("abort", parentAbortHandler);
-				}
-			});
 	}
 
 	/**
@@ -185,10 +174,50 @@ export class Task<T> implements PromiseLike<T> {
 	}
 
 	/**
+	 * Check if the task has started execution.
+	 */
+	get isStarted(): boolean {
+		return this.promise !== undefined;
+	}
+
+	/**
 	 * Check if the task has settled (completed or failed).
 	 */
 	get isSettled(): boolean {
 		return this.settled;
+	}
+
+	/**
+	 * Start the task execution if not already started.
+	 */
+	private start(): Promise<T> {
+		if (this.promise) {
+			return this.promise;
+		}
+
+		debugTask("[%d] starting execution", this.id);
+
+		// Create the promise on first access
+		this.promise = this.fn(this.abortController.signal)
+			.then((value) => {
+				debugTask("[%d] completed successfully", this.id);
+				return value;
+			})
+			.catch((error) => {
+				debugTask("[%d] failed with error: %s", this.id, error);
+				throw error;
+			})
+			.finally(() => {
+				this.settled = true;
+				if (this.parentAbortHandler && !this.parentSignal.aborted) {
+					this.parentSignal.removeEventListener(
+						"abort",
+						this.parentAbortHandler,
+					);
+				}
+			});
+
+		return this.promise;
 	}
 
 	// biome-ignore lint/suspicious/noThenProperty: Intentionally implementing PromiseLike
@@ -202,7 +231,7 @@ export class Task<T> implements PromiseLike<T> {
 			| null
 			| undefined,
 	): Promise<TResult1 | TResult2> {
-		return this.promise.then(onfulfilled, onrejected);
+		return this.start().then(onfulfilled, onrejected);
 	}
 }
 
