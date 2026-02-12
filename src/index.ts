@@ -77,11 +77,11 @@ export interface TaskOptions {
 /**
  * Span status codes (from OpenTelemetry)
  */
-export const SpanStatusCode = {
-	UNSET: 0,
-	OK: 1,
-	ERROR: 2,
-} as const;
+export enum SpanStatusCode {
+	UNSET = 0,
+	OK = 1,
+	ERROR = 2,
+}
 
 /**
  * Options for creating a Scope
@@ -132,6 +132,7 @@ export interface ScopeOptions<
 let taskIdCounter = 0;
 
 export class Task<T> implements PromiseLike<T>, Disposable {
+	readonly id: number;
 	private promise: Promise<T> | undefined;
 	private abortController: AbortController | undefined;
 	private settled = false;
@@ -157,7 +158,8 @@ export class Task<T> implements PromiseLike<T>, Disposable {
 		if (!this.abortController) {
 			this.setupAbortController();
 		}
-		return this.abortController.signal;
+		// Non-null assertion safe because setupAbortController initializes it
+		return this.abortController!.signal;
 	}
 
 	/**
@@ -219,7 +221,8 @@ export class Task<T> implements PromiseLike<T>, Disposable {
 		}
 
 		// Create the promise on first access
-		this.promise = this.fn(this.abortController.signal).finally(() => {
+		// Non-null assertion safe because setupAbortController initializes it
+		this.promise = this.fn(this.abortController!.signal).finally(() => {
 			this.settled = true;
 			if (this.parentAbortHandler && !this.parentSignal.aborted) {
 				this.parentSignal.removeEventListener("abort", this.parentAbortHandler);
@@ -346,15 +349,17 @@ export class Scope<
 		const concurrency = options?.concurrency ?? parent?.concurrency;
 		const circuitBreaker = options?.circuitBreaker ?? parent?.circuitBreaker;
 
-		debugScope(
-			"[%s] creating scope (timeout: %d, parent signal: %s, concurrency: %s, circuitBreaker: %s, parent: %s)",
-			this.name,
-			options?.timeout ?? 0,
-			parentSignal ? "yes" : "no",
-			concurrency ?? "unlimited",
-			circuitBreaker ? "yes" : "no",
-			parent ? "yes" : "no",
-		);
+		if (debugScope.enabled) {
+			debugScope(
+				"[%s] creating scope (timeout: %d, parent signal: %s, concurrency: %s, circuitBreaker: %s, parent: %s)",
+				this.name,
+				options?.timeout ?? 0,
+				parentSignal ? "yes" : "no",
+				concurrency ?? "unlimited",
+				circuitBreaker ? "yes" : "no",
+				parent ? "yes" : "no",
+			);
+		}
 		this.abortController = new AbortController();
 		this._tracer = tracer;
 		this.startTime = performance.now();
@@ -365,11 +370,13 @@ export class Scope<
 				concurrency,
 				this.abortController.signal,
 			);
-			debugScope(
-				"[%s] created concurrency semaphore with %d permits",
-				this.name,
-				concurrency,
-			);
+			if (debugScope.enabled) {
+				debugScope(
+					"[%s] created concurrency semaphore with %d permits",
+					this.name,
+					concurrency,
+				);
+			}
 		}
 
 		// Create circuit breaker if specified
@@ -378,11 +385,13 @@ export class Scope<
 				circuitBreaker,
 				this.abortController.signal,
 			);
-			debugScope(
-				"[%s] created circuit breaker (failureThreshold: %d)",
-				this.name,
-				circuitBreaker.failureThreshold ?? 5,
-			);
+			if (debugScope.enabled) {
+				debugScope(
+					"[%s] created circuit breaker (failureThreshold: %d)",
+					this.name,
+					circuitBreaker.failureThreshold ?? 5,
+				);
+			}
 		}
 
 		// Create span if tracer is provided
@@ -418,7 +427,13 @@ export class Scope<
 		if (parentSignal) {
 			const parentHandler = () => {
 				const reason = parentSignal.reason;
-				debugScope("[%s] aborting due to parent signal: %s", this.name, reason);
+				if (debugScope.enabled) {
+					debugScope(
+						"[%s] aborting due to parent signal: %s",
+						this.name,
+						reason,
+					);
+				}
 				this.span?.recordException(
 					reason instanceof Error ? reason : new Error(String(reason)),
 				);
@@ -430,7 +445,9 @@ export class Scope<
 				this.abortController.abort(reason);
 			};
 			if (parentSignal.aborted) {
-				debugScope("[%s] parent already aborted", this.name);
+				if (debugScope.enabled) {
+					debugScope("[%s] parent already aborted", this.name);
+				}
 				this.abortController.abort(parentSignal.reason);
 			} else {
 				parentSignal.addEventListener("abort", parentHandler, { once: true });
@@ -441,7 +458,9 @@ export class Scope<
 		if (options?.timeout !== undefined && options.timeout > 0) {
 			this.timeoutId = setTimeout(() => {
 				const error = new Error(`timeout after ${options.timeout}ms`);
-				debugScope("[%s] timeout after %dms", this.name, options.timeout);
+				if (debugScope.enabled) {
+					debugScope("[%s] timeout after %dms", this.name, options.timeout);
+				}
 				this.span?.recordException(error);
 				this.span?.setStatus({
 					code: SpanStatusCode.ERROR,
@@ -546,6 +565,9 @@ export class Scope<
 			debugScope('[%s] spawning task #%d "%s"', this.name, taskIndex, taskName);
 		}
 
+		// Pre-compute commonly used values to avoid repeated lookups
+		const parentSignal = this.abortController.signal;
+
 		// Create task span only if tracer is configured
 		const taskSpan = hasOtel
 			? this._tracer.startSpan(
@@ -621,7 +643,7 @@ export class Scope<
 					} catch (error) {
 						if (
 							error instanceof Error &&
-							error.message === "circuit breaker is open"
+							error.message === "Circuit breaker is open"
 						) {
 							taskSpan?.setAttributes?.({
 								"task.circuit_breaker.rejected": true,
@@ -668,7 +690,7 @@ export class Scope<
 			}
 
 			// 3. Apply retry logic if specified
-			if (hasRetry) {
+			if (hasRetry && options?.retry) {
 				const retryOpts = options.retry;
 				const innerFn = executeFn;
 				executeFn = async (sig) => {
@@ -813,12 +835,16 @@ export class Scope<
 			}
 
 			// Execute the pipeline
-			debugTask("[%s] starting execution", taskName);
+			if (hasTaskDebug) {
+				debugTask("[%s] starting execution", taskName);
+			}
 			const startTime = performance.now();
 			try {
 				const result = await executeFn(signal);
 				const duration = performance.now() - startTime;
-				debugTask("[%s] completed successfully in %dms", taskName, duration);
+				if (hasTaskDebug) {
+					debugTask("[%s] completed successfully in %dms", taskName, duration);
+				}
 				taskSpan?.setAttributes?.({
 					"task.duration_ms": Math.round(duration),
 					"task.retry_attempts": retryAttempt,
@@ -826,14 +852,16 @@ export class Scope<
 				return result;
 			} catch (error) {
 				const duration = performance.now() - startTime;
-				debugTask("[%s] failed after %dms: %s", taskName, duration, error);
+				if (hasTaskDebug) {
+					debugTask("[%s] failed after %dms: %s", taskName, duration, error);
+				}
 
 				// Determine error reason
 				let errorReason = "exception";
 				if (error instanceof Error) {
 					if (error.message.startsWith("timeout after")) {
 						errorReason = "timeout";
-					} else if (error.message === "circuit breaker is open") {
+					} else if (error.message === "Circuit breaker is open") {
 						errorReason = "circuit_breaker_open";
 					} else if (signal.aborted) {
 						errorReason = "aborted";
@@ -862,7 +890,7 @@ export class Scope<
 			} catch (error) {
 				return [error, undefined] as Failure<unknown>;
 			}
-		}, this.abortController.signal);
+		}, parentSignal);
 
 		// Track active task
 		this.activeTasks.add(task as Task<unknown>);
@@ -900,12 +928,14 @@ export class Scope<
 			this.disposables.push(cleanupDisposable);
 		}
 
-		debugScope(
-			"[%s] task #%d added to disposables (total: %d)",
-			this.name,
-			taskIndex,
-			this.disposables.length,
-		);
+		if (debugScope.enabled) {
+			debugScope(
+				"[%s] task #%d added to disposables (total: %d)",
+				this.name,
+				taskIndex,
+				this.disposables.length,
+			);
+		}
 		return task;
 	}
 
@@ -952,12 +982,14 @@ export class Scope<
 			this.disposables.push(cleanupDisposable);
 		}
 
-		debugScope(
-			"[%s] provided service '%s' (total disposables: %d)",
-			this.name,
-			key,
-			this.disposables.length,
-		);
+		if (debugScope.enabled) {
+			debugScope(
+				"[%s] provided service '%s' (total disposables: %d)",
+				this.name,
+				key,
+				this.disposables.length,
+			);
+		}
 
 		// Return with updated type
 		return this as Scope<Services & Record<K, T>>;
@@ -982,16 +1014,20 @@ export class Scope<
 	 */
 	async [Symbol.asyncDispose](): Promise<void> {
 		if (this.disposed) {
-			debugScope("[%s] already disposed, skipping", this.name);
+			if (debugScope.enabled) {
+				debugScope("[%s] already disposed, skipping", this.name);
+			}
 			return;
 		}
 
-		debugScope(
-			"[%s] disposing scope (tasks: %d, disposables: %d)",
-			this.name,
-			this.taskCount,
-			this.disposables.length,
-		);
+		if (debugScope.enabled) {
+			debugScope(
+				"[%s] disposing scope (tasks: %d, disposables: %d)",
+				this.name,
+				this.taskCount,
+				this.disposables.length,
+			);
+		}
 		this.disposed = true;
 
 		// Clear timeout if set
@@ -1000,33 +1036,36 @@ export class Scope<
 		}
 
 		// Abort all tasks
-		debugScope("[%s] aborting all tasks", this.name);
+		if (debugScope.enabled) {
+			debugScope("[%s] aborting all tasks", this.name);
+		}
 		this.abortController.abort(new Error("scope disposed"));
 
-		// Dispose all resources in reverse order (LIFO)
+		// Dispose all resources in reverse order (LIFO) - avoid array copy
 		const errors: unknown[] = [];
-		let disposeIndex = 0;
-		for (const disposable of [...this.disposables].reverse()) {
-			disposeIndex++;
+		const disposables = this.disposables;
+		const len = disposables.length;
+		for (let i = len - 1; i >= 0; i--) {
+			const disposable = disposables[i];
+			if (!disposable) continue;
 			try {
-				debugScope(
-					"[%s] disposing resource %d/%d",
-					this.name,
-					disposeIndex,
-					this.disposables.length,
-				);
+				if (debugScope.enabled) {
+					debugScope("[%s] disposing resource %d/%d", this.name, len - i, len);
+				}
 				if (Symbol.asyncDispose in disposable) {
 					await disposable[Symbol.asyncDispose]();
 				} else if (Symbol.dispose in disposable) {
 					disposable[Symbol.dispose]();
 				}
 			} catch (error) {
-				debugScope(
-					"[%s] error disposing resource %d: %s",
-					this.name,
-					disposeIndex,
-					error,
-				);
+				if (debugScope.enabled) {
+					debugScope(
+						"[%s] error disposing resource %d: %s",
+						this.name,
+						len - i,
+						error,
+					);
+				}
 				errors.push(error);
 			}
 		}
@@ -1034,23 +1073,30 @@ export class Scope<
 		// Clear the disposables list
 		const disposedCount = this.disposables.length;
 		this.disposables.length = 0;
-		debugScope("[%s] cleared %d disposables", this.name, disposedCount);
+		if (debugScope.enabled) {
+			debugScope("[%s] cleared %d disposables", this.name, disposedCount);
+		}
 
 		// Wait for all active tasks to settle before ending the span
 		// This ensures the scope duration includes all task execution time
-		if (this.activeTasks.size > 0) {
-			debugScope(
-				"[%s] waiting for %d active tasks to settle",
-				this.name,
-				this.activeTasks.size,
-			);
+		const activeTaskCount = this.activeTasks.size;
+		if (activeTaskCount > 0) {
+			if (debugScope.enabled) {
+				debugScope(
+					"[%s] waiting for %d active tasks to settle",
+					this.name,
+					activeTaskCount,
+				);
+			}
 			await Promise.allSettled(
 				Array.from(this.activeTasks).map((t) =>
 					Promise.resolve(t).catch(() => {}),
 				),
 			);
 			this.activeTasks.clear();
-			debugScope("[%s] all tasks settled", this.name);
+			if (debugScope.enabled) {
+				debugScope("[%s] all tasks settled", this.name);
+			}
 		}
 
 		// End the scope span
@@ -1079,12 +1125,14 @@ export class Scope<
 		this.span?.setAttributes?.({ "scope.duration_ms": duration });
 
 		this.span?.end();
-		debugScope(
-			"[%s] scope disposed (duration: %dms, errors: %d)",
-			this.name,
-			Math.round(duration),
-			errors.length,
-		);
+		if (debugScope.enabled) {
+			debugScope(
+				"[%s] scope disposed (duration: %dms, errors: %d)",
+				this.name,
+				Math.round(duration),
+				errors.length,
+			);
+		}
 
 		// If any disposals threw, aggregate and rethrow
 		if (errors.length > 0) {
@@ -1234,11 +1282,15 @@ export async function race<T>(
 		return [new Error("Cannot race empty array of factories"), undefined];
 	}
 
-	debugScope("[race] starting race with %d competitors", totalTasks);
+	if (debugScope.enabled) {
+		debugScope("[race] starting race with %d competitors", totalTasks);
+	}
 
 	// Check if signal is already aborted
 	if (options?.signal?.aborted) {
-		debugScope("[race] already aborted");
+		if (debugScope.enabled) {
+			debugScope("[race] already aborted");
+		}
 		return [options.signal.reason, undefined];
 	}
 
@@ -1252,17 +1304,20 @@ export async function race<T>(
 			s.signal.addEventListener(
 				"abort",
 				() => {
-					debugScope(
-						"[race] aborted, %d/%d tasks settled",
-						settledCount,
-						totalTasks,
-					);
+					if (debugScope.enabled) {
+						debugScope(
+							"[race] aborted, %d/%d tasks settled",
+							settledCount,
+							totalTasks,
+						);
+					}
 					resolve([s.signal.reason, undefined]);
 				},
 				{ once: true },
 			);
 		});
 
+		const debugEnabled = debugScope.enabled;
 		// Spawn all tasks with tracking
 		const tasks = factories.map((factory, idx) =>
 			s
@@ -1271,12 +1326,14 @@ export async function race<T>(
 					settledCount++;
 					if (winnerIndex === -1) {
 						winnerIndex = idx;
-						debugScope(
-							"[race] winner! task %d/%d won the race",
-							idx + 1,
-							totalTasks,
-						);
-					} else {
+						if (debugEnabled) {
+							debugScope(
+								"[race] winner! task %d/%d won the race",
+								idx + 1,
+								totalTasks,
+							);
+						}
+					} else if (debugEnabled) {
 						debugScope(
 							"[race] task %d/%d settled (loser)",
 							idx + 1,
@@ -1293,11 +1350,13 @@ export async function race<T>(
 
 		// Race all tasks against abort
 		const result = await Promise.race([...tasks, abortPromise]);
-		debugScope(
-			"[race] race complete, winner was task %d/%d",
-			winnerIndex + 1,
-			totalTasks,
-		);
+		if (debugEnabled) {
+			debugScope(
+				"[race] race complete, winner was task %d/%d",
+				winnerIndex + 1,
+				totalTasks,
+			);
+		}
 		return result;
 	} finally {
 		// Clean up scope - cancels all tasks
@@ -1333,24 +1392,31 @@ export async function parallel<T>(
 	},
 ): Promise<Result<unknown, T>[]> {
 	if (factories.length === 0) {
-		debugScope("[parallel] no factories, returning empty array");
+		if (debugScope.enabled) {
+			debugScope("[parallel] no factories, returning empty array");
+		}
 		return [];
 	}
 
 	const concurrency = options?.concurrency ?? 0;
 	const failFast = options?.failFast ?? false;
 	const totalTasks = factories.length;
+	const debugEnabled = debugScope.enabled;
 
-	debugScope(
-		"[parallel] starting parallel execution (tasks: %d, concurrency: %d, failFast: %s)",
-		totalTasks,
-		concurrency > 0 ? concurrency : "unlimited",
-		failFast,
-	);
+	if (debugEnabled) {
+		debugScope(
+			"[parallel] starting parallel execution (tasks: %d, concurrency: %d, failFast: %s)",
+			totalTasks,
+			concurrency > 0 ? concurrency : "unlimited",
+			failFast,
+		);
+	}
 
 	// Check if signal is already aborted
 	if (options?.signal?.aborted) {
-		debugScope("[parallel] already aborted");
+		if (debugEnabled) {
+			debugScope("[parallel] already aborted");
+		}
 		return factories.map(() => [options.signal?.reason, undefined]);
 	}
 
@@ -1367,26 +1433,32 @@ export async function parallel<T>(
 			const result = await s.task(({ signal }) => factory(signal));
 			if (result[0]) {
 				errorCount++;
-				debugScope(
-					"[parallel] task %d/%d failed (failFast: %s)",
-					errorCount,
-					totalTasks,
-					failFast,
-				);
+				if (debugEnabled) {
+					debugScope(
+						"[parallel] task %d/%d failed (failFast: %s)",
+						errorCount,
+						totalTasks,
+						failFast,
+					);
+				}
 			} else {
 				completedCount++;
-				debugScope(
-					"[parallel] task %d/%d completed",
-					completedCount,
-					totalTasks,
-				);
+				if (debugEnabled) {
+					debugScope(
+						"[parallel] task %d/%d completed",
+						completedCount,
+						totalTasks,
+					);
+				}
 			}
 			return result;
 		};
 
 		// If no concurrency limit, run all in parallel
 		if (concurrency <= 0 || concurrency >= factories.length) {
-			debugScope("[parallel] running all tasks in parallel");
+			if (debugEnabled) {
+				debugScope("[parallel] running all tasks in parallel");
+			}
 			const results = await Promise.all(
 				factories.map((f, i) => processTask(f, i)),
 			);
@@ -1403,18 +1475,24 @@ export async function parallel<T>(
 		}
 
 		// Run with limited concurrency using a worker pool
-		debugScope("[parallel] running with concurrency limit: %d", concurrency);
+		if (debugEnabled) {
+			debugScope("[parallel] running with concurrency limit: %d", concurrency);
+		}
 		const results: Result<unknown, T>[] = new Array(factories.length);
 		let index = 0;
 		let hasError = false;
 
 		const worker = async (workerId: number): Promise<void> => {
-			debugScope("[parallel] worker %d started", workerId);
+			if (debugEnabled) {
+				debugScope("[parallel] worker %d started", workerId);
+			}
 			let tasksProcessed = 0;
 			while (index < factories.length) {
 				// Check if we should stop due to error in failFast mode
 				if (failFast && hasError) {
-					debugScope("[parallel] worker %d stopping due to error", workerId);
+					if (debugEnabled) {
+						debugScope("[parallel] worker %d stopping due to error", workerId);
+					}
 					break;
 				}
 
@@ -1422,28 +1500,37 @@ export async function parallel<T>(
 				const factory = factories[currentIndex];
 				if (!factory) continue;
 
-				debugScope(
-					"[parallel] worker %d processing task %d",
-					workerId,
-					currentIndex,
-				);
+				if (debugEnabled) {
+					debugScope(
+						"[parallel] worker %d processing task %d",
+						workerId,
+						currentIndex,
+					);
+				}
 
 				const result = await processTask(factory, currentIndex);
 				results[currentIndex] = result;
 				if (result[0]) {
 					hasError = true;
 					if (failFast) {
-						debugScope("[parallel] worker %d aborting due to error", workerId);
+						if (debugEnabled) {
+							debugScope(
+								"[parallel] worker %d aborting due to error",
+								workerId,
+							);
+						}
 						break;
 					}
 				}
 				tasksProcessed++;
 			}
-			debugScope(
-				"[parallel] worker %d finished, processed %d tasks",
-				workerId,
-				tasksProcessed,
-			);
+			if (debugEnabled) {
+				debugScope(
+					"[parallel] worker %d finished, processed %d tasks",
+					workerId,
+					tasksProcessed,
+				);
+			}
 		};
 
 		const workers: Promise<void>[] = [];
@@ -1500,14 +1587,17 @@ export async function parallel<T>(
  */
 export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 	private buffer: T[] = [];
+	private bufferHead = 0; // Index of first valid element (avoids O(n) shift)
 	private sendQueue: Array<{
 		resolve: () => void;
 		reject: (reason: unknown) => void;
 	}> = [];
+	private sendQueueHead = 0; // Index of first valid sender (avoids O(n) shift)
 	private receiveQueue: Array<{
 		resolve: (value: T | undefined) => void;
 		reject: (reason: unknown) => void;
 	}> = [];
+	private receiveQueueHead = 0; // Index of first valid receiver (avoids O(n) shift)
 	private closed = false;
 	private aborted = false;
 	private abortReason: unknown;
@@ -1530,6 +1620,13 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 	}
 
 	/**
+	 * Get effective buffer size (accounting for head offset).
+	 */
+	private get bufferSize(): number {
+		return this.buffer.length - this.bufferHead;
+	}
+
+	/**
 	 * Send a value to the channel.
 	 * Blocks if the buffer is full until space is available.
 	 * Resolves to false if the channel is closed.
@@ -1545,8 +1642,8 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 		}
 
 		// If there's a waiting receiver, give directly
-		if (this.receiveQueue.length > 0) {
-			const receiver = this.receiveQueue.shift();
+		while (this.receiveQueueHead < this.receiveQueue.length) {
+			const receiver = this.receiveQueue[this.receiveQueueHead++];
 			if (receiver) {
 				receiver.resolve(value);
 				return Promise.resolve(true);
@@ -1554,7 +1651,7 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 		}
 
 		// If buffer has space, add to buffer
-		if (this.buffer.length < this.capacity) {
+		if (this.bufferSize < this.capacity) {
 			this.buffer.push(value);
 			return Promise.resolve(true);
 		}
@@ -1582,14 +1679,21 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 		}
 
 		// If buffer has items, return from buffer
-		if (this.buffer.length > 0) {
-			const value = this.buffer.shift();
+		if (this.bufferSize > 0) {
+			const value = this.buffer[this.bufferHead++];
+
+			// Compact buffer occasionally to prevent unbounded growth
+			if (this.bufferHead > 100 && this.bufferHead > this.buffer.length / 2) {
+				this.buffer = this.buffer.slice(this.bufferHead);
+				this.bufferHead = 0;
+			}
 
 			// Unblock a waiting sender if any
-			if (this.sendQueue.length > 0) {
-				const sender = this.sendQueue.shift();
+			while (this.sendQueueHead < this.sendQueue.length) {
+				const sender = this.sendQueue[this.sendQueueHead++];
 				if (sender) {
 					sender.resolve();
+					break;
 				}
 			}
 
@@ -1628,7 +1732,7 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 	 * Get the current buffer size.
 	 */
 	get size(): number {
-		return this.buffer.length;
+		return this.bufferSize;
 	}
 
 	/**
@@ -1663,20 +1767,24 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 
 	private drainQueues(): void {
 		// Reject all waiting senders
-		while (this.sendQueue.length > 0) {
-			const sender = this.sendQueue.shift();
+		for (let i = this.sendQueueHead; i < this.sendQueue.length; i++) {
+			const sender = this.sendQueue[i];
 			if (sender) {
 				sender.reject(this.abortReason);
 			}
 		}
+		this.sendQueue.length = 0;
+		this.sendQueueHead = 0;
 
 		// Resolve all waiting receivers with undefined
-		while (this.receiveQueue.length > 0) {
-			const receiver = this.receiveQueue.shift();
+		for (let i = this.receiveQueueHead; i < this.receiveQueue.length; i++) {
+			const receiver = this.receiveQueue[i];
 			if (receiver) {
 				receiver.resolve(undefined);
 			}
 		}
+		this.receiveQueue.length = 0;
+		this.receiveQueueHead = 0;
 	}
 }
 
@@ -1860,9 +1968,9 @@ export interface CircuitBreakerOptions {
 class CircuitBreaker implements AsyncDisposable {
 	private state: CircuitState = "closed";
 	private failures = 0;
-	private lastFailureTime?: number;
 	private readonly _failureThreshold: number;
 	private readonly _resetTimeout: number;
+	private stateExpiryTime?: number; // Cache when open state should transition to half-open
 
 	constructor(
 		options: CircuitBreakerOptions = {},
@@ -1882,13 +1990,12 @@ class CircuitBreaker implements AsyncDisposable {
 			throw this.parentSignal.reason;
 		}
 
-		// Check if we should transition from open to half-open
+		// Check if we should transition from open to half-open (cached check)
 		if (this.state === "open") {
-			if (
-				this.lastFailureTime &&
-				Date.now() - this.lastFailureTime >= this._resetTimeout
-			) {
+			const now = Date.now();
+			if (this.stateExpiryTime && now >= this.stateExpiryTime) {
 				this.state = "half-open";
+				this.stateExpiryTime = undefined;
 			} else {
 				throw new Error("Circuit breaker is open");
 			}
@@ -1923,11 +2030,9 @@ class CircuitBreaker implements AsyncDisposable {
 	 */
 	get currentState(): CircuitState {
 		if (this.state === "open") {
-			// Check if we should transition to half-open
-			if (
-				this.lastFailureTime &&
-				Date.now() - this.lastFailureTime >= this._resetTimeout
-			) {
+			// Check if we should transition to half-open (cached check)
+			const now = Date.now();
+			if (this.stateExpiryTime && now >= this.stateExpiryTime) {
 				return "half-open";
 			}
 		}
@@ -1961,7 +2066,7 @@ class CircuitBreaker implements AsyncDisposable {
 	reset(): void {
 		this.state = "closed";
 		this.failures = 0;
-		this.lastFailureTime = undefined;
+		this.stateExpiryTime = undefined;
 	}
 
 	/**
@@ -1974,18 +2079,17 @@ class CircuitBreaker implements AsyncDisposable {
 	private onSuccess(): void {
 		this.failures = 0;
 		this.state = "closed";
-		this.lastFailureTime = undefined;
+		this.stateExpiryTime = undefined;
 	}
 
 	private onFailure(): void {
 		this.failures++;
-		this.lastFailureTime = Date.now();
+		const now = Date.now();
 
-		if (this.failures >= this._failureThreshold) {
+		if (this.failures >= this._failureThreshold || this.state === "half-open") {
 			this.state = "open";
-		} else if (this.state === "half-open") {
-			// Failure in half-open goes back to open
-			this.state = "open";
+			// Cache the expiry time to avoid repeated Date.now() calls
+			this.stateExpiryTime = now + this._resetTimeout;
 		}
 	}
 }
@@ -2100,16 +2204,21 @@ function createPoll<T>(
 ): PollController {
 	const interval = options.interval ?? 5000;
 	const immediate = options.immediate ?? true;
+	const debugEnabled = debugScope.enabled;
 
-	debugScope(
-		"[poll] creating poll controller (interval: %dms, immediate: %s)",
-		interval,
-		immediate,
-	);
+	if (debugEnabled) {
+		debugScope(
+			"[poll] creating poll controller (interval: %dms, immediate: %s)",
+			interval,
+			immediate,
+		);
+	}
 
 	// Check if already aborted
 	if (options.signal?.aborted) {
-		debugScope("[poll] already aborted, throwing");
+		if (debugEnabled) {
+			debugScope("[poll] already aborted, throwing");
+		}
 		throw options.signal.reason;
 	}
 
@@ -2127,33 +2236,41 @@ function createPoll<T>(
 		pollCount++;
 		lastPollTime = performance.now();
 		nextPollTime = lastPollTime + interval;
-		debugScope("[poll] executing poll #%d", pollCount);
+		if (debugEnabled) {
+			debugScope("[poll] executing poll #%d", pollCount);
+		}
 
 		try {
 			const startTime = performance.now();
 			const [err, value] = await s.task(({ signal }) => fn(signal));
 			const duration = performance.now() - startTime;
 			if (err) {
-				debugScope(
-					"[poll] poll #%d failed: %s",
-					pollCount,
-					err instanceof Error ? err.message : String(err),
-				);
+				if (debugEnabled) {
+					debugScope(
+						"[poll] poll #%d failed: %s",
+						pollCount,
+						err instanceof Error ? err.message : String(err),
+					);
+				}
 				// Continue polling even on error
 			} else {
-				debugScope(
-					"[poll] poll #%d succeeded in %dms",
-					pollCount,
-					Math.round(duration),
-				);
+				if (debugEnabled) {
+					debugScope(
+						"[poll] poll #%d succeeded in %dms",
+						pollCount,
+						Math.round(duration),
+					);
+				}
 				await onValue(value as T);
 			}
 		} catch (error) {
-			debugScope(
-				"[poll] poll #%d failed: %s",
-				pollCount,
-				error instanceof Error ? error.message : String(error),
-			);
+			if (debugEnabled) {
+				debugScope(
+					"[poll] poll #%d failed: %s",
+					pollCount,
+					error instanceof Error ? error.message : String(error),
+				);
+			}
 			// Continue polling even on error
 		}
 
@@ -2165,15 +2282,21 @@ function createPoll<T>(
 
 	const start = () => {
 		if (running) {
-			debugScope("[poll] already running, ignoring start()");
+			if (debugEnabled) {
+				debugScope("[poll] already running, ignoring start()");
+			}
 			return;
 		}
 		if (s.signal.aborted) {
-			debugScope("[poll] cannot start, already aborted");
+			if (debugEnabled) {
+				debugScope("[poll] cannot start, already aborted");
+			}
 			return;
 		}
 		running = true;
-		debugScope("[poll] starting poll");
+		if (debugEnabled) {
+			debugScope("[poll] starting poll");
+		}
 
 		if (immediate) {
 			// Execute immediately
@@ -2187,7 +2310,9 @@ function createPoll<T>(
 
 	const stop = () => {
 		if (!running) {
-			debugScope("[poll] not running, ignoring stop()");
+			if (debugEnabled) {
+				debugScope("[poll] not running, ignoring stop()");
+			}
 			return;
 		}
 		running = false;
@@ -2196,7 +2321,9 @@ function createPoll<T>(
 			timeoutId = undefined;
 		}
 		nextPollTime = undefined;
-		debugScope("[poll] stopped poll, total executions: %d", pollCount);
+		if (debugEnabled) {
+			debugScope("[poll] stopped poll, total executions: %d", pollCount);
+		}
 	};
 
 	const status = () => {
@@ -2223,7 +2350,9 @@ function createPoll<T>(
 	options.signal?.addEventListener(
 		"abort",
 		() => {
-			debugScope("[poll] abort signal received, stopping");
+			if (debugEnabled) {
+				debugScope("[poll] abort signal received, stopping");
+			}
 			stop();
 			s[Symbol.asyncDispose]().catch(() => {});
 		},

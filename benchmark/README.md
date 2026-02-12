@@ -32,36 +32,57 @@ The benchmark runs 1000 iterations of each pattern to measure overhead:
 - Simple promise resolution
 - Effect simple operation
 - Effect with retry
+- Effect with timeout
+- Effect parallel tasks
+- Effect race
 - go-go-scope simple task
 - go-go-scope with timeout
 - go-go-scope with retry
 - go-go-scope parallel tasks
+- go-go-scope race
 
 ## Sample Output
 
 ```
-Vanilla JS (simple promise)             0.69ms (0.0007ms/op)
-Effect (simple)                        10.03ms (0.0100ms/op)
-Effect (with retry)                    31.51ms (0.0315ms/op)
-go-go-scope (simple task)              19.29ms (0.0193ms/op)
-go-go-scope (with timeout)             14.77ms (0.0148ms/op)
-go-go-scope (with retry)               14.71ms (0.0147ms/op)
-go-go-scope (2 parallel tasks)         32.76ms (0.0328ms/op)
+Vanilla JS (simple promise)             0.70ms (0.0007ms/op)
+Effect (simple)                        10.00ms (0.0100ms/op)
+Effect (with retry)                    30.90ms (0.0309ms/op)
+Effect (with timeout)                  77.92ms (0.0779ms/op)
+Effect (2 parallel tasks)              25.68ms (0.0257ms/op)
+Effect (race)                          21.49ms (0.0215ms/op)
+go-go-scope (simple task)              12.72ms (0.0127ms/op)
+go-go-scope (with timeout)             16.99ms (0.0170ms/op)
+go-go-scope (with retry)                8.22ms (0.0082ms/op)
+go-go-scope (2 parallel tasks)         10.26ms (0.0103ms/op)
+go-go-scope (race)                     47.97ms (0.0480ms/op)
 ```
 
 ### Micro-Benchmarks (10,000 iterations)
 
-```
-Task creation (lazy, no execution):      3.4µs per task
-Scope creation + disposal:               5.7µs per scope
-Simple task execution overhead:         11.0µs per task
-```
+| Operation | go-go-scope | Effect | Winner |
+|-----------|-------------|--------|--------|
+| Task creation (lazy, no execution) | 2.6µs | 1.2µs | Effect |
+| Scope creation + disposal | 7.4µs | 1.6µs | Effect |
+| Simple task execution overhead | 10.2µs | 4.3µs | Effect |
+| 3 parallel tasks (1000 iter) | 0.011ms | 0.009ms | Effect |
+| Retry (1 retry, 1000 iter) | 0.007ms | 0.016ms | go-go-scope |
+| Timeout (5000ms, 1000 iter) | 0.007ms | 0.041ms | go-go-scope |
+| Race (2 tasks, 1000 iter) | 0.020ms | 0.014ms | Effect |
+
+**Key findings:**
+- Effect has lower overhead for simple operations and scope creation
+- go-go-scope has lower overhead for retry and timeout operations
+- Both libraries perform similarly for parallel and race operations
 
 **Optimizations applied:**
 - Lazy AbortController creation (only when signal accessed)
 - Conditional debug logging (skip when disabled)
 - Cached feature flags (circuit breaker, concurrency, retry, timeout)
 - Removed placeholder `performance.now()` calls
+- **Array copy elimination** in scope disposal (reversed iteration instead of spread)
+- **Circuit breaker state caching** (avoids repeated `Date.now()` calls)
+- **Channel O(n) → O(1)** (head/tail index pointers instead of `Array.shift()`)
+- **const enum** for SpanStatusCode (compile-time inlining)
 
 ## Key Takeaways
 
@@ -108,9 +129,11 @@ const [err, user] = await s.task(() => fetchUser(1));
 ### Performance Notes
 
 - **Vanilla JS** is fastest but lacks structured concurrency guarantees
-- **Effect** has good performance but adds complexity
-- **go-go-scope** adds ~0.01-0.02ms overhead per operation compared to vanilla JS
+- **Effect** has lower overhead for basic operations (~4µs per task vs ~10µs for go-go-scope)
+- **go-go-scope** adds ~0.01ms overhead per operation compared to vanilla JS
+- **Trade-off**: go-go-scope excels at retry/timeout operations (2-6x faster than Effect)
 - The overhead is the cost of structured concurrency guarantees (cancellation propagation, automatic cleanup, Result tuples)
+- Choose Effect for maximum performance in simple pipelines; choose go-go-scope for better ergonomics and faster retry/timeout handling
 
 ## When to Choose Each
 

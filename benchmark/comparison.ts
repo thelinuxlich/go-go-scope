@@ -416,6 +416,27 @@ await benchmark("Effect (with retry)", async () => {
 	await Effect.runPromise(program);
 });
 
+await benchmark("Effect (with timeout)", async () => {
+	const program = Effect.timeout(Effect.succeed(42), "5000 millis");
+	await Effect.runPromise(program);
+});
+
+await benchmark("Effect (2 parallel tasks)", async () => {
+	const program = Effect.all([
+		Effect.promise(() => Promise.resolve(1)),
+		Effect.promise(() => Promise.resolve(2)),
+	]);
+	await Effect.runPromise(program);
+});
+
+await benchmark("Effect (race)", async () => {
+	const program = Effect.raceAll([
+		Effect.promise(() => Promise.resolve(1)),
+		Effect.promise(() => Promise.resolve(2)),
+	]);
+	await Effect.runPromise(program);
+});
+
 // go-go-scope
 await benchmark("go-go-scope (simple task)", async () => {
 	await using s = scope();
@@ -439,6 +460,14 @@ await benchmark("go-go-scope (2 parallel tasks)", async () => {
 	await Promise.all([
 		s.task(() => Promise.resolve(1)),
 		s.task(() => Promise.resolve(2)),
+	]);
+});
+
+await benchmark("go-go-scope (race)", async () => {
+	await using s = scope();
+	await s.race([
+		() => Promise.resolve(1),
+		() => Promise.resolve(2),
 	]);
 });
 
