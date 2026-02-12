@@ -25,7 +25,8 @@
   },
   "include": [
     "src/**/*",
-    "examples/**/*"
+    "examples/**/*",
+    "benchmark/**/*"
   ],
   "exclude": [
     "node_modules",

@@ -194,6 +194,22 @@ const [[userErr, user], [postsErr, posts]] = await Promise.all([
 
 The key insight: **Tasks are lazy, scope-bound promises** — they give you explicit control over *when* execution happens, combined with structured concurrency guarantees.
 
+## Performance
+
+go-go-scope is designed with performance in mind. Key characteristics:
+
+- **Task creation**: ~3.4µs (lazy - no work done until awaited)
+- **Scope creation**: ~5.7µs (lightweight AbortController setup)
+- **Task execution overhead**: ~11µs compared to raw Promise
+- **Zero-cost when not used**: No global state, no background processing
+
+The overhead is the cost of structured concurrency guarantees:
+- Automatic cancellation propagation
+- Result tuple wrapping ([error, value])
+- Resource cleanup tracking
+
+For most applications, this overhead is negligible compared to I/O operations. If you need maximum performance for tight loops, consider using raw Promises and manual cleanup.
+
 ## API
 
 ### `scope(options?)`
@@ -1628,6 +1644,34 @@ async function batchOperation(items: string[]) {
 ```bash
 npm install @opentelemetry/api
 ```
+
+## Benchmark
+
+See the [`benchmark/`](benchmark/) directory for a side-by-side comparison of structured concurrency patterns:
+
+- **Vanilla JS** - Using native `AbortController` and `Promise`
+- **Effect** - The popular `effect-ts` library
+- **go-go-scope** - This library
+
+### Running the Benchmark
+
+```bash
+npx tsx benchmark/comparison.ts
+```
+
+### Quick Comparison
+
+| Feature | Vanilla JS | Effect | go-go-scope |
+|---------|------------|--------|-------------|
+| Timeout | Manual | Built-in | Built-in |
+| Cancellation | Manual | Built-in | Built-in |
+| Retry | Manual | Built-in | Built-in |
+| Resource cleanup | Manual | Built-in | Built-in |
+| Error handling | Throws | Functional | Result tuples |
+| Learning curve | Low | High | Low |
+| Bundle size | 0 KB | ~50 KB | ~3 KB |
+
+**Performance:** go-go-scope adds ~0.01-0.02ms overhead per operation compared to vanilla JS, which is the cost of structured concurrency guarantees (cancellation propagation, automatic cleanup, Result tuples).
 
 ## Debug Logging
 

@@ -131,11 +131,10 @@ export interface ScopeOptions<
  */
 let taskIdCounter = 0;
 
-export class Task<T> implements PromiseLike<T> {
+export class Task<T> implements PromiseLike<T>, Disposable {
 	private promise: Promise<T> | undefined;
-	private readonly abortController: AbortController;
+	private abortController: AbortController | undefined;
 	private settled = false;
-	private readonly id: number;
 	private readonly fn: (signal: AbortSignal) => Promise<T>;
 	private readonly parentSignal: AbortSignal;
 	private parentAbortHandler: (() => void) | undefined;
@@ -145,32 +144,41 @@ export class Task<T> implements PromiseLike<T> {
 		parentSignal: AbortSignal,
 	) {
 		this.id = ++taskIdCounter;
-		debugTask("[%d] creating lazy task", this.id);
-		this.abortController = new AbortController();
 		this.fn = fn;
 		this.parentSignal = parentSignal;
-
-		// Link to parent - if parent aborts, we abort
-		this.parentAbortHandler = () => {
-			debugTask("[%d] aborting due to parent signal", this.id);
-			this.abortController.abort(parentSignal.reason);
-		};
-
-		if (parentSignal.aborted) {
-			debugTask("[%d] parent already aborted", this.id);
-			this.abortController.abort(parentSignal.reason);
-		} else {
-			parentSignal.addEventListener("abort", this.parentAbortHandler, {
-				once: true,
-			});
-		}
+		// AbortController and event listener are created lazily on first access
 	}
 
 	/**
 	 * Get the AbortSignal for this task.
+	 * Creates AbortController lazily if needed.
 	 */
 	get signal(): AbortSignal {
+		if (!this.abortController) {
+			this.setupAbortController();
+		}
 		return this.abortController.signal;
+	}
+
+	/**
+	 * Setup AbortController and link to parent signal.
+	 * Called lazily when signal is accessed or task starts.
+	 */
+	private setupAbortController(): void {
+		this.abortController = new AbortController();
+
+		// Link to parent - if parent aborts, we abort
+		this.parentAbortHandler = () => {
+			this.abortController?.abort(this.parentSignal.reason);
+		};
+
+		if (this.parentSignal.aborted) {
+			this.abortController.abort(this.parentSignal.reason);
+		} else {
+			this.parentSignal.addEventListener("abort", this.parentAbortHandler, {
+				once: true,
+			});
+		}
 	}
 
 	/**
@@ -188,6 +196,16 @@ export class Task<T> implements PromiseLike<T> {
 	}
 
 	/**
+	 * Dispose the task without executing it.
+	 * Removes parent signal listener if setup was done.
+	 */
+	[Symbol.dispose](): void {
+		if (this.parentAbortHandler && !this.parentSignal.aborted) {
+			this.parentSignal.removeEventListener("abort", this.parentAbortHandler);
+		}
+	}
+
+	/**
 	 * Start the task execution if not already started.
 	 */
 	private start(): Promise<T> {
@@ -195,27 +213,18 @@ export class Task<T> implements PromiseLike<T> {
 			return this.promise;
 		}
 
-		debugTask("[%d] starting execution", this.id);
+		// Setup abort controller if not already done
+		if (!this.abortController) {
+			this.setupAbortController();
+		}
 
 		// Create the promise on first access
-		this.promise = this.fn(this.abortController.signal)
-			.then((value) => {
-				debugTask("[%d] completed successfully", this.id);
-				return value;
-			})
-			.catch((error) => {
-				debugTask("[%d] failed with error: %s", this.id, error);
-				throw error;
-			})
-			.finally(() => {
-				this.settled = true;
-				if (this.parentAbortHandler && !this.parentSignal.aborted) {
-					this.parentSignal.removeEventListener(
-						"abort",
-						this.parentAbortHandler,
-					);
-				}
-			});
+		this.promise = this.fn(this.abortController.signal).finally(() => {
+			this.settled = true;
+			if (this.parentAbortHandler && !this.parentSignal.aborted) {
+				this.parentSignal.removeEventListener("abort", this.parentAbortHandler);
+			}
+		});
 
 		return this.promise;
 	}
@@ -527,42 +536,58 @@ export class Scope<
 
 		this.taskCount++;
 		const taskIndex = this.taskCount;
+		const hasOtel = !!this._tracer;
+		const hasDebug = debugScope.enabled;
+
+		// Build task name (only used when needed)
 		const taskName = options?.otel?.name ?? `task-${taskIndex}`;
-		debugScope('[%s] spawning task #%d "%s"', this.name, taskIndex, taskName);
 
-		// Build attributes with task configuration
-		const attributes: Record<string, string | number | boolean | undefined> = {
-			"task.index": taskIndex,
-			"task.has_retry": !!options?.retry,
-			"task.has_timeout": !!options?.timeout,
-			"task.has_circuit_breaker": !!this.scopeCircuitBreaker,
-			"task.scope_concurrency": this.concurrencySemaphore?.totalPermits ?? 0,
-		};
-
-		if (options?.timeout) {
-			attributes["task.timeout_ms"] = options.timeout;
+		if (hasDebug) {
+			debugScope('[%s] spawning task #%d "%s"', this.name, taskIndex, taskName);
 		}
 
-		// Merge with custom attributes
-		Object.assign(attributes, options?.otel?.attributes);
+		// Create task span only if tracer is configured
+		const taskSpan = hasOtel
+			? this._tracer.startSpan(
+					options?.otel?.name ?? "scope.task",
+					{
+						attributes: {
+							"task.index": taskIndex,
+							"task.has_retry": !!options?.retry,
+							"task.has_timeout": !!options?.timeout,
+							"task.has_circuit_breaker": !!this.scopeCircuitBreaker,
+							"task.scope_concurrency":
+								this.concurrencySemaphore?.totalPermits ?? 0,
+							...(options?.timeout && { "task.timeout_ms": options.timeout }),
+							...options?.otel?.attributes,
+						},
+					},
+					this.otelContext ?? otelContext.active(),
+				)
+			: undefined;
 
-		// Create task span with proper parent context
-		const taskSpan = this._tracer?.startSpan(
-			options?.otel?.name ?? "scope.task",
-			{ attributes },
-			this.otelContext ?? otelContext.active(),
-		);
-
-		// Track timing for task execution
-		void performance.now(); // Placeholder for future timing enhancements
 		let retryAttempt = 0;
+
+		const hasTaskDebug = debugTask.enabled;
+
+		// Cache frequently accessed options for faster checks
+		const hasCircuitBreaker = !!this.scopeCircuitBreaker;
+		const hasConcurrency = !!this.concurrencySemaphore;
+		const hasRetry = !!options?.retry;
+		// hasTimeout is checked inline to avoid unused variable warning
+		// const hasTimeout = !!options?.timeout;
 
 		// Build the execution pipeline from innermost to outermost
 		const wrappedFn = async (signal: AbortSignal): Promise<T> => {
 			// Check if signal is already aborted
 			if (signal.aborted) {
-				const reason = signal.aborted ? signal.reason : "unknown";
-				debugTask("[%s] task aborted before execution: %s", taskName, reason);
+				if (hasTaskDebug) {
+					debugTask(
+						"[%s] task aborted before execution: %s",
+						taskName,
+						signal.reason,
+					);
+				}
 				throw signal.reason;
 			}
 
@@ -573,19 +598,25 @@ export class Scope<
 
 			// 1. Apply circuit breaker if configured at scope level
 			let executeFn = callFn;
-			if (this.scopeCircuitBreaker) {
+			if (hasCircuitBreaker) {
 				const cb = this.scopeCircuitBreaker;
 				const circuitState = cb.currentState;
-				debugTask("[%s] circuit breaker state: %s", taskName, circuitState);
+				if (hasTaskDebug) {
+					debugTask("[%s] circuit breaker state: %s", taskName, circuitState);
+				}
 				taskSpan?.setAttributes?.({
 					"task.circuit_breaker.state": circuitState,
 					"task.circuit_breaker.failure_count": cb.failureCount,
 				});
 				executeFn = async (sig) => {
-					debugTask("[%s] executing through circuit breaker", taskName);
+					if (hasTaskDebug) {
+						debugTask("[%s] executing through circuit breaker", taskName);
+					}
 					try {
 						const result = await cb.execute(() => callFn(sig));
-						debugTask("[%s] circuit breaker: success", taskName);
+						if (hasTaskDebug) {
+							debugTask("[%s] circuit breaker: success", taskName);
+						}
 						return result;
 					} catch (error) {
 						if (
@@ -602,33 +633,42 @@ export class Scope<
 			}
 
 			// 2. Apply concurrency limit if configured at scope level
-			if (this.concurrencySemaphore) {
+			if (hasConcurrency) {
 				const sem = this.concurrencySemaphore;
 				const innerFn = executeFn;
 				executeFn = async (sig) => {
-					debugTask(
-						"[%s] acquiring concurrency permit (available: %d, waiting: %d)",
-						taskName,
-						sem.availablePermits,
-						sem.waiterCount,
-					);
+					if (hasTaskDebug) {
+						debugTask(
+							"[%s] acquiring concurrency permit (available: %d, waiting: %d)",
+							taskName,
+							sem.availablePermits,
+							sem.waiterCount,
+						);
+					}
 					taskSpan?.setAttributes?.({
 						"task.concurrency.available_before": sem.availablePermits,
 						"task.concurrency.waiting_before": sem.waiterCount,
 					});
 					try {
 						const result = await sem.execute(() => innerFn(sig));
-						debugTask("[%s] concurrency permit released", taskName);
+						if (hasTaskDebug) {
+							debugTask("[%s] concurrency permit released", taskName);
+						}
 						return result;
 					} catch (error) {
-						debugTask("[%s] concurrency permit released with error", taskName);
+						if (hasTaskDebug) {
+							debugTask(
+								"[%s] concurrency permit released with error",
+								taskName,
+							);
+						}
 						throw error;
 					}
 				};
 			}
 
 			// 3. Apply retry logic if specified
-			if (options?.retry) {
+			if (hasRetry) {
 				const retryOpts = options.retry;
 				const innerFn = executeFn;
 				executeFn = async (sig) => {
@@ -642,33 +682,41 @@ export class Scope<
 						"task.retry.has_delay": !!delay,
 						"task.retry.has_condition": !!retryOpts.retryCondition,
 					});
-					debugTask(
-						"[%s] starting retry loop (maxRetries: %d)",
-						taskName,
-						maxRetries,
-					);
+					if (hasTaskDebug) {
+						debugTask(
+							"[%s] starting retry loop (maxRetries: %d)",
+							taskName,
+							maxRetries,
+						);
+					}
 
 					for (let attempt = 0; attempt <= maxRetries; attempt++) {
 						if (sig.aborted) {
-							debugTask("[%s] task aborted during retry", taskName);
+							if (hasTaskDebug) {
+								debugTask("[%s] task aborted during retry", taskName);
+							}
 							throw sig.reason;
 						}
 
 						try {
-							debugTask(
-								"[%s] attempt %d/%d",
-								taskName,
-								attempt + 1,
-								maxRetries + 1,
-							);
+							if (hasTaskDebug) {
+								debugTask(
+									"[%s] attempt %d/%d",
+									taskName,
+									attempt + 1,
+									maxRetries + 1,
+								);
+							}
 							retryAttempt = attempt;
 							const result = await innerFn(sig);
 							if (attempt > 0) {
-								debugTask(
-									"[%s] succeeded on attempt %d",
-									taskName,
-									attempt + 1,
-								);
+								if (hasTaskDebug) {
+									debugTask(
+										"[%s] succeeded on attempt %d",
+										taskName,
+										attempt + 1,
+									);
+								}
 								taskSpan?.setAttributes?.({
 									"task.retry.succeeded_after": attempt + 1,
 								});
@@ -676,10 +724,12 @@ export class Scope<
 							return result;
 						} catch (error) {
 							if (!retryCondition(error)) {
-								debugTask(
-									"[%s] error rejected by retryCondition, throwing",
-									taskName,
-								);
+								if (hasTaskDebug) {
+									debugTask(
+										"[%s] error rejected by retryCondition, throwing",
+										taskName,
+									);
+								}
 								taskSpan?.setAttributes?.({
 									"task.retry.condition_rejected": true,
 								});
@@ -687,11 +737,13 @@ export class Scope<
 							}
 
 							if (attempt >= maxRetries) {
-								debugTask(
-									"[%s] max retries (%d) exceeded, throwing",
-									taskName,
-									maxRetries,
-								);
+								if (hasTaskDebug) {
+									debugTask(
+										"[%s] max retries (%d) exceeded, throwing",
+										taskName,
+										maxRetries,
+									);
+								}
 								taskSpan?.setAttributes?.({
 									"task.retry.max_retries_exceeded": true,
 									"task.retry.attempts_made": attempt + 1,
