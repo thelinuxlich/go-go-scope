@@ -35,20 +35,17 @@
 	"author": "",
 	"license": "MIT",
 	"devDependencies": {
-		"@biomejs/biome": "^2.3.14",
+		"@biomejs/biome": "^2.3.15",
 		"@opentelemetry/exporter-trace-otlp-http": "^0.211.0",
 		"@opentelemetry/resources": "^2.5.0",
 		"@opentelemetry/sdk-node": "^0.211.0",
 		"@opentelemetry/semantic-conventions": "^1.39.0",
 		"@types/debug": "^4.1.12",
 		"@types/node": "^24",
-		"effect": "^3.14.0",
-		"pkgroll": "^2.24.0",
+		"effect": "^3.19.16",
+		"pkgroll": "^2.24.1",
 		"typescript": "^5.9.3",
 		"vitest": "^4.0.18"
-	},
-	"peerDependencies": {
-		"go-go-try": "^6.0.0"
 	},
 	"dependencies": {
 		"@opentelemetry/api": "^1.9.0",
