@@ -19,122 +19,133 @@ How to integrate `go-go-scope` with other libraries.
 npm install go-go-try
 ```
 
-### Basic Usage
+### Using goTry Inside Tasks
 
-Both `go-go-scope` and `go-go-try` use the same Result tuple format `[error, value]`, so they work together naturally:
+Use `goTry` inside big tasks to handle individual operations without breaking the entire task:
 
 ```typescript
 import { scope } from 'go-go-scope'
 import { goTry, goTryRaw } from 'go-go-try'
 
-async function example() {
-  await using s = scope()
+async function processOrder(orderId: string) {
+  await using s = scope({ timeout: 30000 })
   
-  // go-go-scope task returns [error, value]
-  const [taskErr, user] = await s.task(() => fetchUser(1))
+  const [err, result] = await s.task(async ({ services, signal }) => {
+    // Each operation can fail independently
+    
+    // Parse order data - if this fails, we still continue
+    const [parseErr, orderData] = goTry(() => 
+      JSON.parse(localStorage.getItem(`order:${orderId}`) || '{}')
+    )
+    
+    // Validate order - use error message
+    const [validateErr, isValid] = await goTry(
+      services.db.query('SELECT validate_order(?)', [orderId])
+    )
+    
+    if (validateErr) {
+      console.log('Validation warning:', validateErr) // string message
+    }
+    
+    // Fetch user with raw error for logging
+    const [userErr, user] = await goTryRaw(
+      services.db.query('SELECT * FROM users WHERE id = ?', [orderData.userId])
+    )
+    
+    if (userErr) {
+      // userErr is Error object with stack trace
+      console.error('User fetch failed:', userErr.message)
+      console.error(userErr.stack)
+    }
+    
+    // Process payment - critical operation
+    const [paymentErr, payment] = await goTry(
+      services.payment.process(orderData.amount, orderData.currency)
+    )
+    
+    if (paymentErr) {
+      // This error will fail the entire task
+      throw new Error(`Payment failed: ${paymentErr}`)
+    }
+    
+    // Send notifications - non-critical, don't throw
+    const [emailErr] = await goTry(services.email.send(user.email, 'Order confirmed'))
+    const [smsErr] = await goTry(services.sms.send(user.phone, 'Order confirmed'))
+    
+    // Log non-critical errors but don't fail
+    if (emailErr) console.log('Email failed:', emailErr)
+    if (smsErr) console.log('SMS failed:', smsErr)
+    
+    // Cache result - best effort
+    goTry(() => {
+      localStorage.setItem(`order:${orderId}:processed`, JSON.stringify(payment))
+    })
+    
+    return { orderId, payment, user }
+  })
   
-  // go-go-try wraps functions to return [error, value]
-  const [parseErr, data] = goTry(() => JSON.parse(jsonString))
+  if (err) {
+    console.error('Order processing failed:', err)
+    return null
+  }
   
-  // Both use the same pattern!
-  if (taskErr) console.log('Task failed:', taskErr)
-  if (parseErr) console.log('Parse failed:', parseErr)
+  return result
 }
 ```
 
 ### goTry vs goTryRaw
 
 - **`goTry`** - Returns error as `string` (error message)
-- **`goTryRaw`** - Returns error as `Error` object
+- **`goTryRaw`** - Returns error as `Error` object (with stack trace)
 
 ```typescript
 import { goTry, goTryRaw } from 'go-go-try'
 
-// goTry - error is string | undefined
-const [err, value] = goTry(() => JSON.parse('{invalid}'))
-console.log(err) // "Unexpected token i in JSON at position 1"
-
-// goTryRaw - error is Error | undefined
-const [err, value] = goTryRaw(() => JSON.parse('{invalid}'))
-console.log(err?.message) // "Unexpected token i in JSON at position 1"
-console.log(err?.stack)   // Full stack trace
-```
-
-### With Async Functions
-
-```typescript
-import { goTry } from 'go-go-try'
-
-async function fetchData() {
-  // Works with async functions too
-  const [err, response] = await goTry(fetch('/api/data'))
+await s.task(async () => {
+  // goTry - error is string | undefined (good for simple checks)
+  const [err, value] = goTry(() => JSON.parse(data))
+  if (err) console.log('Parse error:', err) // "Unexpected token..."
   
+  // goTryRaw - error is Error | undefined (good for logging)
+  const [err, value] = goTryRaw(() => riskyOperation())
   if (err) {
-    console.log('Fetch failed:', err)
-    return null
+    console.error(err.message)
+    console.error(err.stack) // Full stack trace
   }
-  
-  const [parseErr, data] = await goTry(response.json())
-  if (parseErr) {
-    console.log('Parse failed:', parseErr)
-    return null
-  }
-  
-  return data
-}
+})
 ```
 
-### Combining with go-go-scope
+### Pattern: Collecting Partial Results
 
-Use `goTry` for non-scope operations, `s.task()` for scope-managed operations:
-
-```typescript
-import { scope } from 'go-go-scope'
-import { goTry } from 'go-go-try'
-
-async function processUserData(userId: string) {
-  await using s = scope({ timeout: 10000 })
-  
-  // Parse local data with goTry
-  const [cacheErr, cached] = goTry(() => 
-    JSON.parse(localStorage.getItem(`user:${userId}`) || '')
-  )
-  
-  if (!cacheErr && cached) {
-    return cached
-  }
-  
-  // Fetch from API with scope (has cancellation, tracing, etc.)
-  const [fetchErr, user] = await s.task(async ({ signal }) => {
-    const response = await fetch(`/api/users/${userId}`, { signal })
-    return response.json()
-  })
-  
-  if (fetchErr) {
-    console.log('Failed to fetch user:', fetchErr)
-    return null
-  }
-  
-  // Store in cache with goTry
-  goTry(() => {
-    localStorage.setItem(`user:${userId}`, JSON.stringify(user))
-  })
-  
-  return user
-}
-```
-
-### Fallback Patterns
+Use `goTry` to process many items where some might fail:
 
 ```typescript
-import { goTry } from 'go-go-try'
-
-// Default value on error
-const [_, todos = []] = goTry(() => JSON.parse(localStorage.getItem('todos')))
-
-// With scope task
-const [err, user] = await s.task(() => fetchUser(1))
-const safeUser = user ?? { id: 0, name: 'Anonymous' }
+const [err, results] = await s.task(async ({ services }) => {
+  const userIds = [1, 2, 3, 4, 5]
+  const successful: User[] = []
+  const failed: { id: number; error: string }[] = []
+  
+  for (const userId of userIds) {
+    const [fetchErr, user] = await goTry(
+      services.db.query('SELECT * FROM users WHERE id = ?', [userId])
+    )
+    
+    if (fetchErr) {
+      failed.push({ id: userId, error: fetchErr })
+      continue // Don't stop, process next user
+    }
+    
+    // Parse profile - might fail for some users
+    const [parseErr, profile] = goTry(() => JSON.parse(user.profile_json))
+    
+    successful.push({
+      ...user,
+      profile: parseErr ? null : profile
+    })
+  }
+  
+  return { successful, failed }
+})
 ```
 
 ---
