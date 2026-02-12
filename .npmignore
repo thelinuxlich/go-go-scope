@@ -1,0 +1,25 @@
+# Source files (we publish compiled dist/ instead)
+src/
+examples/
+benchmark/
+docs/
+coverage/
+
+# Config files
+tsconfig.json
+vitest.config.ts
+biome.json
+docker-compose.yml
+
+# Development
+*.log
+.DS_Store
+*.tsbuildinfo
+.github/
+
+# Tests
+*.test.ts
+*.spec.ts
+
+# Keep dist/ for publishing (it's in .gitignore but we need it for npm)
+# node_modules is automatically excluded by npm
