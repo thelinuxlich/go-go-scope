@@ -10,6 +10,10 @@ This document covers advanced features of `go-go-scope`.
 - [Retry](#retry)
 - [Polling](#polling)
 - [Stream Processing](#stream-processing)
+- [Debounce & Throttle](#debounce--throttle)
+- [Metrics](#metrics)
+- [Lifecycle Hooks](#lifecycle-hooks)
+- [Select](#select)
 - [Parent-Child Scopes](#parent-child-scopes)
 - [OpenTelemetry Integration](#opentelemetry-integration)
 
@@ -367,6 +371,264 @@ for await (const chunk of s.stream(readableStream)) {
   if (foundWhatWeNeed(chunk)) {
     break  // Iterator is properly cleaned up
   }
+}
+```
+
+---
+
+## Debounce & Throttle
+
+Rate-limit function execution with automatic cleanup.
+
+### Debounce
+
+Delays function execution until after `wait` milliseconds have elapsed since the last call.
+
+```typescript
+await using s = scope()
+
+const search = s.debounce(async (query: string) => {
+  const response = await fetch(`/api/search?q=${query}`)
+  return response.json()
+}, { wait: 300 })
+
+// Only executes 300ms after typing stops
+const [err, results] = await search("hello world")
+```
+
+**Options:**
+- `wait`: Milliseconds to delay (default: 300)
+- `leading`: Execute on the leading edge (default: false)
+- `trailing`: Execute on the trailing edge (default: true)
+
+### Throttle
+
+Limits function execution to once per `interval` milliseconds.
+
+```typescript
+await using s = scope()
+
+const save = s.throttle(async (data: string) => {
+  await saveToServer(data)
+}, { interval: 1000 })
+
+// Executes at most once per second
+await save("data1")
+await save("data2") // Throttled
+await save("data3") // Throttled
+```
+
+**Options:**
+- `interval`: Milliseconds between executions (default: 300)
+- `leading`: Execute on the leading edge (default: true)
+- `trailing`: Execute on the trailing edge (default: false)
+
+### Use Cases
+
+1. **Search input debouncing:**
+
+```typescript
+const search = s.debounce(async (query: string) => {
+  const results = await fetchSearchResults(query)
+  updateSearchResults(results)
+}, { wait: 300 })
+
+// In your input handler
+input.oninput = (e) => search(e.target.value)
+```
+
+2. **Auto-save throttling:**
+
+```typescript
+const autoSave = s.throttle(async (content: string) => {
+  await saveDocument(content)
+  showSaveIndicator()
+}, { interval: 5000, trailing: true })
+
+// On every keystroke
+editor.onchange = (e) => autoSave(e.target.value)
+```
+
+---
+
+## Metrics
+
+Collect runtime metrics for performance monitoring.
+
+### Basic Usage
+
+```typescript
+await using s = scope({ metrics: true })
+
+await s.task(() => fetchUser(1))
+await s.task(() => fetchUser(2))
+
+const metrics = s.metrics()
+console.log(metrics)
+// {
+//   tasksSpawned: 2,
+//   tasksCompleted: 2,
+//   tasksFailed: 0,
+//   totalTaskDuration: 45.2,
+//   avgTaskDuration: 22.6,
+//   p95TaskDuration: 25.1,
+//   resourcesRegistered: 0,
+//   resourcesDisposed: 0
+// }
+```
+
+### Metrics Available
+
+| Metric | Description |
+|--------|-------------|
+| `tasksSpawned` | Total tasks created |
+| `tasksCompleted` | Tasks that succeeded |
+| `tasksFailed` | Tasks that threw errors |
+| `totalTaskDuration` | Sum of all task execution times (ms) |
+| `avgTaskDuration` | Average task execution time (ms) |
+| `p95TaskDuration` | 95th percentile task duration (ms) |
+| `resourcesRegistered` | Services registered with cleanup |
+| `resourcesDisposed` | Resources successfully cleaned up |
+| `scopeDuration` | Total scope lifetime (ms, after disposal) |
+
+### Performance Monitoring
+
+```typescript
+await using s = scope({ metrics: true, name: 'api-request' })
+
+// Make some API calls
+await s.parallel(urls.map(url => () => fetch(url)))
+
+// Log performance data
+const metrics = s.metrics()
+console.log(`Completed ${metrics.tasksCompleted} tasks`)
+console.log(`Average time: ${metrics.avgTaskDuration.toFixed(2)}ms`)
+console.log(`P95 time: ${metrics.p95TaskDuration.toFixed(2)}ms`)
+```
+
+---
+
+## Lifecycle Hooks
+
+Execute code at key points in the scope lifecycle.
+
+### Basic Usage
+
+```typescript
+await using s = scope({
+  hooks: {
+    beforeTask: (name, index) => {
+      console.log(`Starting task ${index}: ${name}`)
+    },
+    afterTask: (name, duration, error) => {
+      if (error) {
+        console.log(`Task ${name} failed after ${duration}ms: ${error}`)
+      } else {
+        console.log(`Task ${name} completed in ${duration}ms`)
+      }
+    },
+    onCancel: (reason) => {
+      console.log('Scope cancelled:', reason)
+    },
+    onDispose: (index, error) => {
+      if (error) {
+        console.log(`Resource ${index} disposal failed:`, error)
+      } else {
+        console.log(`Resource ${index} disposed`)
+      }
+    }
+  }
+})
+```
+
+### Use Cases
+
+1. **Logging:**
+
+```typescript
+await using s = scope({
+  hooks: {
+    beforeTask: (name) => logger.info(`Starting ${name}`),
+    afterTask: (name, duration, error) => {
+      if (error) {
+        logger.error(`${name} failed:`, error)
+      } else {
+        logger.info(`${name} completed in ${duration}ms`)
+      }
+    }
+  }
+})
+```
+
+2. **Metrics collection:**
+
+```typescript
+const taskDurations: number[] = []
+
+await using s = scope({
+  hooks: {
+    afterTask: (_name, duration, error) => {
+      if (!error) taskDurations.push(duration)
+    }
+  }
+})
+
+// After scope exits...
+const avg = taskDurations.reduce((a, b) => a + b, 0) / taskDurations.length
+console.log(`Average task time: ${avg}ms`)
+```
+
+---
+
+## Select
+
+Wait on multiple channel operations, similar to Go's `select` statement.
+
+### Basic Usage
+
+```typescript
+await using s = scope()
+const ch1 = s.channel<string>()
+const ch2 = s.channel<number>()
+
+// Send to channels from other tasks
+s.task(async () => {
+  await new Promise(r => setTimeout(r, 100))
+  await ch1.send("hello")
+})
+
+// Wait for first available value
+const cases = new Map([
+  [ch1, async (value: string) => ({ type: 'string' as const, value })],
+  [ch2, async (value: number) => ({ type: 'number' as const, value })],
+])
+
+const [err, result] = await s.select(cases)
+// result will be { type: 'string', value: 'hello' }
+```
+
+### Timeout Pattern
+
+```typescript
+await using s = scope()
+const dataCh = s.channel<Data>()
+const timeoutCh = s.channel<never>()
+
+// Set up timeout
+s.task(async () => {
+  await new Promise(r => setTimeout(r, 5000))
+  timeoutCh.close()
+})
+
+// Wait for data or timeout
+const cases = new Map([
+  [dataCh, async (data) => ({ type: 'data' as const, data })],
+  [timeoutCh, async () => ({ type: 'timeout' as const })],
+])
+
+const [err, result] = await s.select(cases)
+if (result?.type === 'timeout') {
+  console.log('Request timed out')
 }
 ```
 

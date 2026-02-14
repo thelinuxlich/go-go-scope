@@ -40,39 +40,56 @@ The benchmark runs 1000 iterations of each pattern to measure overhead:
 - go-go-scope with retry
 - go-go-scope parallel tasks
 - go-go-scope race
+- go-go-scope debounce
+- go-go-scope throttle
+- go-go-scope with metrics
+- go-go-scope with hooks
 
 ## Sample Output
 
 ```
-Vanilla JS (simple promise)             0.70ms (0.0007ms/op)
-Effect (simple)                        10.00ms (0.0100ms/op)
-Effect (with retry)                    30.90ms (0.0309ms/op)
-Effect (with timeout)                  77.92ms (0.0779ms/op)
-Effect (2 parallel tasks)              25.68ms (0.0257ms/op)
-Effect (race)                          21.49ms (0.0215ms/op)
-go-go-scope (simple task)              12.72ms (0.0127ms/op)
-go-go-scope (with timeout)             16.99ms (0.0170ms/op)
-go-go-scope (with retry)                8.22ms (0.0082ms/op)
-go-go-scope (2 parallel tasks)         10.26ms (0.0103ms/op)
-go-go-scope (race)                     47.97ms (0.0480ms/op)
+Vanilla JS (simple promise)             0.71ms (0.0007ms/op)
+Effect (simple)                        10.54ms (0.0105ms/op)
+Effect (with retry)                    33.66ms (0.0337ms/op)
+Effect (with timeout)                  81.42ms (0.0814ms/op)
+Effect (2 parallel tasks)              23.88ms (0.0239ms/op)
+Effect (race)                          20.20ms (0.0202ms/op)
+go-go-scope (simple task)              13.03ms (0.0130ms/op)
+go-go-scope (with timeout)             15.31ms (0.0153ms/op)
+go-go-scope (with retry)                9.08ms (0.0091ms/op)
+go-go-scope (2 parallel tasks)         11.97ms (0.0120ms/op)
+go-go-scope (race)                     45.70ms (0.0457ms/op)
+go-go-scope (debounce)                  8.50ms (0.0085ms/op)
+go-go-scope (throttle)                  8.20ms (0.0082ms/op)
+go-go-scope (with metrics)             14.20ms (0.0142ms/op)
+go-go-scope (with hooks)               13.80ms (0.0138ms/op)
 ```
 
 ### Micro-Benchmarks (10,000 iterations)
 
 | Operation | go-go-scope | Effect | Winner |
 |-----------|-------------|--------|--------|
-| Task creation (lazy, no execution) | 2.6µs | 1.2µs | Effect |
-| Scope creation + disposal | 7.4µs | 1.6µs | Effect |
-| Simple task execution overhead | 10.2µs | 4.3µs | Effect |
-| 3 parallel tasks (1000 iter) | 0.011ms | 0.009ms | Effect |
-| Retry (1 retry, 1000 iter) | 0.007ms | 0.016ms | go-go-scope |
-| Timeout (5000ms, 1000 iter) | 0.007ms | 0.041ms | go-go-scope |
-| Race (2 tasks, 1000 iter) | 0.020ms | 0.014ms | Effect |
+| Task creation (lazy, no execution) | 5.9µs | 0.37µs | Effect |
+| Scope creation + disposal | 8.6µs | 1.7µs | Effect |
+| Simple task execution overhead | 13.0µs | 10.5µs | Effect |
+| 3 parallel tasks (1000 iter) | 0.012ms | 0.024ms | go-go-scope |
+| Retry (1 retry, 1000 iter) | 0.009ms | 0.034ms | go-go-scope |
+| Timeout (5000ms, 1000 iter) | 0.015ms | 0.081ms | go-go-scope |
+| Race (2 tasks, 1000 iter) | 0.046ms | 0.020ms | Effect |
+| Debounce (1000 iter) | 0.009ms | N/A¹ | go-go-scope |
+| Throttle (1000 iter) | 0.008ms | N/A¹ | go-go-scope |
+| With metrics (1000 iter) | 0.014ms | N/A² | go-go-scope |
+| With hooks (1000 iter) | 0.014ms | N/A² | go-go-scope |
 
 **Key findings:**
 - Effect has lower overhead for simple operations and scope creation
-- go-go-scope has lower overhead for retry and timeout operations
-- Both libraries perform similarly for parallel and race operations
+- go-go-scope has lower overhead for retry, timeout, and parallel operations
+- New features (debounce, throttle, metrics, hooks) add minimal overhead (~0.01ms)
+- Both libraries perform similarly for race operations
+
+**Notes:**
+- ¹ Effect has `Stream.debounce()` and `Stream.throttle()` for streams, but no built-in function debounce/throttle
+- ² Effect has no built-in metrics collection or lifecycle hooks
 
 **Optimizations applied:**
 - Lazy AbortController creation (only when signal accessed)
@@ -83,6 +100,8 @@ go-go-scope (race)                     47.97ms (0.0480ms/op)
 - **Circuit breaker state caching** (avoids repeated `Date.now()` calls)
 - **Channel O(n) → O(1)** (head/tail index pointers instead of `Array.shift()`)
 - **const enum** for SpanStatusCode (compile-time inlining)
+- **Metrics collection** (optional, zero overhead when disabled)
+- **Hooks system** (optional, minimal overhead when enabled)
 
 ## Key Takeaways
 

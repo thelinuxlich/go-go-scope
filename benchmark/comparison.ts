@@ -471,6 +471,49 @@ await benchmark("go-go-scope (race)", async () => {
 	]);
 });
 
+// New feature benchmarks - go-go-scope has built-in support for all of these
+// Effect has Stream.debounce/Stream.throttle but no direct function equivalents
+
+await benchmark("go-go-scope (debounce)", async () => {
+	await using s = scope();
+	const debounced = s.debounce(async (x: number) => x * 2, { wait: 1000 });
+	await debounced(1);
+});
+
+// Note: Effect has Stream.debounce() for streams, but no built-in function debounce
+// Would require Schedule + custom implementation for regular functions
+
+await benchmark("go-go-scope (throttle)", async () => {
+	await using s = scope();
+	const throttled = s.throttle(async (x: number) => x * 2, { interval: 1000 });
+	await throttled(1);
+});
+
+// Note: Effect has Stream.throttle() for streams, but no built-in function throttle
+// Would require Schedule + custom implementation for regular functions
+
+await benchmark("go-go-scope (with metrics)", async () => {
+	await using s = scope({ metrics: true });
+	await s.task(() => Promise.resolve(42));
+	const _m = s.metrics();
+});
+
+// Note: Effect has no built-in metrics collection
+// Would require custom implementation or external libraries
+
+await benchmark("go-go-scope (with hooks)", async () => {
+	await using s = scope({
+		hooks: {
+			beforeTask: () => {},
+			afterTask: () => {},
+		},
+	});
+	await s.task(() => Promise.resolve(42));
+});
+
+// Note: Effect has no built-in lifecycle hooks
+// Would require custom implementation
+
 console.log("\n" + "=".repeat(60));
 console.log("Summary:");
 console.log("=".repeat(60));

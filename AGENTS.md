@@ -34,21 +34,31 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 ## Project Structure
 
 ```
-├── src/
-│   ├── index.ts           # Main library exports (~2140 lines)
-│   ├── index.test.ts      # Core functionality tests (~810 lines)
-│   └── advanced.test.ts   # Advanced features tests (~687 lines)
-├── dist/                  # Compiled output (generated, NOT committed)
-│   ├── index.mjs          # ESM build
-│   ├── index.cjs          # CommonJS build
-│   ├── index.d.mts        # ESM type definitions
-│   └── index.d.cts        # CommonJS type definitions
-├── package.json           # Package configuration with Biome inline config
-├── tsconfig.json          # TypeScript configuration (ES2022, NodeNext, strict)
-├── vitest.config.ts       # Vitest test configuration (globals enabled)
-├── LICENSE                # MIT License
-├── README.md              # Comprehensive documentation with examples
-└── AGENTS.md              # This file
+├── src/                       # Source code (modular structure)
+│   ├── index.ts               # Main exports and standalone functions (race, parallel, etc.)
+│   ├── types.ts               # All type definitions, interfaces, and enums
+│   ├── task.ts                # Task class - lazy disposable Promise
+│   ├── scope.ts               # Scope class - structured concurrency primitive
+│   ├── channel.ts             # Channel class - Go-style concurrent communication
+│   ├── semaphore.ts           # Semaphore class - rate limiting
+│   ├── circuit-breaker.ts     # CircuitBreaker class - fault tolerance
+│   └── rate-limiting.ts       # Debounce and throttle utilities
+├── tests/                     # Test suite organized by category
+│   ├── core.test.ts           # Core functionality (Task, Scope, race, parallel)
+│   ├── concurrency.test.ts    # Channels, Semaphore, CircuitBreaker, stream, poll
+│   ├── rate-limiting.test.ts  # Debounce, throttle, metrics, hooks
+│   └── performance.test.ts    # Performance benchmarks
+├── dist/                      # Compiled output (generated, NOT committed)
+│   ├── index.mjs              # ESM build
+│   ├── index.cjs              # CommonJS build
+│   ├── index.d.mts            # ESM type definitions
+│   └── index.d.cts            # CommonJS type definitions
+├── package.json               # Package configuration with Biome inline config
+├── tsconfig.json              # TypeScript configuration (ES2022, NodeNext, strict)
+├── vitest.config.ts           # Vitest test configuration (globals enabled)
+├── LICENSE                    # MIT License
+├── README.md                  # Comprehensive documentation with examples
+└── AGENTS.md                  # This file
 ```
 
 ## Build Commands
@@ -140,7 +150,7 @@ task<T>(fn: (ctx: { services: Services; signal: AbortSignal }) => Promise<T>): T
 ## Testing Strategy
 
 ### Test Organization
-- **index.test.ts**: Core functionality
+- **tests/core.test.ts**: Core functionality
   - Task (lines 11-176)
   - Scope (lines 178-340)
   - race (lines 342-425)
@@ -149,11 +159,18 @@ task<T>(fn: (ctx: { services: Services; signal: AbortSignal }) => Promise<T>): T
   - OpenTelemetry integration (lines 596-683)
   - Retry functionality (lines 685-810)
   
-- **advanced.test.ts**: Advanced features
+- **tests/concurrency.test.ts**: Concurrency primitives
   - Channel (lines 4-220)
   - Semaphore (lines 222-400)
   - CircuitBreaker (lines 402-580)
   - stream (lines 582-687)
+  
+- **tests/rate-limiting.test.ts**: Rate limiting & observability
+  - Debounce (lines 10-80)
+  - Throttle (lines 82-140)
+  - Metrics (lines 142-190)
+  - Lifecycle Hooks (lines 192-240)
+  - Select (lines 242-300)
 
 ### Test Patterns
 - Uses Vitest with globals enabled (no need to import `describe`, `test`, `expect`)
@@ -171,8 +188,9 @@ npm test
 npm run test:watch
 
 # Run specific test file
-npx vitest run src/index.test.ts
-npx vitest run src/advanced.test.ts
+npx vitest run tests/core.test.ts
+npx vitest run tests/concurrency.test.ts
+npx vitest run tests/rate-limiting.test.ts
 ```
 
 ### Writing New Tests
@@ -208,40 +226,40 @@ test("cancels when scope disposed", async () => {
 
 ### Core Classes
 
-1. **Task<T>** (lines 153-240): Promise-like disposable task
+1. **Task<T>** (`task.ts`): Promise-like disposable task
    - Implements `PromiseLike<T>` for await support
    - Implements `Disposable` for `using` keyword support
    - Links to parent AbortSignal for cancellation propagation
    - Each task has a unique ID for debugging
 
-2. **Scope<Services>** (lines 306-1060): Main structured concurrency primitive
+2. **Scope<Services>** (`scope.ts`): Main structured concurrency primitive
    - Manages `AbortController` for cancellation
    - Tracks disposables for cleanup
    - Supports timeout and parent signal linking
    - Supports parent scope inheritance (services, tracer, concurrency, circuit breaker)
    - Disposes resources in LIFO order
    - Creates OpenTelemetry spans when tracer is provided
-   - Methods: `task()`, `provide()`, `use()`, `race()`, `parallel()`, `channel()`, `stream()`, `poll()`
+   - Methods: `task()`, `provide()`, `use()`, `race()`, `parallel()`, `channel()`, `stream()`, `poll()`, `debounce()`, `throttle()`, `select()`
 
-3. **AsyncDisposableResource<T>** (lines 245-288): Resource wrapper
+3. **AsyncDisposableResource<T>** (`scope.ts`): Resource wrapper
    - Manages acquire/dispose lifecycle
    - Implements `AsyncDisposable`
 
-4. **Channel<T>** (lines 1395-1575): Go-style buffered channel
+4. **Channel<T>** (`channel.ts`): Go-style buffered channel
    - Supports multiple producers/consumers
    - Implements backpressure via buffer limits
    - Implements `AsyncIterable` for `for await...of` support
    - Auto-closes on parent scope disposal
    - Methods: `send()`, `receive()`, `close()`, `[Symbol.asyncIterator]`
 
-5. **Semaphore** (lines 1597-1716): Rate limiting primitive
+5. **Semaphore** (`semaphore.ts`): Rate limiting primitive
    - Acquire/release pattern
    - Respects scope cancellation
    - Queue-based fairness
    - Methods: `acquire()`, `execute()`, `[Symbol.asyncDispose]`
    - Properties: `available`, `waiting`, `totalPermits`
 
-6. **CircuitBreaker** (lines 1740-1871): Fault tolerance (internal class)
+6. **CircuitBreaker** (`circuit-breaker.ts`): Fault tolerance (now exported)
    - States: closed, open, half-open
    - Configurable failure threshold and reset timeout
    - Respects parent AbortSignal
@@ -250,12 +268,13 @@ test("cancels when scope disposed", async () => {
 
 ### Utility Functions
 
-- **scope(options?)**: Factory for Scope instances (lines 1085-1089)
-- **race(factories, options?)**: Race with automatic cancellation of losers (lines 1121-1200)
-- **parallel(factories, options?)**: Parallel execution with concurrency limit (lines 1220-1369)
-- **stream(source, signal?)**: Async iterable wrapper with cancellation (lines 1887-1913)
-- **poll(fn, onValue, options?)**: Interval polling with cleanup (lines 2131-2140, deprecated in favor of `createPoll` or `scope().poll()`)
-- **createPoll(fn, onValue, options?)**: Internal implementation of polling (lines 1976-2123)
+- **scope(options?)**: Factory for Scope instances (`index.ts`)
+- **race(factories, options?)**: Race with automatic cancellation of losers (`index.ts`)
+- **parallel(factories, options?)**: Parallel execution with concurrency limit (`index.ts`)
+- **stream(source, signal?)**: Async iterable wrapper with cancellation (`index.ts`)
+- **poll(fn, onValue, options?)**: Interval polling with cleanup (`index.ts`, deprecated in favor of `scope().poll()`)
+- **debounce(scope, fn, options?)**: Debounced function wrapper (`rate-limiting.ts`)
+- **throttle(scope, fn, options?)**: Throttled function wrapper (`rate-limiting.ts`)
 
 ### Task Execution Pipeline
 
@@ -269,7 +288,7 @@ When a task is spawned, it goes through a pipeline of wrappers (from innermost t
 
 ### Scope Extension Pattern
 
-Advanced features are added to Scope as methods (lines 995-1059):
+Advanced features are added to Scope as methods:
 
 ```typescript
 // Scope methods that create resources:
@@ -368,7 +387,7 @@ The package supports both ESM and CommonJS:
 ### Adding Scope Methods
 1. Define the method in the `Scope` class
 2. Ensure the resource is registered via `this.disposables.push()` for cleanup
-3. Add tests in `advanced.test.ts`
+3. Add tests in appropriate test file under `tests/`
 
 ### Modifying Core Behavior
 - Changes to `Task` or `Scope` affect the entire library

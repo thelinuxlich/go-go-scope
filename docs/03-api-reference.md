@@ -17,8 +17,14 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.channel(capacity?)`](#scopechannelcapacity)
   - [`scope.stream(source)`](#scopestreamsource)
   - [`scope.poll(fn, onValue, options?)`](#scopepollfn-onvalue-options)
+  - [`scope.debounce(fn, options?)](#scopedebouncefn-options)
+  - [`scope.throttle(fn, options?)](#scopethrottlefn-options)
+  - [`scope.select(cases)`](#scopeselectcases)
+  - [`scope.metrics()`](#scopemetrics)
 - [Types](#types)
   - [Result](#result)
+  - [ScopeHooks](#scopehooks)
+  - [ScopeMetrics](#scopemetrics-type)
 - [Task Properties](#task-properties)
 - [Channel Methods](#channel-methods)
 
@@ -118,6 +124,17 @@ interface ScopeOptions<ParentServices extends Record<string, unknown> = Record<s
    * Parent scope to inherit signal, services, and options.
    */
   parent?: Scope<ParentServices>
+
+  /**
+   * Lifecycle hooks for scope events.
+   */
+  hooks?: ScopeHooks
+
+  /**
+   * Enable metrics collection.
+   * @default false
+   */
+  metrics?: boolean
 }
 ```
 
@@ -137,6 +154,27 @@ await using s = scope({
 
 // With parent (inherits services, tracer, etc.)
 await using child = scope({ parent })
+
+// With hooks for lifecycle events
+await using s = scope({
+  hooks: {
+    beforeTask: (name, index) => console.log(`Starting ${name}`),
+    afterTask: (name, duration, error) => {
+      if (error) console.log(`${name} failed after ${duration}ms`)
+      else console.log(`${name} succeeded after ${duration}ms`)
+    },
+    onCancel: (reason) => console.log('Scope cancelled:', reason),
+    onDispose: (index, error) => {
+      if (error) console.log(`Resource ${index} disposal failed`)
+      else console.log(`Resource ${index} disposed`)
+    }
+  }
+})
+
+// With metrics collection
+await using s = scope({ metrics: true })
+const result = await s.task(() => fetchData())
+console.log(s.metrics()) // { tasksSpawned: 1, tasksCompleted: 1, ... }
 ```
 
 ---
@@ -563,6 +601,165 @@ controller.start()
 
 ---
 
+### `scope.debounce(fn, options?)`
+
+Creates a debounced function that delays invoking `fn` until after `wait` milliseconds have elapsed since the last time the debounced function was invoked. Automatically cancelled when the scope is disposed.
+
+```typescript
+debounce<T, Args extends unknown[]>(
+  fn: (...args: Args) => Promise<T>,
+  options?: {
+    wait?: number      // Milliseconds to delay (default: 300)
+    leading?: boolean  // Execute on leading edge (default: false)
+    trailing?: boolean // Execute on trailing edge (default: true)
+  }
+): (...args: Args) => Promise<Result<unknown, T>>
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `fn` | Function | The function to debounce |
+| `options.wait` | `number` | Milliseconds to delay (default: 300) |
+| `options.leading` | `boolean` | Execute on leading edge (default: false) |
+| `options.trailing` | `boolean` | Execute on trailing edge (default: true) |
+
+**Returns:** A debounced function that returns a `Promise<Result<unknown, T>>`
+
+**Example:**
+
+```typescript
+await using s = scope()
+
+const search = s.debounce(async (query: string) => {
+  const response = await fetch(`/api/search?q=${query}`)
+  return response.json()
+}, { wait: 300 })
+
+// Will only execute 300ms after the last call
+const [err, results] = await search("hello world")
+```
+
+---
+
+### `scope.throttle(fn, options?)`
+
+Creates a throttled function that only invokes `fn` at most once per every `interval` milliseconds. Automatically cancelled when the scope is disposed.
+
+```typescript
+throttle<T, Args extends unknown[]>(
+  fn: (...args: Args) => Promise<T>,
+  options?: {
+    interval?: number  // Milliseconds between executions (default: 300)
+    leading?: boolean  // Execute on leading edge (default: true)
+    trailing?: boolean // Execute on trailing edge (default: false)
+  }
+): (...args: Args) => Promise<Result<unknown, T>>
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `fn` | Function | The function to throttle |
+| `options.interval` | `number` | Milliseconds between executions (default: 300) |
+| `options.leading` | `boolean` | Execute on leading edge (default: true) |
+| `options.trailing` | `boolean` | Execute on trailing edge (default: false) |
+
+**Returns:** A throttled function that returns a `Promise<Result<unknown, T>>`
+
+**Example:**
+
+```typescript
+await using s = scope()
+
+const save = s.throttle(async (data: string) => {
+  await saveToServer(data)
+}, { interval: 1000 })
+
+// Executes at most once per second
+await save("data1")
+await save("data2") // Throttled, returns cached result
+```
+
+---
+
+### `scope.select(cases)`
+
+Waits on multiple channel operations, similar to Go's `select` statement. Blocks until one of the cases can run, then executes that case. Useful for coordinating between multiple channels.
+
+```typescript
+select<T>(
+  cases: Map<Channel<unknown>, (value: unknown) => Promise<T> | T>
+): Promise<Result<unknown, T>>
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `cases` | `Map<Channel, Function>` | Map of channels to handler functions |
+
+**Returns:** `Promise<Result<unknown, T>>` - Result of the selected case
+
+**Example:**
+
+```typescript
+await using s = scope()
+const ch1 = s.channel<string>()
+const ch2 = s.channel<number>()
+
+// Send to channels from other tasks...
+s.task(async () => {
+  await ch1.send("hello")
+})
+
+// Wait for first available value
+const cases = new Map([
+  [ch1, async (value: string) => ({ type: 'string' as const, value })],
+  [ch2, async (value: number) => ({ type: 'number' as const, value })],
+])
+const [err, result] = await s.select(cases)
+// result will be { type: 'string', value: 'hello' }
+```
+
+---
+
+### `scope.metrics()`
+
+Returns current metrics for the scope if metrics were enabled in scope options.
+
+```typescript
+metrics(): ScopeMetrics | undefined
+```
+
+**Returns:** `ScopeMetrics` object or `undefined` if metrics not enabled
+
+**Example:**
+
+```typescript
+await using s = scope({ metrics: true })
+
+await s.task(() => fetchUser(1))
+await s.task(() => fetchUser(2))
+
+const metrics = s.metrics()
+console.log(metrics)
+// {
+//   tasksSpawned: 2,
+//   tasksCompleted: 2,
+//   tasksFailed: 0,
+//   totalTaskDuration: 45.2,
+//   avgTaskDuration: 22.6,
+//   p95TaskDuration: 25.1,
+//   resourcesRegistered: 0,
+//   resourcesDisposed: 0
+// }
+```
+
+---
+
 ## Types
 
 ### Result
@@ -588,6 +785,81 @@ if (err) {
 } else {
   // Use user
   console.log('User:', user)
+}
+```
+
+---
+
+### ScopeHooks
+
+Lifecycle hooks for scope events.
+
+```typescript
+interface ScopeHooks {
+  /** Called before a task starts execution */
+  beforeTask?: (taskName: string, taskIndex: number) => void
+  
+  /** Called after a task completes (success or failure) */
+  afterTask?: (taskName: string, durationMs: number, error?: unknown) => void
+  
+  /** Called when the scope is cancelled */
+  onCancel?: (reason: unknown) => void
+  
+  /** Called when a resource is disposed */
+  onDispose?: (resourceIndex: number, error?: unknown) => void
+}
+```
+
+**Example:**
+
+```typescript
+await using s = scope({
+  hooks: {
+    beforeTask: (name, index) => console.log(`Starting ${name}`),
+    afterTask: (name, duration, error) => {
+      if (error) console.log(`${name} failed: ${error}`)
+      else console.log(`${name} completed in ${duration}ms`)
+    },
+    onCancel: (reason) => console.log('Scope cancelled:', reason),
+    onDispose: (index, error) => console.log(`Resource ${index} disposed`)
+  }
+})
+```
+
+---
+
+### ScopeMetrics (Type)
+
+Metrics collected by a scope when `metrics: true` is passed to `scope()`.
+
+```typescript
+interface ScopeMetrics {
+  /** Number of tasks spawned */
+  tasksSpawned: number
+  
+  /** Number of tasks completed successfully */
+  tasksCompleted: number
+  
+  /** Number of tasks that failed */
+  tasksFailed: number
+  
+  /** Total task execution time in milliseconds */
+  totalTaskDuration: number
+  
+  /** Average task duration in milliseconds */
+  avgTaskDuration: number
+  
+  /** 95th percentile task duration (approximation) */
+  p95TaskDuration: number
+  
+  /** Number of resources registered for cleanup */
+  resourcesRegistered: number
+  
+  /** Number of resources successfully disposed */
+  resourcesDisposed: number
+  
+  /** Scope duration in milliseconds (only available after disposal) */
+  scopeDuration?: number
 }
 ```
 

@@ -6,7 +6,7 @@ import {
 	type Success,
 	scope,
 	type Tracer,
-} from "./index.js";
+} from "../src/index.js";
 
 describe("Task", () => {
 	test("resolves with the function result", async () => {

@@ -5,7 +5,7 @@
 
 import { Effect } from "effect";
 import { describe, test } from "vitest";
-import { scope } from "./index.js";
+import { scope } from "../src/index.js";
 
 describe("performance", () => {
 	test("simple task overhead", async () => {
