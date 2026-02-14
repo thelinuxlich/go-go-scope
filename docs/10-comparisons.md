@@ -422,7 +422,7 @@ async function startPolling() {
 |--------|--------|-------------|
 | **Paradigm** | Functional, monadic | Imperative, async/await |
 | **Learning curve** | Steep | Minimal |
-| **Bundle size** | ~50KB+ | ~3KB |
+| **Bundle size** | ~50KB+ | ~3 KB |
 | **Error handling** | Built-in error channel | Result tuples |
 | **Observability** | Built-in tracing | Bring your own |
 | **Retry/Schedule** | Excellent built-in | Manual |
@@ -458,3 +458,9 @@ Both enforce: **parent-bounded lifetimes** and **guaranteed cleanup**.
 | Resource cleanup | try/finally | `await using` | Effect.scoped |
 | Bundle size | 0 KB | ~3 KB | ~50KB+ |
 | Learning curve | None | Low | Steep |
+
+---
+
+## Next Steps
+
+- **[Integrations](./11-integrations.md)** - Third-party integrations (OpenTelemetry, Prometheus, etc.)

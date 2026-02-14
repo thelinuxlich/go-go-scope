@@ -21,12 +21,23 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.throttle(fn, options?)](#scopethrottlefn-options)
   - [`scope.select(cases)`](#scopeselectcases)
   - [`scope.metrics()`](#scopemetrics)
+  - [`scope.broadcast()`](#scopebroadcast)
+  - [`scope.pool(options)`](#scopepooloptions)
+  - [`scope.parallelAggregate(factories)`](#scopeparallelaggregatefactories)
+  - [`scope.getProfileReport()`](#scopegetprofilereport)
 - [Types](#types)
   - [Result](#result)
   - [ScopeHooks](#scopehooks)
   - [ScopeMetrics](#scopemetrics-type)
 - [Task Properties](#task-properties)
 - [Channel Methods](#channel-methods)
+- [Broadcast Channel Methods](#broadcast-channel-methods)
+- [Resource Pool Methods](#resource-pool-methods)
+- [Utility Functions](#utility-functions)
+- [MetricsReporter Class](#metricsreporter-class)
+- [Logger Interface](#logger-interface)
+- [Additional Types](#additional-types)
+- [Standalone Functions](#standalone-functions)
 
 ---
 
@@ -938,4 +949,533 @@ const val2 = await ch.receive()  // 2
 
 // Manually close the channel (when the scope ends, it closes its channels automatically too)
 ch.close()
+```
+
+---
+
+## Broadcast Channel Methods
+
+Broadcast channels implement `AsyncDisposable`:
+
+```typescript
+interface BroadcastChannel<T> extends AsyncDisposable {
+  /** Send a value to all subscribers */
+  send(value: T): Promise<void>
+  
+  /** Subscribe to receive values */
+  subscribe(): AsyncIterable<T>
+  
+  /** Close the broadcast channel */
+  close(): void
+  
+  /** Check if closed */
+  readonly isClosed: boolean
+  
+  /** Number of active subscribers */
+  readonly subscriberCount: number
+  
+  /** Dispose */
+  [Symbol.asyncDispose](): Promise<void>
+}
+```
+
+**Example:**
+
+```typescript
+await using s = scope()
+const broadcast = s.broadcast<string>()
+
+// Subscribe multiple consumers
+s.task(async () => {
+  for await (const msg of broadcast.subscribe()) {
+    console.log('Consumer 1:', msg)
+  }
+})
+
+s.task(async () => {
+  for await (const msg of broadcast.subscribe()) {
+    console.log('Consumer 2:', msg)
+  }
+})
+
+// Publish messages (all consumers receive each message)
+await broadcast.send('hello')
+await broadcast.send('world')
+broadcast.close()
+```
+
+---
+
+## Additional Scope Methods
+
+### `scope.broadcast()`
+
+Creates a broadcast channel for pub/sub messaging.
+
+```typescript
+broadcast<T>(): BroadcastChannel<T>
+```
+
+**Returns:** `BroadcastChannel<T>` - A broadcast channel where all subscribers receive every message
+
+---
+
+### `scope.pool(options)`
+
+Creates a managed resource pool.
+
+```typescript
+pool<T>(options: ResourcePoolOptions<T>): ResourcePool<T>
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `options.create` | `() => T \| Promise<T>` | Factory function to create resources |
+| `options.destroy` | `(resource: T) => void \| Promise<void>` | Cleanup function for resources |
+| `options.min` | `number` | Minimum pool size (default: 0) |
+| `options.max` | `number` | Maximum pool size (default: 10) |
+| `options.acquireTimeout` | `number` | Max time to wait for a resource (ms, default: 30000) |
+
+**Returns:** `ResourcePool<T>`
+
+**Example:**
+
+```typescript
+await using s = scope()
+
+const dbPool = s.pool({
+  create: () => createDatabaseConnection(),
+  destroy: (conn) => conn.close(),
+  min: 2,
+  max: 10,
+  acquireTimeout: 5000
+})
+
+// Use with automatic release
+const users = await dbPool.execute(async (conn) => {
+  const result = await conn.query('SELECT * FROM users')
+  return result.rows
+})
+```
+
+---
+
+### `scope.parallelAggregate(factories)`
+
+Run factories in parallel and collect all results and errors.
+
+```typescript
+parallelAggregate<T>(
+  factories: readonly ((signal: AbortSignal) => Promise<T>)[]
+): Promise<ParallelAggregateResult<T>>
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `factories` | Array of functions | Each receives an `AbortSignal` and returns a `Promise` |
+
+**Returns:** `Promise<ParallelAggregateResult<T>>` - Object with `completed`, `errors`, and `allCompleted`
+
+**Example:**
+
+```typescript
+await using s = scope()
+
+const result = await s.parallelAggregate([
+  () => fetchUser(1),    // succeeds
+  () => fetchUser(2),    // succeeds
+  () => fetchUser(999),  // fails
+])
+
+console.log(result.completed)  // [{ index: 0, value: user1 }, { index: 1, value: user2 }]
+console.log(result.errors)     // [{ index: 2, error: NotFoundError }]
+console.log(result.allCompleted)  // false
+```
+
+---
+
+### `scope.getProfileReport()`
+
+Get detailed profiling information about task execution.
+
+```typescript
+getProfileReport(): ScopeProfileReport
+```
+
+**Returns:** `ScopeProfileReport` - Profiling data including per-task timing
+
+**Example:**
+
+```typescript
+await using s = scope({ profiler: true })
+
+await s.task(() => fetchUser(1))
+await s.task(() => fetchPosts(1))
+
+const report = s.getProfileReport()
+console.log(report.statistics)
+// {
+//   totalTasks: 2,
+//   successfulTasks: 2,
+//   avgTotalDuration: 45.2,
+//   avgExecutionDuration: 40.1
+// }
+
+for (const task of report.tasks) {
+  console.log(`${task.name}: ${task.totalDuration.toFixed(2)}ms`)
+  console.log(`  Execution: ${task.stages.execution.toFixed(2)}ms`)
+  console.log(`  Retry: ${task.stages.retry?.toFixed(2) ?? 'N/A'}ms`)
+}
+```
+
+---
+
+## Resource Pool Methods
+
+```typescript
+interface ResourcePool<T> extends AsyncDisposable {
+  /** Acquire a resource from the pool */
+  acquire(): Promise<T>
+  
+  /** Release a resource back to the pool */
+  release(resource: T): Promise<void>
+  
+  /** Execute a function with an acquired resource (auto-released) */
+  execute<R>(fn: (resource: T) => Promise<R>): Promise<R>
+  
+  /** Pool statistics */
+  readonly stats: {
+    total: number
+    available: number
+    inUse: number
+    waiting: number
+  }
+  
+  /** Dispose */
+  [Symbol.asyncDispose](): Promise<void>
+}
+```
+
+---
+
+## Utility Functions
+
+### `exportMetrics(metrics, options)`
+
+Export scope metrics in various formats.
+
+```typescript
+function exportMetrics(
+  metrics: ScopeMetrics,
+  options?: MetricsExportOptions
+): string
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `metrics` | `ScopeMetrics` | Metrics object from `scope.metrics()` |
+| `options.format` | `'json' \| 'prometheus' \| 'otel'` | Export format (default: 'json') |
+| `options.prefix` | `string` | Prefix for metric names (Prometheus only) |
+
+**Returns:** `string` - Formatted metrics string
+
+**Example:**
+
+```typescript
+import { exportMetrics, scope } from 'go-go-scope'
+
+await using s = scope({ metrics: true })
+await s.task(() => fetchData())
+
+const metrics = s.metrics()
+if (metrics) {
+  // JSON format
+  const json = exportMetrics(metrics, { format: 'json' })
+  
+  // Prometheus format
+  const prometheus = exportMetrics(metrics, { 
+    format: 'prometheus',
+    prefix: 'myapp'
+  })
+}
+```
+
+---
+
+## MetricsReporter Class
+
+Automatically report metrics at intervals.
+
+```typescript
+class MetricsReporter {
+  constructor(
+    scope: Scope,
+    options: MetricsReporterOptions
+  )
+  
+  /** Start reporting */
+  start(): void
+  
+  /** Stop reporting */
+  stop(): void
+  
+  /** Force immediate report */
+  report(): Promise<void>
+}
+```
+
+**Options:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `format` | `'json' \| 'prometheus' \| 'otel'` | Export format |
+| `interval` | `number` | Reporting interval in milliseconds |
+| `onExport` | `(data: string) => Promise<void>` | Callback to handle exported data |
+| `prefix` | `string` | Metric name prefix (Prometheus only) |
+
+**Example:**
+
+```typescript
+import { MetricsReporter, scope } from 'go-go-scope'
+
+await using s = scope({ metrics: true })
+
+const reporter = new MetricsReporter(s, {
+  format: 'prometheus',
+  interval: 60000,  // Report every minute
+  onExport: async (data) => {
+    await fetch('http://metrics-endpoint', {
+      method: 'POST',
+      body: data
+    })
+  }
+})
+
+// Auto-starts
+// Stop when needed
+reporter.stop()
+```
+
+---
+
+## Logger Interface
+
+```typescript
+interface Logger {
+  debug(message: string, ...args: unknown[]): void
+  info(message: string, ...args: unknown[]): void
+  warn(message: string, ...args: unknown[]): void
+  error(message: string, ...args: unknown[]): void
+}
+```
+
+### ConsoleLogger
+
+Built-in logger implementation.
+
+```typescript
+class ConsoleLogger implements Logger {
+  constructor(
+    name: string,
+    level: 'debug' | 'info' | 'warn' | 'error' = 'info'
+  )
+}
+```
+
+**Example:**
+
+```typescript
+import { scope, ConsoleLogger } from 'go-go-scope'
+
+await using s = scope({
+  logger: new ConsoleLogger('my-app', 'debug')
+})
+
+// Logs scope events automatically
+await s.task(() => fetchData())
+```
+
+---
+
+## Additional Types
+
+### ScopeOptions (Extended)
+
+```typescript
+interface ScopeOptions {
+  // ... previous options ...
+  
+  /**
+   * Enable task profiling.
+   * @default false
+   */
+  profiler?: boolean
+  
+  /**
+   * Deadlock detection configuration.
+   */
+  deadlockDetection?: {
+    timeout: number
+    onDeadlock?: (waitingTasks: WaitingTaskInfo[]) => void
+  }
+  
+  /**
+   * Custom logger instance.
+   */
+  logger?: Logger
+  
+  /**
+   * Log level for built-in console logger.
+   * @default 'info'
+   */
+  logLevel?: 'debug' | 'info' | 'warn' | 'error'
+}
+```
+
+### ParallelAggregateResult
+
+```typescript
+interface ParallelAggregateResult<T> {
+  /** Successfully completed tasks */
+  completed: Array<{ index: number; value: T }>
+  
+  /** Failed tasks */
+  errors: Array<{ index: number; error: unknown }>
+  
+  /** Whether all tasks completed successfully */
+  allCompleted: boolean
+}
+```
+
+### ScopeProfileReport
+
+```typescript
+interface ScopeProfileReport {
+  /** Per-task profiles */
+  tasks: TaskProfile[]
+  
+  /** Aggregated statistics */
+  statistics: {
+    totalTasks: number
+    successfulTasks: number
+    failedTasks: number
+    avgTotalDuration: number
+    avgExecutionDuration: number
+    totalRetryAttempts: number
+  }
+}
+```
+
+### TaskProfile
+
+```typescript
+interface TaskProfile {
+  name: string
+  totalDuration: number
+  stages: {
+    execution?: number
+    circuitBreaker?: number
+    concurrency?: number
+    retry?: number
+    timeout?: number
+  }
+  retryAttempts: number
+}
+```
+
+---
+
+## Standalone Functions
+
+The following functions are also exported for standalone use (without a scope):
+
+### `race(factories, options?)`
+
+Race multiple operations without a scope.
+
+```typescript
+import { race } from 'go-go-scope'
+
+const [err, winner] = await race([
+  ({ signal }) => fetch('https://fast.com', { signal }),
+  ({ signal }) => fetch('https://slow.com', { signal }),
+], { timeout: 5000 })
+```
+
+### `parallel(factories, options?)`
+
+Run operations in parallel without a scope.
+
+```typescript
+import { parallel } from 'go-go-scope'
+
+const results = await parallel([
+  () => fetchUser(1),
+  () => fetchUser(2),
+], { concurrency: 3 })
+```
+
+### `poll(fn, onValue, options?)`
+
+Poll a function without a scope.
+
+```typescript
+import { poll } from 'go-go-scope'
+
+const controller = poll(
+  ({ signal }) => fetchStatus({ signal }),
+  (status) => console.log(status),
+  { interval: 5000 }
+)
+
+// Stop when done
+controller.stop()
+```
+
+### `debounce(scope, fn, options?)`
+
+Create a debounced function.
+
+```typescript
+import { debounce, scope } from 'go-go-scope'
+
+await using s = scope()
+
+const search = debounce(s, async (query: string) => {
+  return fetchSearchResults(query)
+}, { wait: 300 })
+```
+
+### `throttle(scope, fn, options?)`
+
+Create a throttled function.
+
+```typescript
+import { throttle, scope } from 'go-go-scope'
+
+await using s = scope()
+
+const save = throttle(s, async (data: string) => {
+  return saveToServer(data)
+}, { interval: 1000 })
+```
+
+### `stream(source, signal?)`
+
+Wrap an async iterable with cancellation.
+
+```typescript
+import { stream } from 'go-go-scope'
+
+const controller = new AbortController()
+
+for await (const chunk of stream(readableStream, controller.signal)) {
+  await processChunk(chunk)
+}
 ```

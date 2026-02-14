@@ -53,9 +53,14 @@ Requires TypeScript 5.2+ and `ESNext.Disposable` lib.
 | [📖 Quick Start](./docs/01-quick-start.md) | Get started in 5 minutes |
 | [🧠 Core Concepts](./docs/02-concepts.md) | Learn structured concurrency |
 | [📚 API Reference](./docs/03-api-reference.md) | Complete API docs |
-| [🚀 Advanced Features](./docs/04-advanced-features.md) | Channels, circuit breakers, pools, profiling |
-| [⚖️ Comparisons](./docs/05-comparisons.md) | vs Vanilla JS, vs Effect |
-| [🔌 Integrations](./docs/06-integrations.md) | OpenTelemetry, logging, metrics |
+| [🔄 Concurrency](./docs/04-concurrency-patterns.md) | Channels, broadcast, select |
+| [🛡️ Resilience](./docs/05-resilience-patterns.md) | Circuit breakers, retry, timeouts |
+| [📊 Observability](./docs/06-observability.md) | Metrics, logging, profiling, tracing |
+| [⏱️ Rate Limiting](./docs/07-rate-limiting.md) | Debounce, throttle, concurrency |
+| [🧪 Testing](./docs/08-testing.md) | Mock scopes, spies, and timers |
+| [🔧 Advanced](./docs/09-advanced-patterns.md) | Resource pools, parent-child scopes |
+| [⚖️ Comparisons](./docs/10-comparisons.md) | vs Vanilla JS, vs Effect |
+| [🔌 Integrations](./docs/11-integrations.md) | OpenTelemetry, Prometheus, Grafana |
 
 ## Features
 
