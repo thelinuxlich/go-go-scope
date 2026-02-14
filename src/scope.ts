@@ -4,18 +4,27 @@
 
 import { context as otelContext, trace } from "@opentelemetry/api";
 import createDebug from "debug";
+import { BroadcastChannel } from "./broadcast-channel.js";
 import { Channel } from "./channel.js";
 import { CircuitBreaker } from "./circuit-breaker.js";
+import { DeadlockDetector } from "./deadlock-detector.js";
+import { createLogger } from "./logger.js";
+import { Profiler } from "./profiler.js";
+import { ResourcePool } from "./resource-pool.js";
 import { Semaphore } from "./semaphore.js";
 import { Task } from "./task.js";
 import type {
 	CircuitBreakerOptions,
 	Failure,
+	Logger,
+	ParallelAggregateResult,
 	PollController,
 	PollOptions,
+	ResourcePoolOptions,
 	Result,
 	ScopeHooks,
 	ScopeMetrics,
+	SelectOptions,
 	Success,
 	TaskOptions,
 	Tracer,
@@ -122,6 +131,22 @@ export interface ScopeOptions<
 	 * Enable metrics collection (default: false)
 	 */
 	metrics?: boolean;
+	/**
+	 * Optional logger for structured logging.
+	 */
+	logger?: import("./types.js").Logger;
+	/**
+	 * Minimum log level for console logging (if no custom logger provided).
+	 */
+	logLevel?: "debug" | "info" | "warn" | "error";
+	/**
+	 * Enable deadlock detection with specified timeout.
+	 */
+	deadlockDetection?: import("./types.js").DeadlockDetectionOptions;
+	/**
+	 * Enable task profiling.
+	 */
+	profiler?: boolean;
 }
 
 /**
@@ -170,6 +195,9 @@ export class Scope<
 		resourcesDisposed: number;
 		scopeEndTime?: number;
 	};
+	private readonly logger: Logger;
+	private readonly deadlockDetector?: DeadlockDetector;
+	private readonly profiler: Profiler;
 
 	constructor(options?: ScopeOptions<Record<string, unknown>>) {
 		this.id = ++scopeIdCounter;
@@ -185,6 +213,20 @@ export class Scope<
 			resourcesRegistered: 0,
 			resourcesDisposed: 0,
 		};
+
+		// Initialize logger
+		this.logger = createLogger(this.name, options?.logger, options?.logLevel);
+
+		// Initialize deadlock detector if enabled
+		if (options?.deadlockDetection) {
+			this.deadlockDetector = new DeadlockDetector(
+				options.deadlockDetection,
+				this.name,
+			);
+		}
+
+		// Initialize profiler
+		this.profiler = new Profiler(options?.profiler ?? false);
 
 		// Inherit from parent scope if provided
 		const parent = options?.parent;
@@ -449,6 +491,11 @@ export class Scope<
 		const taskName = options?.otel?.name ?? `task-${taskIndex}`;
 
 		if (hasDebug) {
+			// Start profiling
+			this.profiler.startTask(taskIndex, taskName);
+
+			// Log task start
+			this.logger.debug('Spawning task #%d "%s"', taskIndex, taskName);
 			debugScope('[%s] spawning task #%d "%s"', this.name, taskIndex, taskName);
 		}
 
@@ -793,6 +840,8 @@ export class Scope<
 		// Record span status on completion and remove from active tasks
 		task.then(
 			([err]) => {
+				// End profiling
+				this.profiler.endTask(taskIndex, !err);
 				this.activeTasks.delete(task as Task<unknown>);
 				taskSpan?.setStatus?.({ code: SpanStatusCodeEnum.OK });
 				taskSpan?.end?.();
@@ -960,6 +1009,9 @@ export class Scope<
 		}
 		const abortReason = new Error("scope disposed");
 		this.abortController.abort(abortReason);
+
+		// Dispose deadlock detector
+		this.deadlockDetector?.dispose();
 
 		// Call onCancel hook
 		this.hooks?.onCancel?.(abortReason);
@@ -1830,6 +1882,7 @@ export class Scope<
 	 * then executes that case. It chooses one at random if multiple are ready.
 	 *
 	 * @param cases - Map of channels to handler functions. Use a Map for proper channel keys.
+	 * @param options - Optional select configuration including timeout
 	 * @returns A promise that resolves to the result of the selected case
 	 *
 	 * @example
@@ -1847,6 +1900,7 @@ export class Scope<
 	 */
 	async select<T>(
 		cases: Map<Channel<unknown>, (value: unknown) => Promise<T> | T>,
+		options?: SelectOptions,
 	): Promise<Result<unknown, T>> {
 		if (cases.size === 0) {
 			return [new Error("select called with no cases"), undefined];
@@ -1875,14 +1929,32 @@ export class Scope<
 					.catch(reject);
 			});
 
+		// Create timeout promise if specified
+		const timeoutPromise = options?.timeout
+			? new Promise<never>((_, reject) => {
+					setTimeout(() => {
+						reject(new Error(`select timeout after ${options.timeout}ms`));
+					}, options.timeout);
+				})
+			: null;
+
 		try {
 			// Keep racing until we get a value or all channels are closed
 			while (true) {
-				const result = await Promise.race(
-					channelEntries.map(([channel], idx) =>
-						createRacePromise(channel, idx),
-					),
+				const racePromises = channelEntries.map(([channel], idx) =>
+					createRacePromise(channel, idx),
 				);
+
+				// Add timeout to race if specified
+				if (timeoutPromise) {
+					racePromises.push(
+						timeoutPromise as Promise<
+							{ idx: number; value: unknown } | { closed: true }
+						>,
+					);
+				}
+
+				const result = await Promise.race(racePromises);
 
 				if ("closed" in result) {
 					closedCount++;
@@ -1916,5 +1988,125 @@ export class Scope<
 		} catch (error) {
 			return [error, undefined];
 		}
+	}
+
+	/**
+	 * Create a broadcast channel for pub/sub patterns.
+	 * All subscribers receive every message (unlike regular channel where messages are distributed).
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 * const broadcast = s.broadcast<string>()
+	 *
+	 * // Subscribe multiple consumers
+	 * s.task(async () => {
+	 *   for await (const msg of broadcast.subscribe()) {
+	 *     console.log('Consumer 1:', msg)
+	 *   }
+	 * })
+	 *
+	 * // Publish messages
+	 * await broadcast.send('hello')
+	 * broadcast.close()
+	 * ```
+	 */
+	broadcast<T>(): BroadcastChannel<T> {
+		const broadcast = new BroadcastChannel<T>(this.signal);
+		this.disposables.push({
+			async [Symbol.asyncDispose]() {
+				await broadcast[Symbol.asyncDispose]();
+			},
+		});
+		return broadcast;
+	}
+
+	/**
+	 * Create a resource pool for managing reusable resources.
+	 * Useful for connection pooling, worker pools, etc.
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 * const pool = s.pool({
+	 *   create: () => createDatabaseConnection(),
+	 *   destroy: (conn) => conn.close(),
+	 *   min: 2,
+	 *   max: 10
+	 * })
+	 *
+	 * // Acquire and use a resource
+	 * const conn = await pool.acquire()
+	 * try {
+	 *   await conn.query('SELECT 1')
+	 * } finally {
+	 *   await pool.release(conn)
+	 * }
+	 *
+	 * // Or use execute for automatic release
+	 * await pool.execute(async (conn) => {
+	 *   await conn.query('SELECT 1')
+	 * })
+	 * ```
+	 */
+	pool<T>(options: ResourcePoolOptions<T>): ResourcePool<T> {
+		const pool = new ResourcePool<T>(options, this.signal);
+		this.disposables.push({
+			async [Symbol.asyncDispose]() {
+				await pool[Symbol.asyncDispose]();
+			},
+		});
+		return pool;
+	}
+
+	/**
+	 * Run multiple tasks in parallel and aggregate errors.
+	 * Unlike parallel(), this returns a structured result with both successes and failures.
+	 *
+	 * @example
+	 * ```typescript
+	 * const result = await s.parallelAggregate([
+	 *   () => fetchUser(1),
+	 *   () => fetchUser(2),
+	 *   () => fetchUser(999), // This might fail
+	 * ])
+	 *
+	 * console.log(result.completed) // Successfully fetched users
+	 * console.log(result.errors)    // Failed fetches
+	 * console.log(result.allCompleted) // false if any failed
+	 * ```
+	 */
+	async parallelAggregate<T>(
+		factories: readonly ((signal: AbortSignal) => Promise<T>)[],
+	): Promise<ParallelAggregateResult<T>> {
+		const results = await this.parallel(factories);
+
+		const completed: { index: number; value: T }[] = [];
+		const errors: { index: number; error: unknown }[] = [];
+
+		for (let i = 0; i < results.length; i++) {
+			const result = results[i];
+			if (!result) continue;
+			const [err, value] = result;
+			if (err) {
+				errors.push({ index: i, error: err });
+			} else {
+				completed.push({ index: i, value: value as T });
+			}
+		}
+
+		return {
+			completed,
+			errors,
+			allCompleted: errors.length === 0,
+		};
+	}
+
+	/**
+	 * Get the profile report for this scope.
+	 * Only available if profiler was enabled in scope options.
+	 */
+	getProfileReport() {
+		return this.profiler.getReport();
 	}
 }

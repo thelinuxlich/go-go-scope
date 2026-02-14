@@ -1,11 +1,13 @@
 # Integrations
 
-How to integrate `go-go-scope` with other libraries.
+How to integrate `go-go-scope` with other libraries and monitoring systems.
 
 ## Table of Contents
 
 - [go-go-try](#go-go-try)
 - [OpenTelemetry](#opentelemetry)
+- [Prometheus](#prometheus)
+- [Grafana](#grafana)
 
 ---
 
@@ -236,9 +238,9 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
 ```
 
-Run with: `docker compose up -d`
+Run with: `npm run jaeger:up`
 
-View traces at: http://localhost:16686
+View traces at: http://localhost:16687
 
 ### Parent-Child Trace Context
 
@@ -283,4 +285,265 @@ const [err, user] = await s.task(
     }
   }
 )
+```
+
+---
+
+## Prometheus
+
+Export go-go-scope metrics to Prometheus for monitoring and alerting.
+
+### Setup
+
+Start Prometheus and Grafana:
+
+```bash
+npm run prometheus:up
+```
+
+This starts:
+- **Prometheus UI**: http://localhost:9091
+- **Grafana UI**: http://localhost:3001 (admin/admin)
+
+### Basic Usage
+
+Export metrics in Prometheus format:
+
+```typescript
+import { exportMetrics, scope } from 'go-go-scope'
+
+await using s = scope({ metrics: true })
+
+// Run some tasks
+await s.task(() => fetchUser(1))
+await s.task(() => fetchUser(2))
+
+// Get metrics
+const metrics = s.metrics()
+if (metrics) {
+  // Export in Prometheus format
+  const promOutput = exportMetrics(metrics, {
+    format: 'prometheus',
+    prefix: 'myapp'  // Custom prefix for your app
+  })
+  
+  console.log(promOutput)
+}
+```
+
+### Available Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `goscope_tasks_spawned_total` | counter | Total tasks created |
+| `goscope_tasks_completed_total` | counter | Tasks that succeeded |
+| `goscope_tasks_failed_total` | counter | Tasks that failed |
+| `goscope_task_duration_seconds_total` | counter | Total execution time |
+| `goscope_task_duration_avg_seconds` | gauge | Average task duration |
+| `goscope_task_duration_p95_seconds` | gauge | P95 task duration |
+| `goscope_resources_registered_total` | counter | Resources registered |
+| `goscope_resources_disposed_total` | counter | Resources cleaned up |
+| `goscope_scope_duration_seconds` | gauge | Total scope lifetime |
+
+### Metrics Reporter
+
+Automatically report metrics at intervals:
+
+```typescript
+import { MetricsReporter, scope } from 'go-go-scope'
+
+await using s = scope({ metrics: true })
+
+const reporter = new MetricsReporter(s, {
+  format: 'prometheus',
+  interval: 60000,  // Report every minute
+  onExport: async (data) => {
+    // Send to your monitoring system
+    await fetch('http://your-metrics-endpoint', {
+      method: 'POST',
+      body: data,
+      headers: { 'Content-Type': 'text/plain' }
+    })
+  }
+})
+
+// Reporter starts automatically
+// Stop when done
+reporter.stop()
+```
+
+### Exposing Metrics Endpoint
+
+For Prometheus scraping, expose an HTTP endpoint:
+
+```typescript
+import { createServer } from 'http'
+import { exportMetrics, scope } from 'go-go-scope'
+
+// Create scope
+const s = scope({ metrics: true })
+
+// Create metrics server
+const server = createServer((req, res) => {
+  if (req.url === '/metrics') {
+    const metrics = s.metrics()
+    if (metrics) {
+      const output = exportMetrics(metrics, {
+        format: 'prometheus',
+        prefix: 'goscope'
+      })
+      res.writeHead(200, { 'Content-Type': 'text/plain' })
+      res.end(output)
+    } else {
+      res.writeHead(503)
+      res.end('Metrics not available')
+    }
+  } else {
+    res.writeHead(404)
+    res.end('Not found')
+  }
+})
+
+server.listen(9095)
+console.log('Metrics available at http://localhost:9095/metrics')
+```
+
+### Complete Example
+
+See [examples/prometheus-metrics.ts](../examples/prometheus-metrics.ts) for a complete working example.
+
+Run it with:
+
+```bash
+npm run prometheus:up      # Start Prometheus & Grafana
+npm run example:prometheus # Run the example
+```
+
+---
+
+## Grafana
+
+Visualize go-go-scope metrics in Grafana.
+
+### Default Dashboard
+
+When you start the monitoring stack with `npm run prometheus:up`, a default dashboard is provisioned with the following panels:
+
+#### Task Metrics
+- **Tasks Spawned/Completed/Failed** - Rate of task execution
+- **Task Duration** - Average and P95 duration over time
+- **Task Success Rate** - Percentage of successful tasks
+
+#### Resource Metrics
+- **Resources Registered/Disposed** - Cleanup tracking
+- **Active Resources** - Difference between registered and disposed
+
+#### Scope Metrics
+- **Scope Lifetime** - How long scopes are running
+- **Concurrent Tasks** - Current concurrency level
+
+### Custom Dashboard
+
+Create your own dashboard by importing the following JSON model:
+
+```json
+{
+  "dashboard": {
+    "title": "go-go-scope Metrics",
+    "panels": [
+      {
+        "title": "Tasks per Second",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(goscope_tasks_completed_total[5m])",
+            "legendFormat": "Tasks/sec"
+          }
+        ]
+      },
+      {
+        "title": "Task Duration",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "goscope_task_duration_avg_seconds",
+            "legendFormat": "Average"
+          },
+          {
+            "expr": "goscope_task_duration_p95_seconds",
+            "legendFormat": "P95"
+          }
+        ]
+      },
+      {
+        "title": "Error Rate",
+        "type": "singlestat",
+        "targets": [
+          {
+            "expr": "rate(goscope_tasks_failed_total[5m]) / rate(goscope_tasks_spawned_total[5m])",
+            "legendFormat": "Error Rate"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Accessing Grafana
+
+1. Start the monitoring stack:
+   ```bash
+   npm run monitoring:up
+   ```
+
+2. Open Grafana: http://localhost:3001
+
+3. Login with:
+   - Username: `admin`
+   - Password: `admin`
+
+4. Navigate to **Dashboards > Manage** to see provisioned dashboards
+
+### Alerting
+
+Set up alerts for important metrics:
+
+#### High Error Rate
+```yaml
+alert: HighTaskErrorRate
+expr: rate(goscope_tasks_failed_total[5m]) / rate(goscope_tasks_spawned_total[5m]) > 0.1
+for: 5m
+labels:
+  severity: warning
+annotations:
+  summary: "High task error rate detected"
+```
+
+#### Slow Tasks
+```yaml
+alert: SlowTasks
+expr: goscope_task_duration_p95_seconds > 5
+for: 5m
+labels:
+  severity: warning
+annotations:
+  summary: "P95 task duration exceeds 5 seconds"
+```
+
+#### Resource Leak
+```yaml
+alert: PotentialResourceLeak
+expr: goscope_resources_registered_total - goscope_resources_disposed_total > 100
+for: 10m
+labels:
+  severity: critical
+annotations:
+  summary: "Resources may be leaking"
+```
+
+### Stopping the Stack
+
+```bash
+npm run monitoring:down
 ```

@@ -211,3 +211,122 @@ export interface PollController {
 		nextPollTime?: number;
 	};
 }
+
+/**
+ * Options for select() with timeout support
+ */
+export interface SelectOptions {
+	/** Timeout in milliseconds */
+	timeout?: number;
+}
+
+/**
+ * Logger interface for structured logging integration
+ */
+export interface Logger {
+	debug(message: string, ...args: unknown[]): void;
+	info(message: string, ...args: unknown[]): void;
+	warn(message: string, ...args: unknown[]): void;
+	error(message: string, ...args: unknown[]): void;
+}
+
+/**
+ * Options for scope with logging
+ */
+export interface ScopeLoggingOptions {
+	/** Logger instance */
+	logger?: Logger;
+	/** Minimum log level */
+	logLevel?: "debug" | "info" | "warn" | "error";
+}
+
+/**
+ * Deadlock detection configuration
+ */
+export interface DeadlockDetectionOptions {
+	/** Timeout in milliseconds before warning about potential deadlock */
+	timeout: number;
+	/** Callback when potential deadlock is detected */
+	onDeadlock?: (waitingTasks: string[]) => void;
+}
+
+/**
+ * Resource pool configuration
+ */
+export interface ResourcePoolOptions<T> {
+	/** Factory function to create a resource */
+	create: () => Promise<T>;
+	/** Cleanup function to destroy a resource */
+	destroy: (resource: T) => Promise<void> | void;
+	/** Minimum number of resources to maintain */
+	min?: number;
+	/** Maximum number of resources */
+	max: number;
+	/** Maximum time to wait for a resource (ms) */
+	acquireTimeout?: number;
+}
+
+/**
+ * Metrics export format options
+ */
+export interface MetricsExportOptions {
+	/** Export format */
+	format: "json" | "prometheus" | "otel";
+	/** Scope name prefix for metrics */
+	prefix?: string;
+	/** Include timestamps (default: true). Set to false for Prometheus Pushgateway. */
+	includeTimestamps?: boolean;
+}
+
+/**
+ * Parallel execution with error aggregation
+ */
+export interface ParallelAggregateResult<T> {
+	/** Results that completed successfully */
+	completed: { index: number; value: T }[];
+	/** Errors that occurred */
+	errors: { index: number; error: unknown }[];
+	/** Whether all tasks completed */
+	allCompleted: boolean;
+}
+
+/**
+ * Task profiling information
+ */
+export interface TaskProfile {
+	/** Task name */
+	name: string;
+	/** Task index */
+	index: number;
+	/** Time spent in each pipeline stage (ms) */
+	stages: {
+		circuitBreaker?: number;
+		concurrency?: number;
+		retry?: number;
+		timeout?: number;
+		execution: number;
+	};
+	/** Total duration (ms) */
+	totalDuration: number;
+	/** Number of retry attempts */
+	retryAttempts: number;
+	/** Whether task succeeded */
+	succeeded: boolean;
+}
+
+/**
+ * Profile report for a scope
+ */
+export interface ScopeProfileReport {
+	/** Per-task profiles */
+	tasks: TaskProfile[];
+	/** Aggregated statistics */
+	statistics: {
+		totalTasks: number;
+		successfulTasks: number;
+		failedTasks: number;
+		avgTotalDuration: number;
+		avgExecutionDuration: number;
+		totalRetryAttempts: number;
+	};
+}

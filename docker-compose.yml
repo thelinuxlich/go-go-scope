@@ -8,3 +8,58 @@ services:
     environment:
       - COLLECTOR_OTLP_ENABLED=true
     restart: unless-stopped
+    networks:
+      - go-go-scope
+
+  prometheus:
+    image: prom/prometheus:v3.4.0
+    container_name: go-go-scope-prometheus
+    ports:
+      - "9091:9090" # Prometheus UI (mapped to 9091 to avoid conflicts)
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - go-go-scope
+
+  pushgateway:
+    image: prom/pushgateway:v1.11.1
+    container_name: go-go-scope-pushgateway
+    ports:
+      - "9092:9091" # Pushgateway (mapped to 9092 to avoid conflicts)
+    restart: unless-stopped
+    networks:
+      - go-go-scope
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    container_name: go-go-scope-grafana
+    ports:
+      - "3001:3000" # Grafana UI (mapped to 3001 to avoid conflicts)
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - go-go-scope
+
+volumes:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  go-go-scope:
+    driver: bridge

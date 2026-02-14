@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Pushgateway for short-lived batch jobs
+  - job_name: 'pushgateway'
+    honor_labels: true
+    static_configs:
+      - targets: ['pushgateway:9091']
+
+  # For long-running applications that expose /metrics
+  # Use this if your app runs in the same Docker network
+  - job_name: 'go-go-scope-app'
+    static_configs:
+      - targets: ['host.docker.internal:9095']
+    metrics_path: /metrics

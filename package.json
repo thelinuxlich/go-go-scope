@@ -1,18 +1,30 @@
 {
 	"name": "go-go-scope",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"description": "Structured concurrency for TypeScript using Explicit Resource Management",
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.mjs",
 	"types": "./dist/index.d.mts",
 	"exports": {
-		"require": {
-			"types": "./dist/index.d.cts",
-			"default": "./dist/index.cjs"
+		".": {
+			"require": {
+				"types": "./dist/index.d.cts",
+				"default": "./dist/index.cjs"
+			},
+			"import": {
+				"types": "./dist/index.d.mts",
+				"default": "./dist/index.mjs"
+			}
 		},
-		"import": {
-			"types": "./dist/index.d.mts",
-			"default": "./dist/index.mjs"
+		"./testing": {
+			"require": {
+				"types": "./dist/testing/index.d.cts",
+				"default": "./dist/testing/index.cjs"
+			},
+			"import": {
+				"types": "./dist/testing/index.d.mts",
+				"default": "./dist/testing/index.mjs"
+			}
 		}
 	},
 	"type": "module",
@@ -21,9 +33,16 @@
 		"lint": "biome check --write src/",
 		"test": "npm run build && npm run lint && vitest run",
 		"test:watch": "vitest",
-		"jaeger:up": "docker compose up -d",
-		"jaeger:down": "docker compose down",
+		"benchmark": "npm run build && node --experimental-strip-types benchmarks/index.ts",
+		"jaeger:up": "docker compose up -d jaeger",
+		"jaeger:down": "docker compose down jaeger",
 		"example:jaeger": "npm run build && node examples/jaeger-tracing.ts",
+		"prometheus:up": "docker compose up -d prometheus pushgateway grafana",
+		"prometheus:down": "docker compose down prometheus pushgateway grafana",
+		"example:prometheus": "npm run build && node --experimental-strip-types examples/prometheus-metrics.ts",
+		"example:prometheus:push": "npm run build && node --experimental-strip-types examples/prometheus-push.ts",
+		"monitoring:up": "docker compose up -d",
+		"monitoring:down": "docker compose down",
 		"prepublishOnly": "npm test",
 		"publish:patch": "npm version patch && npm publish",
 		"publish:minor": "npm version minor && npm publish",

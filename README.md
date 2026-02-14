@@ -53,8 +53,31 @@ Requires TypeScript 5.2+ and `ESNext.Disposable` lib.
 | [📖 Quick Start](./docs/01-quick-start.md) | Get started in 5 minutes |
 | [🧠 Core Concepts](./docs/02-concepts.md) | Learn structured concurrency |
 | [📚 API Reference](./docs/03-api-reference.md) | Complete API docs |
-| [🚀 Advanced Features](./docs/04-advanced-features.md) | Channels, circuit breakers |
+| [🚀 Advanced Features](./docs/04-advanced-features.md) | Channels, circuit breakers, pools, profiling |
 | [⚖️ Comparisons](./docs/05-comparisons.md) | vs Vanilla JS, vs Effect |
+| [🔌 Integrations](./docs/06-integrations.md) | OpenTelemetry, logging, metrics |
+
+## Features
+
+- ✅ **Structured Concurrency** - Tasks are bound to scopes, auto-cancelled on exit
+- ✅ **Resource Management** - Automatic cleanup via `using`/`await using`
+- ✅ **Cancellation** - Propagate cancellation through parent-child scope chains
+- ✅ **Timeout Handling** - Built-in timeout with automatic cleanup
+- ✅ **Channels** - Go-style buffered channels for task communication
+- ✅ **Broadcast** - Pub/sub pattern for multi-consumer scenarios
+- ✅ **Circuit Breaker** - Prevent cascading failures
+- ✅ **Retry Logic** - Configurable retries with exponential backoff
+- ✅ **Concurrency Limits** - Semaphore-based rate limiting
+- ✅ **Resource Pools** - Managed connection/worker pools
+- ✅ **Debouncing & Throttling** - Rate-limit function execution
+- ✅ **Polling** - Auto-refresh with start/stop control
+- ✅ **Stream Processing** - Async iterable wrapper with cancellation
+- ✅ **Metrics** - Performance monitoring with Prometheus/JSON export
+- ✅ **Task Profiling** - Detailed execution time breakdown
+- ✅ **Deadlock Detection** - Warn on potential deadlocks
+- ✅ **Structured Logging** - Integration with logging systems
+- ✅ **OpenTelemetry** - Distributed tracing support
+- ✅ **Test Utilities** - Mock scopes, spies, and timers
 
 ## Why go-go-scope?
 
