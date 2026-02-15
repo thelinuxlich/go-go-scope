@@ -555,13 +555,18 @@ test('should fetch user', async () => {
 
 ---
 
-### `scope.race(factories)`
+### `scope.race(factories, options?)`
 
 Race multiple operations - first to complete wins, others are cancelled. Uses the scope's signal for cancellation.
 
 ```typescript
 race<T>(
-  factories: readonly ((signal: AbortSignal) => Promise<T>)[]
+  factories: readonly ((signal: AbortSignal) => Promise<T>)[],
+  options?: {
+    requireSuccess?: boolean
+    timeout?: number
+    concurrency?: number
+  }
 ): Promise<Result<unknown, T>>
 ```
 
@@ -570,18 +575,43 @@ race<T>(
 | Name | Type | Description |
 |------|------|-------------|
 | `factories` | Array of functions | Each receives an `AbortSignal` and returns a `Promise` |
+| `options.requireSuccess` | `boolean` | Only successful results count as winners (default: false) |
+| `options.timeout` | `number` | Timeout in milliseconds |
+| `options.concurrency` | `number` | Max concurrent tasks (default: unlimited) |
 
 **Returns:** `Promise<Result<unknown, T>>` - Result tuple of the winner
 
-**Example:**
+**Examples:**
 
 ```typescript
 await using s = scope()
 
+// Basic race - first to settle wins (success or error)
 const [err, winner] = await s.race([
   ({ signal }) => fetch('https://fast.com', { signal }),
   ({ signal }) => fetch('https://slow.com', { signal }),
 ])
+
+// Race with timeout
+const [err, winner] = await s.race([
+  ({ signal }) => fetch('https://slow.com', { signal }),
+  ({ signal }) => fetch('https://fast.com', { signal }),
+], { timeout: 5000 })
+
+// Race for first success only (errors continue racing)
+const [err, winner] = await s.race([
+  () => fetchWithRetry('https://a.com'),  // might fail then retry
+  () => fetchWithRetry('https://b.com'),  // might fail then retry
+], { requireSuccess: true })
+
+// Race with limited concurrency (process 2 at a time)
+const [err, winner] = await s.race([
+  () => fetch(url1),  // starts immediately
+  () => fetch(url2),  // starts immediately
+  () => fetch(url3),  // starts when 1 or 2 fails (if requireSuccess)
+  () => fetch(url4),  // starts when next slot opens
+  () => fetch(url5),
+], { concurrency: 2, requireSuccess: true })
 
 if (err) {
   console.log('All racers failed:', err)
@@ -626,7 +656,7 @@ parallel<T>(
 ```typescript
 await using s = scope({ concurrency: 3 })
 
-// Basic usage
+// Basic usage - stops on first error, returns collected results
 const result = await s.parallel([
   () => fetchUser(1),  // might fail
   () => fetchUser(2),  // might fail
@@ -635,6 +665,12 @@ const result = await s.parallel([
 
 console.log(`Completed: ${result.completed.length}`)
 console.log(`Failed: ${result.errors.length}`)
+
+// continueOnError: process all tasks regardless of errors
+const result = await s.parallel(
+  urls.map(url => () => fetch(url)),
+  { continueOnError: true }
+)
 
 // With progress tracking and per-call concurrency
 const result = await s.parallel(
@@ -1529,10 +1565,30 @@ Race multiple operations without a scope.
 ```typescript
 import { race } from 'go-go-scope'
 
+// Basic race
 const [err, winner] = await race([
   ({ signal }) => fetch('https://fast.com', { signal }),
   ({ signal }) => fetch('https://slow.com', { signal }),
+])
+
+// With timeout
+const [err, winner] = await race([
+  ({ signal }) => fetch('https://slow.com', { signal }),
+  ({ signal }) => fetch('https://fast.com', { signal }),
 ], { timeout: 5000 })
+
+// Race for first success only
+const [err, winner] = await race([
+  () => fetchWithRetry('https://a.com'),
+  () => fetchWithRetry('https://b.com'),
+], { requireSuccess: true })
+
+// With limited concurrency
+const [err, winner] = await race([
+  () => fetch(url1),
+  () => fetch(url2),
+  () => fetch(url3),
+], { concurrency: 2 })
 ```
 
 ### `parallel(factories, options?)`

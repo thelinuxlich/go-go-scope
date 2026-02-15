@@ -1502,19 +1502,58 @@ export class Scope<
 	 * Returns a Result tuple [error, value] - never throws.
 	 *
 	 * @param factories - Array of factory functions that create promises
+	 * @param options - Optional race configuration
 	 * @returns A Promise that resolves to a Result tuple of the first settled task
+	 *
+	 * @example
+	 * ```typescript
+	 * // Basic race - first to settle wins
+	 * const [err, winner] = await s.race([
+	 *   () => fetch('https://a.com'),
+	 *   () => fetch('https://b.com'),
+	 * ])
+	 *
+	 * // Race with timeout
+	 * const [err, winner] = await s.race([
+	 *   () => fetch('https://slow.com'),
+	 *   () => fetch('https://fast.com'),
+	 * ], { timeout: 5000 })
+	 *
+	 * // Race for first success only
+	 * const [err, winner] = await s.race([
+	 *   () => fetchWithRetry('https://a.com'),
+	 *   () => fetchWithRetry('https://b.com'),
+	 * ], { requireSuccess: true })
+	 * ```
 	 */
 	async race<T>(
 		factories: readonly ((signal: AbortSignal) => Promise<T>)[],
+		options?: {
+			/** Only count successful results as winners */
+			requireSuccess?: boolean;
+			/** Timeout in milliseconds */
+			timeout?: number;
+			/** Maximum concurrent tasks (default: unlimited) */
+			concurrency?: number;
+		},
 	): Promise<Result<unknown, T>> {
 		const totalTasks = factories.length;
+		const requireSuccess = options?.requireSuccess ?? false;
+		const timeout = options?.timeout;
+		const concurrency = options?.concurrency ?? 0;
 
 		if (totalTasks === 0) {
 			return [new Error("Cannot race empty array of factories"), undefined];
 		}
 
 		if (debugScope.enabled) {
-			debugScope("[race] starting race with %d competitors", totalTasks);
+			debugScope(
+				"[race] starting race with %d competitors (requireSuccess: %s, timeout: %s, concurrency: %s)",
+				totalTasks,
+				requireSuccess,
+				timeout ?? "none",
+				concurrency > 0 ? concurrency : "unlimited",
+			);
 		}
 
 		// Check if signal is already aborted
@@ -1527,7 +1566,22 @@ export class Scope<
 
 		const s = new Scope({ signal: this.signal, tracer: this.tracer });
 		let settledCount = 0;
+		let successCount = 0;
 		let winnerIndex = -1;
+		const errors: { index: number; error: unknown }[] = [];
+
+		// Helper to create aggregate error
+		const createAggregateError = (errs: unknown[]): Error => {
+			if (typeof AggregateError !== "undefined") {
+				return new AggregateError(errs, "All race competitors failed");
+			}
+			return new Error(`All race competitors failed (${errs.length} errors)`);
+		};
+
+		// Type guard for Result tuple
+		const isResultTuple = (value: unknown): value is Result<unknown, T> => {
+			return Array.isArray(value) && value.length === 2;
+		};
 
 		try {
 			// Create abort promise that returns error as Result
@@ -1548,47 +1602,208 @@ export class Scope<
 				);
 			});
 
-			const debugEnabled = debugScope.enabled;
-			// Spawn all tasks with tracking
-			const tasks = factories.map((factory, idx) =>
-				s
-					.task(async ({ signal }) => {
-						const result = await factory(signal);
-						settledCount++;
-						if (winnerIndex === -1) {
-							winnerIndex = idx;
-							if (debugEnabled) {
-								debugScope(
-									"[race] winner! task %d/%d won the race",
-									idx + 1,
-									totalTasks,
-								);
+			// Create timeout promise if timeout is specified
+			const timeoutPromise = timeout
+				? new Promise<never>((_, reject) => {
+						setTimeout(() => {
+							if (debugScope.enabled) {
+								debugScope("[race] timeout after %dms", timeout);
 							}
-						} else if (debugEnabled) {
-							debugScope(
-								"[race] task %d/%d settled (loser)",
-								idx + 1,
-								totalTasks,
-							);
-						}
-						return result;
+							reject(new Error(`Race timeout after ${timeout}ms`));
+						}, timeout);
 					})
-					.then(([err, result]): Result<unknown, T> => {
-						if (err) return [err, undefined];
-						return [undefined, result as T];
-					}),
-			);
+				: null;
 
-			// Race all tasks against abort
-			const result = await Promise.race([...tasks, abortPromise]);
-			if (debugEnabled) {
-				debugScope(
-					"[race] race complete, winner was task %d/%d",
-					winnerIndex + 1,
-					totalTasks,
+			const debugEnabled = debugScope.enabled;
+
+			// Helper to process a single task
+			const processTask = async (
+				factory: (signal: AbortSignal) => Promise<T>,
+				idx: number,
+			): Promise<{ idx: number; result: Result<unknown, T> }> => {
+				const result = await s.task(async ({ signal }) => {
+					const r = await factory(signal);
+					settledCount++;
+					return r;
+				});
+				const [err, value] = result;
+
+				if (err) {
+					errors.push({ index: idx, error: err });
+					if (debugEnabled) {
+						debugScope("[race] task %d/%d failed", idx + 1, totalTasks);
+					}
+					return { idx, result: [err, undefined] };
+				}
+
+				// Success case
+				successCount++;
+				if (winnerIndex === -1) {
+					winnerIndex = idx;
+					if (debugEnabled) {
+						debugScope(
+							"[race] winner! task %d/%d won the race",
+							idx + 1,
+							totalTasks,
+						);
+					}
+				} else if (debugEnabled) {
+					debugScope("[race] task %d/%d settled (loser)", idx + 1, totalTasks);
+				}
+
+				return { idx, result: [undefined, value as T] };
+			};
+
+			// If no concurrency limit, run all tasks at once
+			if (concurrency <= 0 || concurrency >= totalTasks) {
+				// Spawn all tasks with tracking
+				const tasks = factories.map((factory, idx) =>
+					processTask(factory, idx),
 				);
+
+				// Race all tasks with optional timeout
+				const racePromise = timeoutPromise
+					? Promise.race([Promise.race(tasks), timeoutPromise])
+					: Promise.race([...tasks, abortPromise]);
+
+				const winner = await racePromise;
+
+				if (debugEnabled) {
+					if (isResultTuple(winner)) {
+						debugScope("[race] ended with error: %s", winner[0]);
+					} else {
+						debugScope(
+							"[race] race complete, winner was task %d/%d",
+							winner.idx + 1,
+							totalTasks,
+						);
+					}
+				}
+
+				// If it's a direct Result (from abort/timeout), return it
+				if (isResultTuple(winner)) {
+					return winner;
+				}
+
+				// If requireSuccess and the winner is an error, we need to keep racing
+				if (requireSuccess && winner.result[0]) {
+					if (debugEnabled) {
+						debugScope("[race] first finisher failed, waiting for success...");
+					}
+
+					// Wait for remaining tasks
+					const remainingResults = await Promise.all(tasks);
+
+					// Find first success
+					const firstSuccess = remainingResults.find((r) => !r.result[0]);
+					if (firstSuccess) {
+						return firstSuccess.result;
+					}
+
+					// All failed
+					if (errors.length === totalTasks) {
+						return [
+							createAggregateError(errors.map((e) => e.error)),
+							undefined,
+						];
+					}
+
+					return winner.result;
+				}
+
+				return winner.result;
 			}
-			return result;
+
+			// With concurrency limit - run tasks in batches
+			if (debugEnabled) {
+				debugScope("[race] running with concurrency limit: %d", concurrency);
+			}
+
+			let currentIndex = 0;
+			const runningTasks: Promise<{
+				idx: number;
+				result: Result<unknown, T>;
+			}>[] = [];
+			const taskIdxMap = new Map<
+				Promise<{ idx: number; result: Result<unknown, T> }>,
+				number
+			>();
+
+			// Start initial batch
+			const initialBatch = Math.min(concurrency, totalTasks);
+			for (let i = 0; i < initialBatch; i++) {
+				const task = processTask(factories[currentIndex]!, currentIndex);
+				runningTasks.push(task);
+				taskIdxMap.set(task, currentIndex);
+				currentIndex++;
+			}
+
+			// Keep racing until we have a winner
+			while (runningTasks.length > 0) {
+				// Build race competitors for this iteration
+				const competitors: Promise<
+					{ idx: number; result: Result<unknown, T> } | Result<unknown, T>
+				>[] = [...runningTasks, abortPromise];
+				if (timeoutPromise) {
+					competitors.push(timeoutPromise as Promise<never>);
+				}
+
+				// Race current batch
+				const winner = await Promise.race(competitors);
+
+				// If it's a direct Result (from abort/timeout), return it
+				if (isResultTuple(winner)) {
+					return winner;
+				}
+
+				// Find and remove the finished task
+				const finishedTaskIdx = runningTasks.findIndex(
+					(t) => taskIdxMap.get(t) === winner.idx,
+				);
+				if (finishedTaskIdx >= 0) {
+					const finishedTask = runningTasks[finishedTaskIdx]!;
+					runningTasks.splice(finishedTaskIdx, 1);
+					taskIdxMap.delete(finishedTask);
+				}
+
+				// Check if this is a valid winner
+				if (!requireSuccess || !winner.result[0]) {
+					if (debugEnabled) {
+						debugScope(
+							"[race] winner! task %d/%d won the race",
+							winner.idx + 1,
+							totalTasks,
+						);
+					}
+					return winner.result;
+				}
+
+				// Winner was an error and requireSuccess is true - need to continue
+				if (debugEnabled) {
+					debugScope(
+						"[race] task %d/%d failed (requireSuccess), starting next...",
+						winner.idx + 1,
+						totalTasks,
+					);
+				}
+
+				// Start next task if available
+				if (currentIndex < totalTasks) {
+					const nextTask = processTask(factories[currentIndex]!, currentIndex);
+					runningTasks.push(nextTask);
+					taskIdxMap.set(nextTask, currentIndex);
+					currentIndex++;
+				} else if (runningTasks.length === 0) {
+					// No more tasks to start and none running - all failed
+					if (debugEnabled) {
+						debugScope("[race] all tasks failed");
+					}
+					return [createAggregateError(errors.map((e) => e.error)), undefined];
+				}
+			}
+
+			// Should not reach here, but just in case
+			return [createAggregateError(errors.map((e) => e.error)), undefined];
 		} finally {
 			// Clean up scope - cancels all tasks
 			await s[Symbol.asyncDispose]();

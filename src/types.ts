@@ -283,6 +283,22 @@ export interface RaceOptions {
 	 * Optional tracer for OpenTelemetry integration.
 	 */
 	tracer?: Tracer;
+	/**
+	 * If true, only successful results count as winners. Errors continue racing.
+	 * If false (default), first settled task wins regardless of success/error.
+	 */
+	requireSuccess?: boolean;
+	/**
+	 * Optional timeout in milliseconds. If no task wins within this time,
+	 * the race fails with a timeout error.
+	 */
+	timeout?: number;
+	/**
+	 * Optional concurrency limit. If specified, only this many tasks will run
+	 * at a time. When a task fails (and requireSuccess is true), the next
+	 * task in the queue will be started.
+	 */
+	concurrency?: number;
 }
 
 /**

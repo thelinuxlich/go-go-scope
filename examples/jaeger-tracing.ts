@@ -87,7 +87,7 @@ console.log("2️⃣  Running parallel tasks with concurrency=2...");
 {
 	await using s = scope({ tracer, name: "parallel-tasks", concurrency: 2 });
 
-	const tasks = await s.parallel([
+	const parallelResult = await s.parallel([
 		async () => {
 			await delay(50);
 			return "Task 1";
@@ -106,8 +106,11 @@ console.log("2️⃣  Running parallel tasks with concurrency=2...");
 		},
 	]);
 
-	tasks.forEach(([err, result], i) => {
-		console.log(`   Task ${i + 1}: ${err ? "Error" : result}`);
+	parallelResult.completed.forEach(({ index, value }) => {
+		console.log(`   Task ${index + 1}: ${value}`);
+	});
+	parallelResult.errors.forEach(({ index, error }) => {
+		console.log(`   Task ${index + 1}: Error - ${error}`);
 	});
 }
 
