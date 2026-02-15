@@ -16,6 +16,8 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.override(key, factory, cleanup?)`](#scopeoverridekey-factory-cleanup)
   - [`scope.race(factories)`](#scoperacefactories)
   - [`scope.parallel(factories, options?)`](#scopeparallelfactories-options)
+  - [`scope.parallel() vs scope.batch()`](#scopeparallel-vs-scopebatch---when-to-use-each)
+  - [`scope.batch(items, options)`](#scopebatchitems-options)
   - [`scope.channel(capacity?)`](#scopechannelcapacity)
   - [`scope.stream(source)`](#scopestreamsource)
   - [`scope.poll(fn, onValue, options?)`](#scopepollfn-onvalue-options)
@@ -636,6 +638,115 @@ try {
   ], { failFast: true })
 } catch (e) {
   // e is the Error
+}
+```
+
+---
+
+### `scope.parallel()` vs `scope.batch()` - When to Use Each
+
+| Feature | `parallel()` | `batch()` |
+|---------|--------------|-----------|
+| **Input** | Array of factory functions | Array of items + process function |
+| **Best for** | Different async operations | Same operation on many items |
+| **Progress tracking** | ❌ No | ✅ Yes (`onProgress` callback) |
+| **Continue on error** | ❌ No | ✅ Yes (`continueOnError` option) |
+| **Result structure** | `Result[]` (by index) | `{ successful[], failed[], total, completed }` |
+| **Access to original item** | ❌ Index only | ✅ Yes (in results) |
+
+**Use `parallel()` when:**
+- Running different types of operations (e.g., fetch user, fetch orders, fetch settings)
+- Each task is independent and unique
+- You don't need progress tracking
+- You want simple `Result[]` output
+
+```typescript
+// Different operations
+const [userResult, orderResult, statsResult] = await s.parallel([
+  () => fetchUser(id),
+  () => fetchOrders(userId),
+  () => calculateStats()
+])
+```
+
+**Use `batch()` when:**
+- Running the same operation on many items (e.g., process 1000 files)
+- You need progress tracking for UI feedback
+- You want to continue even if some items fail
+- You need to know exactly which items succeeded/failed
+
+```typescript
+// Same operation on many items
+const results = await s.batch(urls, {
+  process: (url) => fetch(url),
+  concurrency: 5,
+  onProgress: (completed, total) => console.log(`${completed}/${total}`),
+  continueOnError: true
+})
+
+// Know exactly what failed
+for (const { item, index, error } of results.failed) {
+  console.log(`URL ${item} at index ${index} failed:`, error)
+}
+```
+
+---
+
+### `scope.batch(items, options)`
+
+Process an array of items with concurrency control, progress tracking, and error handling.
+
+```typescript
+batch<T, R>(
+  items: readonly T[],
+  options: {
+    process: (item: T, index: number) => Promise<R>
+    concurrency?: number
+    onProgress?: (completed: number, total: number, result: Result<unknown, R>) => void
+    continueOnError?: boolean
+  }
+): Promise<BatchResult<T, R>>
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `items` | `readonly T[]` | Array of items to process |
+| `options.process` | Function | Process function receiving `(item, index)` |
+| `options.concurrency` | `number` | Max concurrent operations (default: unlimited) |
+| `options.onProgress` | Function | Called after each item completes |
+| `options.continueOnError` | `boolean` | Continue processing on error (default: false) |
+
+**Returns:** `Promise<BatchResult<T, R>>` with:
+- `successful`: Array of `{ item, index, result }` for successful items
+- `failed`: Array of `{ item, index, error }` for failed items
+- `total`: Total number of items
+- `completed`: Number successfully processed
+- `errors`: Number that failed
+- `allSuccessful`: Boolean indicating if all succeeded
+
+**Example:**
+
+```typescript
+await using s = scope({ concurrency: 5 })
+
+const results = await s.batch(urls, {
+  process: (url) => fetch(url).then(r => r.json()),
+  concurrency: 5,
+  onProgress: (completed, total) => {
+    updateProgressBar((completed / total) * 100)
+  },
+  continueOnError: true
+})
+
+console.log(`✓ ${results.completed}/${results.total} URLs fetched`)
+
+if (results.failed.length > 0) {
+  console.log('Failed URLs:')
+  for (const { item: url, error } of results.failed) {
+    console.log(`  - ${url}: ${error.message}`)
+  }
 }
 ```
 

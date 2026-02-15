@@ -15,6 +15,21 @@ Common patterns and solutions using go-go-scope.
 
 ---
 
+## Choosing Between `parallel()` and `batch()`
+
+Many recipes involve running multiple operations. Use this guide to choose the right method:
+
+| If you need... | Use... | Example |
+|----------------|--------|---------|
+| Different operations | `parallel()` | `parallel([fetchUser, fetchOrders, fetchSettings])` |
+| Same operation on many items | `batch()` | `batch(urls, { process: fetch })` |
+| Progress tracking | `batch()` | `batch(items, { onProgress: () => {} })` |
+| Continue after errors | `batch()` | `batch(items, { continueOnError: true })` |
+| Simple result array | `parallel()` | `const [err1, err2] = await parallel([...])` |
+| Detailed success/failure info | `batch()` | `results.successful[]` and `results.failed[]` |
+
+---
+
 ## HTTP Client with Retry
 
 A resilient HTTP client with automatic retries and exponential backoff.
