@@ -33,13 +33,20 @@ interface TaskProfileData {
  * console.log(report.statistics.avgTotalDuration)
  * ```
  */
-export class Profiler {
+export class Profiler implements Disposable {
 	private tasks: Map<number, TaskProfileData> = new Map();
 	private profiles: TaskProfile[] = [];
 	enabled = false;
 
-	constructor(enabled = false) {
+	constructor(
+		enabled = false,
+		scope?: { registerDisposable(disposable: Disposable): void },
+	) {
 		this.enabled = enabled;
+		// Auto-register with scope if enabled and scope provided
+		if (enabled && scope) {
+			scope.registerDisposable(this);
+		}
 	}
 
 	/**
@@ -182,5 +189,12 @@ export class Profiler {
 	clear(): void {
 		this.tasks.clear();
 		this.profiles = [];
+	}
+
+	/**
+	 * Dispose the profiler when scope is disposed.
+	 */
+	[Symbol.dispose](): void {
+		this.clear();
 	}
 }

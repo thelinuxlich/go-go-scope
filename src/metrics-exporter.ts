@@ -196,18 +196,25 @@ export interface MetricsReporterOptions extends MetricsExportOptions {
 	onExport: (data: string) => void | Promise<void>;
 }
 
-export class MetricsReporter {
+export class MetricsReporter implements Disposable {
 	private intervalId?: ReturnType<typeof setInterval>;
 	private scope: { metrics(): ScopeMetrics | undefined };
 	private options: MetricsReporterOptions;
 
 	constructor(
-		scope: { metrics(): ScopeMetrics | undefined },
+		scope: {
+			metrics(): ScopeMetrics | undefined;
+			registerDisposable?(disposable: Disposable): void;
+		},
 		options: MetricsReporterOptions,
 	) {
 		this.scope = scope;
 		this.options = options;
 		this.start();
+		// Auto-register with scope if method is available
+		if (scope.registerDisposable) {
+			scope.registerDisposable(this);
+		}
 	}
 
 	/**
@@ -258,5 +265,12 @@ export class MetricsReporter {
 	 */
 	dispose(): void {
 		this.stop();
+	}
+
+	/**
+	 * Dispose the reporter when scope is disposed.
+	 */
+	[Symbol.dispose](): void {
+		this.dispose();
 	}
 }

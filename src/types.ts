@@ -316,8 +316,9 @@ export interface PollOptions {
 /**
  * Controller for a polling operation.
  * Allows starting, stopping, and checking status.
+ * Automatically stops polling when disposed.
  */
-export interface PollController {
+export interface PollController extends Disposable {
 	/** Start or resume polling */
 	start(): void;
 	/** Stop polling */

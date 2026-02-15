@@ -225,11 +225,12 @@ export class Scope<
 			this.deadlockDetector = new DeadlockDetector(
 				options.deadlockDetection,
 				this.name,
+				this,
 			);
 		}
 
 		// Initialize profiler
-		this.profiler = new Profiler(options?.profiler ?? false);
+		this.profiler = new Profiler(options?.profiler ?? false, this);
 
 		// Inherit from parent scope if provided
 		const parent = options?.parent;
@@ -1493,6 +1494,7 @@ export class Scope<
 			start,
 			stop,
 			status,
+			[Symbol.dispose]: stop,
 		};
 	}
 

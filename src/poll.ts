@@ -204,6 +204,9 @@ function createPoll<T>(
 		start,
 		stop,
 		status,
+		[Symbol.dispose]: () => {
+			stop();
+		},
 	};
 }
 

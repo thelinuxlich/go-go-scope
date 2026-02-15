@@ -6,6 +6,7 @@ import type { DeadlockDetectionOptions } from "./types.js";
 
 /**
  * Tracks task waiting states to detect potential deadlocks.
+ * Automatically registered with scope for cleanup.
  *
  * @example
  * ```typescript
@@ -17,7 +18,7 @@ import type { DeadlockDetectionOptions } from "./types.js";
  * })
  * ```
  */
-export class DeadlockDetector {
+export class DeadlockDetector implements Disposable {
 	private waitingTasks: Map<
 		number,
 		{ name: string; waitingOn: string; since: number }
@@ -28,9 +29,14 @@ export class DeadlockDetector {
 	constructor(
 		options: DeadlockDetectionOptions,
 		private scopeName: string,
+		scope?: { registerDisposable(disposable: Disposable): void },
 	) {
 		this.options = options;
 		this.startMonitoring();
+		// Auto-register with scope if provided
+		if (scope) {
+			scope.registerDisposable(this);
+		}
 	}
 
 	/**
@@ -98,6 +104,13 @@ export class DeadlockDetector {
 			this.timeoutId = undefined;
 		}
 		this.waitingTasks.clear();
+	}
+
+	/**
+	 * Dispose the detector when scope is disposed.
+	 */
+	[Symbol.dispose](): void {
+		this.dispose();
 	}
 
 	/**
