@@ -111,7 +111,7 @@ async function simulateWorkload() {
 	const userIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 	await s.parallel(
 		userIds.map((id) => () => fetchUser(id)),
-		{ failFast: false },
+		{ continueOnError: true },
 	);
 
 	console.log("3️⃣ Running tasks with retry logic...");
