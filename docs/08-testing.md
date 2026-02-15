@@ -224,14 +224,15 @@ When services are injected via task context, override works seamlessly:
 
 ```typescript
 // Production code
+import { assert } from 'go-go-try'
+
 async function getUserWithRetry(userId: string, s: Scope) {
   const [err, user] = await s.task(
     ({ services }) => services.api.fetchUser(userId),
     { retry: { maxRetries: 3 } }
   )
   
-  if (err) throw err
-  return user
+  return assert(user, err)
 }
 
 describe('getUserWithRetry', () => {

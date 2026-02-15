@@ -55,6 +55,8 @@ async function fetchUser(id: string) {
 }
 
 // Exhaustive pattern matching with type narrowing
+import { assertNever } from 'go-go-try'
+
 const [err, user] = await fetchUser('123')
 if (err) {
   switch (err._tag) {
@@ -66,7 +68,7 @@ if (err) {
       break
     default:
       // Compile-time safety: TypeScript ensures all cases are handled
-      const _exhaustive: never = err
+      assertNever(err)
   }
 } else {
   console.log('Got user:', user.name)

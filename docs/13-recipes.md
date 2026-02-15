@@ -42,6 +42,7 @@ A resilient HTTP client with automatic retries and exponential backoff.
 
 ```typescript
 import { scope, exponentialBackoff } from 'go-go-scope'
+import { assert } from 'go-go-try'
 
 interface HttpClient {
   get<T>(url: string): Promise<T>
@@ -67,8 +68,7 @@ function createHttpClient(baseUrl: string): HttpClient {
         }
       )
 
-      if (err) throw err
-      return result!
+      return assert(result, err) // Returns result or throws
     },
 
     async post<T>(url: string, body: unknown): Promise<T> {
@@ -93,8 +93,7 @@ function createHttpClient(baseUrl: string): HttpClient {
         }
       )
 
-      if (err) throw err
-      return result!
+      return assert(result, err) // Returns result or throws
     }
   }
 }
@@ -160,6 +159,7 @@ Manage WebSocket connections with automatic reconnection.
 
 ```typescript
 import { scope, exponentialBackoff } from 'go-go-scope'
+import { assert } from 'go-go-try'
 
 class WebSocketManager {
   private messageHandlers: Array<(msg: unknown) => void> = []
@@ -192,27 +192,23 @@ class WebSocketManager {
       }
     )
 
-    if (err) throw err
+    // Assert success - throws if connection failed
+    const socket = assert(ws, err)
 
     // Keep alive with ping/pong
     s.poll(
       () => Promise.resolve(),
       () => {
-        if (ws!.readyState === WebSocket.OPEN) {
-          ws!.send(JSON.stringify({ type: 'ping' }))
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'ping' }))
         }
       },
       { interval: 30000 }
     )
 
     // Auto-cleanup on disconnect
-    s.task(async ({ signal }) => {
-      return new Promise((_, reject) => {
-        signal.addEventListener('abort', () => {
-          ws!.close()
-          reject(new Error('WebSocket closed'))
-        })
-      })
+    s.onDispose(() => {
+      socket.close()
     })
   }
 

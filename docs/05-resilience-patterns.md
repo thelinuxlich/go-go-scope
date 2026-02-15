@@ -317,6 +317,8 @@ async function fetchUser(id: string) {
 }
 
 // Usage with exhaustive pattern matching
+import { assertNever } from 'go-go-try'
+
 const [err, user] = await fetchUser('123')
 if (err) {
   switch (err._tag) {
@@ -327,8 +329,8 @@ if (err) {
       console.error('Network issue:', err.message)
       break
     default:
-      // Compile-time safety: TypeScript errors if any case is missing
-      const _exhaustive: never = err
+      // Compile-time safety: assertNever throws if any case is missing
+      assertNever(err)
   }
 } else {
   console.log('Got user:', user.name)

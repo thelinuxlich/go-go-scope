@@ -26,6 +26,7 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.broadcast()`](#scopebroadcast)
   - [`scope.pool(options)`](#scopepooloptions)
   - [`scope.getProfileReport()`](#scopegetprofilereport)
+  - [`scope.onDispose(callback)`](#scopeondisposecallback)
 - [Types](#types)
   - [Result](#result)
   - [ScopeHooks](#scopehooks)
@@ -370,6 +371,8 @@ provide<K extends string, T>(
 **Example:**
 
 ```typescript
+import { assert } from 'go-go-try'
+
 await using s = scope()
   .provide('db', () => openDatabase(), (db) => db.close())
   .provide('cache', () => createCache())
@@ -379,8 +382,7 @@ const [err, result] = await s.task(({ services }) => {
   return services.db.query('SELECT 1')
 })
 
-if (err) throw err
-return result
+return assert(result, err)
 ```
 
 **Note:** Resources are disposed in LIFO order (reverse of creation).
@@ -1293,6 +1295,40 @@ for (const task of report.tasks) {
   console.log(`  Execution: ${task.stages.execution.toFixed(2)}ms`)
   console.log(`  Retry: ${task.stages.retry?.toFixed(2) ?? 'N/A'}ms`)
 }
+```
+
+---
+
+### `scope.onDispose(callback)`
+
+Registers a callback to run when the scope is disposed. Useful for registering cleanup handlers without creating a Task.
+
+```typescript
+onDispose(callback: () => void | Promise<void>): void
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `callback` | `() => void \| Promise<void>` | Function to call when scope is disposed |
+
+**Example:**
+
+```typescript
+await using s = scope()
+
+const ws = new WebSocket('ws://localhost:8080')
+
+// Clean up WebSocket when scope ends
+s.onDispose(() => {
+  ws.close()
+})
+
+// Async cleanup is also supported
+s.onDispose(async () => {
+  await saveState()
+})
 ```
 
 ---

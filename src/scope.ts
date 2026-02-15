@@ -1111,6 +1111,29 @@ export class Scope<
 	}
 
 	/**
+	 * Register a callback to run when the scope is disposed.
+	 * Useful for registering cleanup handlers without creating a Task.
+	 * @param callback - Function to call on scope disposal (can be async)
+	 * @example
+	 * ```typescript
+	 * await using s = scope();
+	 *
+	 * const ws = new WebSocket('ws://localhost:8080');
+	 * s.onDispose(() => ws.close());
+	 * ```
+	 */
+	onDispose(callback: () => void | Promise<void>): void {
+		this.registerDisposable({
+			[Symbol.dispose]: () => {
+				void callback();
+			},
+			[Symbol.asyncDispose]: async () => {
+				await callback();
+			},
+		});
+	}
+
+	/**
 	 * Dispose the scope and all tracked resources.
 	 * Resources are disposed in LIFO order (reverse of creation).
 	 */

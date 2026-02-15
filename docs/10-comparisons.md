@@ -77,6 +77,8 @@ async function fetchWithTimeout() {
 **Automatic cancellation:**
 
 ```typescript
+import { assert } from 'go-go-try'
+
 async function fetchFastest() {
   await using s = scope()
   
@@ -86,8 +88,7 @@ async function fetchFastest() {
     ({ signal }) => fetch('https://c.com', { signal })
   ])
   
-  if (err) throw err
-  return winner
+  return assert(winner, err) // Throws if err exists, returns winner otherwise
   // Slow requests automatically cancelled!
 }
 ```
@@ -369,8 +370,7 @@ async function fetchWithCircuitBreaker() {
   })
   
   const [err, result] = await s.task(() => fetchData())
-  if (err) throw err
-  return result
+  return assert(result, err) // Throws if err, returns result otherwise
 }
 ```
 
