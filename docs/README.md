@@ -107,10 +107,6 @@ const s = createMockScope({
 })
 ```
 
-## Version
-
-This documentation is for **go-go-scope v1.3.0**.
-
 ## Need Help?
 
 - Check the [Recipes](./13-recipes.md) for common patterns
