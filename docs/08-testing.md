@@ -9,6 +9,7 @@ Helper functions for testing code that uses `go-go-scope`.
 - [Mocking Services](#mocking-services)
 - [Using override() for Testing](#using-override-for-testing)
 - [createControlledTimer](#createcontrolledtimer)
+- [createTimeController](#createtimecontroller)
 - [createSpy](#createspy)
 - [flushPromises](#flushpromises)
 - [assertScopeDisposed](#assertscopedisposed)
@@ -305,6 +306,43 @@ test('should handle timeouts', () => {
 - `advance(ms)` - Advance time by milliseconds
 - `flush()` - Run all pending timers immediately
 - `reset()` - Reset all timers
+
+---
+
+## createTimeController
+
+Advanced time control for testing timeouts, retries, and debouncing. Allows you to manipulate time globally within your tests.
+
+```typescript
+import { createTimeController } from 'go-go-scope/testing'
+
+test('should timeout after 5 seconds', async () => {
+  const time = createTimeController()
+  time.install()  // Override global Date.now and setTimeout
+  
+  await using s = scope({ timeout: 5000 })
+  const taskPromise = s.task(() => longRunningOperation())
+  
+  // Fast forward 5 seconds instantly
+  time.advance(5000)
+  
+  const [err] = await taskPromise
+  expect(err?.message).toContain('timeout')
+  
+  time.uninstall()  // Restore original timers
+})
+```
+
+**TimeController Methods:**
+- `install()` - Override global Date.now, setTimeout, clearTimeout
+- `uninstall()` - Restore original global functions
+- `advance(ms)` - Advance simulated time
+- `jumpTo(timestamp)` - Jump to specific time
+- `runAll()` - Execute all pending timeouts
+- `reset()` - Reset time to 0
+- `delay(ms)` - Create promise that resolves after delay
+
+**Tip:** Use `afterEach(() => time.uninstall())` to ensure cleanup.
 
 ---
 

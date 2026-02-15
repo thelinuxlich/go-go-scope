@@ -42,6 +42,8 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
 - [Logger Interface](#logger-interface)
 - [Additional Types](#additional-types)
 - [Standalone Functions](#standalone-functions)
+- [Cancellation Utilities](#cancellation-utilities)
+- [Retry Strategies](#retry-strategies)
 
 ---
 
@@ -1735,3 +1737,166 @@ for await (const chunk of stream(readableStream, controller.signal)) {
   await processChunk(chunk)
 }
 ```
+
+
+---
+
+## Cancellation Utilities
+
+Helper functions for working with `AbortSignal`.
+
+### `throwIfAborted(signal)`
+
+Throws the abort reason if the signal is already aborted.
+
+```typescript
+import { throwIfAborted } from "go-go-scope";
+
+await s.task(({ signal }) => {
+  throwIfAborted(signal); // Exit early if cancelled
+  const data = await fetchPart1();
+  throwIfAborted(signal); // Check again before part 2
+  const moreData = await fetchPart2();
+  return process(data, moreData);
+});
+```
+
+### `onAbort(signal, callback)`
+
+Registers a callback to be invoked when the signal is aborted. Returns a `Disposable`.
+
+```typescript
+import { onAbort } from "go-go-scope";
+
+await s.task(({ signal }) => {
+  // Register cleanup
+  using _cleanup = onAbort(signal, (reason) => {
+    console.log("Task cancelled:", reason);
+  });
+
+  return await longRunningOperation();
+});
+```
+
+### `raceSignals(signals)`
+
+Creates a new signal that aborts when any of the input signals abort.
+
+```typescript
+import { raceSignals } from "go-go-scope";
+
+const combined = raceSignals([scope.signal, timeoutSignal]);
+await fetch(url, { signal: combined });
+// Aborts if either scope is disposed OR timeout fires
+```
+
+### `abortPromise(signal)`
+
+Creates a promise that rejects when the signal is aborted.
+
+```typescript
+import { abortPromise } from "go-go-scope";
+
+await s.task(async ({ signal }) => {
+  const result = await Promise.race([fetchData(), abortPromise(signal)]);
+  return result;
+});
+```
+
+### `whenAborted(signal)`
+
+Returns a promise that resolves when the signal is aborted.
+
+```typescript
+import { whenAborted } from "go-go-scope";
+
+await s.task(async ({ signal }) => {
+  await Promise.race([operation(), whenAborted(signal)]);
+  if (signal.aborted) {
+    console.log("Cancelled before completion");
+  }
+});
+```
+
+---
+
+## Retry Strategies
+
+Built-in retry delay strategies for use with `retry.delay`.
+
+### `exponentialBackoff(options?)`
+
+Exponential backoff with optional jitter.
+
+```typescript
+import { exponentialBackoff } from "go-go-scope";
+
+await s.task(() => fetchData(), {
+  retry: {
+    maxRetries: 5,
+    delay: exponentialBackoff({
+      initial: 100, // Start with 100ms
+      max: 30000, // Cap at 30 seconds
+      multiplier: 2, // Double each time
+      jitter: 0.3, // ±30% randomization
+    }),
+  },
+});
+```
+
+### `jitter(baseDelay, jitterFactor?)`
+
+Fixed delay with jitter.
+
+```typescript
+import { jitter } from "go-go-scope";
+
+await s.task(() => fetchData(), {
+  retry: {
+    delay: jitter(1000, 0.2), // 1000ms ± 20%
+  },
+});
+```
+
+### `linear(baseDelay, increment)`
+
+Linear increasing delay.
+
+```typescript
+import { linear } from "go-go-scope";
+
+await s.task(() => fetchData(), {
+  retry: {
+    delay: linear(100, 50), // 100, 150, 200, 250ms...
+  },
+});
+```
+
+### `fullJitterBackoff(options?)`
+
+AWS-style full jitter (random value between 0 and calculated delay).
+
+```typescript
+import { fullJitterBackoff } from "go-go-scope";
+
+await s.task(() => fetchData(), {
+  retry: {
+    delay: fullJitterBackoff({ initial: 100, max: 30000 }),
+  },
+});
+```
+
+### `decorrelatedJitter(options?)`
+
+Azure-style decorrelated jitter.
+
+```typescript
+import { decorrelatedJitter } from "go-go-scope";
+
+await s.task(() => fetchData(), {
+  retry: {
+    delay: decorrelatedJitter({ initial: 100, max: 30000 }),
+  },
+});
+```
+

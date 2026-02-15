@@ -90,6 +90,28 @@ const [err, result] = await s.task(
 
 ### Exponential Backoff
 
+Using the built-in helper:
+
+```typescript
+import { exponentialBackoff } from 'go-go-scope'
+
+const [err, result] = await s.task(
+  () => fetchData(),
+  {
+    retry: {
+      maxRetries: 5,
+      delay: exponentialBackoff({ initial: 1000, max: 30000, jitter: 0.3 })
+      // Attempt 1: ~1000ms (±30% jitter)
+      // Attempt 2: ~2000ms (±30% jitter)
+      // Attempt 3: ~4000ms (±30% jitter)
+      // ... up to 30000ms
+    }
+  }
+)
+```
+
+Or manually:
+
 ```typescript
 const [err, result] = await s.task(
   () => fetchData(),
@@ -97,13 +119,35 @@ const [err, result] = await s.task(
     retry: {
       maxRetries: 5,
       delay: (attempt) => Math.min(1000 * 2 ** attempt, 30000)
-      // Attempt 1: 2000ms
-      // Attempt 2: 4000ms
-      // Attempt 3: 8000ms
-      // ... up to 30000ms
     }
   }
 )
+```
+
+### Built-in Retry Strategies
+
+```typescript
+import { 
+  exponentialBackoff,  // Exponential with optional jitter
+  jitter,              // Fixed delay with jitter
+  linear,              // Linear increasing delay
+  fullJitterBackoff,   // AWS-style full jitter
+  decorrelatedJitter   // Azure-style decorrelated jitter
+} from 'go-go-scope'
+
+// Jitter - adds randomness to prevent thundering herd
+await s.task(() => fetchData(), {
+  retry: {
+    delay: jitter(1000, 0.2)  // 1000ms ± 20%
+  }
+})
+
+// Linear - increases by fixed amount
+await s.task(() => fetchData(), {
+  retry: {
+    delay: linear(100, 50)  // 100, 150, 200, 250ms...
+  }
+})
 ```
 
 ### Conditional Retry

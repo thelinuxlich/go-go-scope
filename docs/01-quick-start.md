@@ -97,11 +97,15 @@ Now that you've seen the basics:
 
 1. **[Core Concepts](./02-concepts.md)** - Learn why structured concurrency matters and understand Scope vs Task
 2. **[API Reference](./03-api-reference.md)** - Explore all available methods and options
-3. **[Concurrency Patterns](./04-concurrency-patterns.md)** - Channels, broadcast, and select
-4. **[Resilience Patterns](./05-resilience-patterns.md)** - Circuit breakers, retry, and fault tolerance
-5. **[Observability](./06-observability.md)** - Metrics, logging, and profiling
-6. **[Rate Limiting](./07-rate-limiting.md)** - Debounce, throttle, and concurrency limits
-7. **[Testing](./08-testing.md)** - Testing utilities and patterns
-8. **[Advanced Patterns](./09-advanced-patterns.md)** - Resource pools, parent-child scopes
-9. **[Comparisons](./10-comparisons.md)** - Compare with other approaches
-10. **[Integrations](./11-integrations.md)** - OpenTelemetry, Prometheus, Grafana
+3. **[Recipes](./13-recipes.md)** - Common patterns: HTTP clients, DB pools, WebSockets
+4. **[Concurrency Patterns](./04-concurrency-patterns.md)** - Channels, broadcast, and select
+5. **[Resilience Patterns](./05-resilience-patterns.md)** - Circuit breakers, retry, and fault tolerance
+6. **[Observability](./06-observability.md)** - Metrics, logging, and profiling
+7. **[Rate Limiting](./07-rate-limiting.md)** - Debounce, throttle, and concurrency limits
+8. **[Testing](./08-testing.md)** - Testing utilities and patterns
+9. **[Advanced Patterns](./09-advanced-patterns.md)** - Resource pools, parent-child scopes
+10. **[Cancellation](./12-cancellation.md)** - Cancellation utilities and helpers
+11. **[Comparisons](./10-comparisons.md)** - Compare with other approaches
+12. **[Integrations](./11-integrations.md)** - OpenTelemetry, Prometheus, Grafana
+
+**Tip:** Check the [Documentation Index](./README.md) for a complete overview!

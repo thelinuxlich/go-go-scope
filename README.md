@@ -61,28 +61,35 @@ Requires TypeScript 5.2+ and `ESNext.Disposable` lib.
 | [🔧 Advanced](./docs/09-advanced-patterns.md) | Resource pools, parent-child scopes |
 | [⚖️ Comparisons](./docs/10-comparisons.md) | vs Vanilla JS, vs Effect |
 | [🔌 Integrations](./docs/11-integrations.md) | OpenTelemetry, Prometheus, Grafana |
+| [🚦 Cancellation](./docs/12-cancellation.md) | Cancellation utilities and helpers |
+| [🍳 Recipes](./docs/13-recipes.md) | Common patterns and solutions |
 
 ## Features
 
 - ✅ **Structured Concurrency** - Tasks are bound to scopes, auto-cancelled on exit
 - ✅ **Resource Management** - Automatic cleanup via `using`/`await using`
 - ✅ **Cancellation** - Propagate cancellation through parent-child scope chains
+- ✅ **Cancellation Utilities** - `throwIfAborted`, `onAbort`, `raceSignals`, helpers
 - ✅ **Timeout Handling** - Built-in timeout with automatic cleanup
-- ✅ **Channels** - Go-style buffered channels for task communication
+- ✅ **Channels** - Go-style buffered channels with `map`, `filter`, `reduce`
 - ✅ **Broadcast** - Pub/sub pattern for multi-consumer scenarios
-- ✅ **Circuit Breaker** - Prevent cascading failures
-- ✅ **Retry Logic** - Configurable retries with exponential backoff
+- ✅ **Circuit Breaker** - Prevent cascading failures with hooks
+- ✅ **Retry Logic** - Built-in strategies: exponential backoff, jitter, linear
+- ✅ **Batch Processing** - Process arrays with progress tracking
 - ✅ **Concurrency Limits** - Semaphore-based rate limiting
 - ✅ **Resource Pools** - Managed connection/worker pools
 - ✅ **Debouncing & Throttling** - Rate-limit function execution
 - ✅ **Polling** - Auto-refresh with start/stop control
 - ✅ **Stream Processing** - Async iterable wrapper with cancellation
 - ✅ **Metrics** - Performance monitoring with Prometheus/JSON export
+- ✅ **Metrics Aggregation** - Cross-scope metrics collection
 - ✅ **Task Profiling** - Detailed execution time breakdown
 - ✅ **Deadlock Detection** - Warn on potential deadlocks
 - ✅ **Structured Logging** - Integration with logging systems
+- ✅ **Debug Visualization** - `debugTree()` for scope hierarchies
 - ✅ **OpenTelemetry** - Distributed tracing support
-- ✅ **Test Utilities** - Mock scopes, spies, and timers
+- ✅ **Test Utilities** - Mock scopes, spies, timers, time travel
+- ✅ **Type-Safe DI** - Dependency injection with `provide`/`use`
 
 ## Typed Error Handling
 
