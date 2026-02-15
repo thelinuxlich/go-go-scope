@@ -94,19 +94,26 @@ async function fetchDashboardData(userId: string) {
   
   // Fetch posts, comments, and stats in parallel with concurrency limit
   debug('Fetching posts, comments, and stats...')
-  const [postsResults, commentsResults, statsResults] = await s.parallel([
+  const parallelResult = await s.parallel([
     ({ services, signal }) => services.db.query('SELECT * FROM posts WHERE user_id = ?', [userId], { signal }),
     ({ services, signal }) => services.db.query('SELECT * FROM comments WHERE user_id = ?', [userId], { signal }),
     ({ services, signal }) => fetchUserStats(userId, { signal })
   ])
   
-  const [postsErr, posts] = postsResults
-  const [commentsErr, comments] = commentsResults
-  const [statsErr, stats] = statsResults
+  // Access results by index
+  const postsResult = parallelResult.completed.find(r => r.index === 0)
+  const commentsResult = parallelResult.completed.find(r => r.index === 1)
+  const statsResult = parallelResult.completed.find(r => r.index === 2)
   
-  if (postsErr) debug('Failed to fetch posts: %s', postsErr.message)
-  if (commentsErr) debug('Failed to fetch comments: %s', commentsErr.message)
-  if (statsErr) debug('Failed to fetch stats: %s', statsErr.message)
+  const posts = postsResult?.value ?? []
+  const comments = commentsResult?.value ?? []
+  const stats = statsResult?.value ?? null
+  
+  // Check for errors
+  for (const { index, error } of parallelResult.errors) {
+    const name = ['posts', 'comments', 'stats'][index]
+    debug('Failed to fetch %s: %s', name, (error as Error).message)
+  }
   
   debug('Dashboard data fetched successfully')
   
@@ -285,13 +292,13 @@ return result
 
 ### Parallel Execution with s.parallel
 
-Use `s.parallel()` for parallel execution with concurrency control and Result tuples:
+Use `s.parallel()` for parallel execution with concurrency control and structured results:
 
 ```typescript
 await using s = scope({ concurrency: 3 })
 
 // Run up to 3 tasks concurrently
-const results = await s.parallel([
+const result = await s.parallel([
   ({ signal }) => fetchUser(1, { signal }),
   ({ signal }) => fetchUser(2, { signal }),
   ({ signal }) => fetchUser(3, { signal }),
@@ -299,10 +306,14 @@ const results = await s.parallel([
   ({ signal }) => fetchUser(5, { signal })
 ])
 
-// Each result is [error, value]
-for (const [err, user] of results) {
-  if (err) console.log('Failed:', err)
-  else console.log('User:', user)
+// Access successful results
+for (const { index, value } of result.completed) {
+  console.log(`Task ${index}:`, value)
+}
+
+// Access errors
+for (const { index, error } of result.errors) {
+  console.log(`Task ${index} failed:`, error)
 }
 ```
 
@@ -385,19 +396,20 @@ const [err, user] = await s.task(() => fetchUser(1))
 if (err) return handleError(err)
 
 // Multiple tasks with parallel
-const results = await s.parallel([
+const result = await s.parallel([
   () => fetchUser(1),
   () => fetchUser(2),
   () => fetchUser(3)
 ])
 
-// Process each result
-for (const [err, user] of results) {
-  if (err) {
-    console.log('Failed:', err)
-  } else {
-    console.log('Got user:', user)
-  }
+// Process successful results
+for (const { index, value } of result.completed) {
+  console.log(`Task ${index}:`, value)
+}
+
+// Process errors
+for (const { index, error } of result.errors) {
+  console.log(`Task ${index} failed:`, error)
 }
 ```
 

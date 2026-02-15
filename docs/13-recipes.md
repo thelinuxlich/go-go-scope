@@ -15,18 +15,24 @@ Common patterns and solutions using go-go-scope.
 
 ---
 
-## Choosing Between `parallel()` and `batch()`
+## Using `parallel()` for Batch Operations
 
-Many recipes involve running multiple operations. Use this guide to choose the right method:
+The `parallel()` method supports progress tracking, concurrency control, and error handling:
 
-| If you need... | Use... | Example |
-|----------------|--------|---------|
-| Different operations | `parallel()` | `parallel([fetchUser, fetchOrders, fetchSettings])` |
-| Same operation on many items | `batch()` | `batch(urls, { process: fetch })` |
-| Progress tracking | `batch()` | `batch(items, { onProgress: () => {} })` |
-| Continue after errors | `batch()` | `batch(items, { continueOnError: true })` |
-| Simple result array | `parallel()` | `const [err1, err2] = await parallel([...])` |
-| Detailed success/failure info | `batch()` | `results.successful[]` and `results.failed[]` |
+```typescript
+// Process URLs with progress tracking
+const result = await s.parallel(
+  urls.map(url => () => fetch(url)),
+  {
+    concurrency: 5,
+    onProgress: (done, total) => console.log(`${done}/${total}`),
+    continueOnError: true
+  }
+)
+
+console.log(`✓ ${result.completed.length} succeeded`)
+console.log(`✗ ${result.errors.length} failed`)
+```
 
 ---
 
@@ -296,23 +302,25 @@ async function processFiles(
 ) {
   await using s = scope({ concurrency: 3 })
 
-  const results = await s.batch(files, {
-    process: async (file, index) => {
-      console.log(`Processing ${file.name} (${index + 1}/${files.length})`)
+  const result = await s.parallel(
+    files.map((file, i) => async () => {
+      console.log(`Processing ${file.name} (${i + 1}/${files.length})`)
       return processor(file)
-    },
-    concurrency: 3,
-    onProgress: (completed, total) => {
-      onProgress(completed, total)
-      console.log(`Progress: ${((completed / total) * 100).toFixed(1)}%`)
-    },
-    continueOnError: true
-  })
+    }),
+    {
+      concurrency: 3,
+      onProgress: (completed, total) => {
+        onProgress(completed, total)
+        console.log(`Progress: ${((completed / total) * 100).toFixed(1)}%`)
+      },
+      continueOnError: true
+    }
+  )
 
-  console.log(`Completed: ${results.completed}/${results.total}`)
-  console.log(`Failed: ${results.errors}`)
+  console.log(`Completed: ${result.completed.length}/${files.length}`)
+  console.log(`Failed: ${result.errors.length}`)
 
-  return results
+  return result
 }
 
 // Usage with UI progress bar

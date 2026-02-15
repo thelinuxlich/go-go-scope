@@ -75,7 +75,7 @@ Requires TypeScript 5.2+ and `ESNext.Disposable` lib.
 - ✅ **Broadcast** - Pub/sub pattern for multi-consumer scenarios
 - ✅ **Circuit Breaker** - Prevent cascading failures with hooks
 - ✅ **Retry Logic** - Built-in strategies: exponential backoff, jitter, linear
-- ✅ **Batch Processing** - Process arrays with progress tracking
+- ✅ **parallelAggregate()** - Process arrays with progress tracking, concurrency control, and error handling
 - ✅ **Concurrency Limits** - Semaphore-based rate limiting
 - ✅ **Resource Pools** - Managed connection/worker pools
 - ✅ **Debouncing & Throttling** - Rate-limit function execution

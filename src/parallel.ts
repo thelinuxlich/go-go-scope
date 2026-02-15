@@ -4,26 +4,28 @@
 
 import createDebug from "debug";
 import { Scope } from "./scope.js";
-import type { Result, Tracer } from "./types.js";
+import type { ParallelAggregateResult, Result, Tracer } from "./types.js";
 
 const debugScope = createDebug("go-go-scope:parallel");
 
 /**
- * Run multiple tasks in parallel with optional concurrency limit.
+ * Run multiple tasks in parallel with optional concurrency limit and progress tracking.
  * All tasks run within a scope and are cancelled together on failure.
- * Returns an array of Result tuples - never throws by default.
+ * Returns a structured result with both successes and failures separated.
  *
  * @param factories - Array of factory functions that receive AbortSignal and create promises
- * @param options - Optional configuration including concurrency limit and failFast
- * @returns A Promise that resolves to an array of Result tuples (or throws if failFast is true)
+ * @param options - Optional configuration including concurrency limit, progress callback, and error handling
+ * @returns A Promise that resolves to a structured result with completed and failed tasks
  *
  * @example
  * ```typescript
- * const results = await parallel(
+ * const result = await parallel(
  *   urls.map(url => ({ signal }) => fetch(url, { signal })),
- *   { concurrency: 3 }
+ *   { concurrency: 3, continueOnError: true }
  * )
- * // results is [[undefined, Response], [Error, undefined], ...]
+ *
+ * console.log(result.completed.length) // Successfully fetched
+ * console.log(result.errors.length)    // Failed
  * ```
  */
 export async function parallel<T>(
@@ -31,28 +33,37 @@ export async function parallel<T>(
 	options?: {
 		concurrency?: number;
 		signal?: AbortSignal;
-		failFast?: boolean;
 		tracer?: Tracer;
+		onProgress?: (
+			completed: number,
+			total: number,
+			result: Result<unknown, T>,
+		) => void;
+		continueOnError?: boolean;
 	},
-): Promise<Result<unknown, T>[]> {
+): Promise<ParallelAggregateResult<T>> {
+	const {
+		concurrency = 0,
+		onProgress,
+		continueOnError = false,
+	} = options ?? {};
+
 	if (factories.length === 0) {
 		if (debugScope.enabled) {
-			debugScope("no factories, returning empty array");
+			debugScope("no factories, returning empty result");
 		}
-		return [];
+		return { completed: [], errors: [], allCompleted: true };
 	}
 
-	const concurrency = options?.concurrency ?? 0;
-	const failFast = options?.failFast ?? false;
-	const totalTasks = factories.length;
+	const total = factories.length;
 	const debugEnabled = debugScope.enabled;
 
 	if (debugEnabled) {
 		debugScope(
-			"starting parallel execution (tasks: %d, concurrency: %d, failFast: %s)",
-			totalTasks,
+			"starting parallel execution (tasks: %d, concurrency: %d, continueOnError: %s)",
+			total,
 			concurrency > 0 ? concurrency : "unlimited",
-			failFast,
+			continueOnError,
 		);
 	}
 
@@ -61,134 +72,133 @@ export async function parallel<T>(
 		if (debugEnabled) {
 			debugScope("already aborted");
 		}
-		return factories.map(() => [options.signal?.reason, undefined]);
+		throw options.signal.reason;
 	}
 
 	const s = new Scope({ signal: options?.signal, tracer: options?.tracer });
-	let completedCount = 0;
-	let errorCount = 0;
+	const completed: { index: number; value: T }[] = [];
+	const errors: { index: number; error: unknown }[] = [];
 
 	try {
-		// Helper to process a single task - always returns Result
-		const processTask = async (
-			factory: (signal: AbortSignal) => Promise<T>,
-			_idx: number,
-		): Promise<Result<unknown, T>> => {
-			const result = await s.task(({ signal }) => factory(signal));
-			if (result[0]) {
-				errorCount++;
-				if (debugEnabled) {
-					debugScope(
-						"task %d/%d failed (failFast: %s)",
-						errorCount,
-						totalTasks,
-						failFast,
-					);
-				}
-			} else {
-				completedCount++;
-				if (debugEnabled) {
-					debugScope("task %d/%d completed", completedCount, totalTasks);
-				}
-			}
-			return result;
-		};
-
-		// If no concurrency limit, run all in parallel
 		if (concurrency <= 0 || concurrency >= factories.length) {
+			// No concurrency limit - run all in parallel
 			if (debugEnabled) {
 				debugScope("running all tasks in parallel");
 			}
-			const results = await Promise.all(
-				factories.map((f, i) => processTask(f, i)),
+
+			const promises = factories.map((factory, idx) =>
+				s
+					.task(({ signal }) => factory(signal))
+					.then((result): [number, Result<unknown, T>] => [idx, result]),
 			);
 
-			// Check for errors if failFast
-			if (failFast) {
-				const firstError = results.find((r) => r[0]);
-				if (firstError?.[0]) {
-					throw firstError[0];
+			// If not continuing on error, use Promise.all to fail fast
+			const results = continueOnError
+				? await Promise.all(promises)
+				: await Promise.all(promises).catch((error) => {
+						return [[-1, [error, undefined]] as [number, Result<unknown, T>]];
+					});
+
+			for (const [idx, result] of results) {
+				if (idx === -1) continue;
+
+				const [err, value] = result;
+				if (err) {
+					errors.push({ index: idx, error: err });
+					if (onProgress) {
+						onProgress(completed.length + errors.length, total, result);
+					}
+					if (!continueOnError) break;
+				} else {
+					completed.push({ index: idx, value: value as T });
+					if (onProgress) {
+						onProgress(completed.length + errors.length, total, result);
+					}
 				}
 			}
-
-			return results;
-		}
-
-		// Run with limited concurrency using a worker pool
-		if (debugEnabled) {
-			debugScope("running with concurrency limit: %d", concurrency);
-		}
-		const results: Result<unknown, T>[] = new Array(factories.length);
-		let index = 0;
-		let hasError = false;
-
-		const worker = async (workerId: number): Promise<void> => {
+		} else {
+			// With concurrency limit
 			if (debugEnabled) {
-				debugScope("worker %d started", workerId);
+				debugScope("running with concurrency limit: %d", concurrency);
 			}
-			let tasksProcessed = 0;
-			while (index < factories.length) {
-				// Check if we should stop due to error in failFast mode
-				if (failFast && hasError) {
-					if (debugEnabled) {
-						debugScope("worker %d stopping due to error", workerId);
-					}
-					break;
+
+			const executing: Promise<void>[] = [];
+			let index = 0;
+
+			for (const factory of factories) {
+				// Check cancellation
+				if (options?.signal?.aborted) {
+					throw options.signal.reason;
 				}
 
 				const currentIndex = index++;
-				const factory = factories[currentIndex];
-				if (!factory) continue;
 
-				if (debugEnabled) {
-					debugScope("worker %d processing task %d", workerId, currentIndex);
-				}
+				const promise = (async () => {
+					try {
+						const result = await s.task(({ signal }) => factory(signal));
+						const [err, value] = result;
 
-				const result = await processTask(factory, currentIndex);
-				results[currentIndex] = result;
-				if (result[0]) {
-					hasError = true;
-					if (failFast) {
-						if (debugEnabled) {
-							debugScope("worker %d aborting due to error", workerId);
+						if (err) {
+							errors.push({ index: currentIndex, error: err });
+							if (onProgress) {
+								onProgress(completed.length + errors.length, total, result);
+							}
+							if (!continueOnError) {
+								throw new Error("parallel stopped on first error");
+							}
+						} else {
+							completed.push({
+								index: currentIndex,
+								value: value as T,
+							});
+							if (onProgress) {
+								onProgress(completed.length + errors.length, total, result);
+							}
 						}
-						break;
+					} catch (error) {
+						// Handle unexpected errors
+						errors.push({ index: currentIndex, error });
+						if (onProgress) {
+							onProgress(completed.length + errors.length, total, [
+								error,
+								undefined,
+							]);
+						}
+						if (!continueOnError) {
+							throw error;
+						}
+					}
+				})();
+
+				executing.push(promise);
+
+				if (executing.length >= concurrency) {
+					try {
+						await Promise.race(executing);
+					} catch {
+						if (!continueOnError) break;
 					}
 				}
-				tasksProcessed++;
 			}
-			if (debugEnabled) {
-				debugScope(
-					"worker %d finished, processed %d tasks",
-					workerId,
-					tasksProcessed,
-				);
-			}
-		};
 
-		const workers: Promise<void>[] = [];
-		const workerCount = Math.min(concurrency, factories.length);
-		for (let i = 0; i < workerCount; i++) {
-			workers.push(worker(i));
-		}
-
-		await Promise.all(workers);
-
-		// Check for errors if failFast
-		if (failFast && hasError) {
-			const firstError = results.find((r) => r[0]);
-			if (firstError?.[0]) {
-				throw firstError[0];
+			// Wait for remaining
+			if (continueOnError || errors.length === 0) {
+				await Promise.all(executing).catch(() => {});
 			}
 		}
 
 		debugScope(
 			"all tasks completed: %d/%d, errors: %d",
-			completedCount,
-			totalTasks,
-			errorCount,
+			completed.length,
+			total,
+			errors.length,
 		);
-		return results;
+
+		return {
+			completed,
+			errors,
+			allCompleted: errors.length === 0,
+		};
 	} finally {
 		await s[Symbol.asyncDispose]();
 	}

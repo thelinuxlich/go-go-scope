@@ -69,16 +69,20 @@ Complete guide to structured concurrency in TypeScript.
 ### Run Multiple Operations
 ```typescript
 // Different operations → use parallel()
-const results = await s.parallel([
+const result = await s.parallel([
   () => fetchUser(id),
   () => fetchOrders(userId),
 ])
 
-// Same operation on many items → use batch()
-const results = await s.batch(urls, {
-  process: (url) => fetch(url),
-  onProgress: (done, total) => console.log(`${done}/${total}`),
-})
+// With progress tracking and concurrency control
+const result = await s.parallel(
+  urls.map(url => () => fetch(url)),
+  {
+    concurrency: 5,
+    onProgress: (done, total) => console.log(`${done}/${total}`),
+    continueOnError: true
+  }
+)
 ```
 
 ### Add Retry Logic

@@ -70,7 +70,6 @@ export class Profiler {
 
 		// End previous stage
 		const now = performance.now();
-		const _prevStageDuration = now - task.stageStartTime;
 
 		// Only record if there was a previous explicit stage
 		// Execution time is calculated differently

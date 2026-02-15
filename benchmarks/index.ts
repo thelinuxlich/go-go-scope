@@ -4,7 +4,7 @@
  */
 
 import { performance } from "perf_hooks";
-import { scope, parallel, race, exponentialBackoff, batch } from "../dist/index.mjs";
+import { scope, parallel, race, exponentialBackoff } from "../dist/index.mjs";
 
 interface BenchmarkResult {
   name: string;
@@ -294,24 +294,24 @@ async function benchBatch(): Promise<BenchmarkResult[]> {
     })
   );
 
-  // go-go-scope batch
+  // go-go-scope parallel
   results.push(
-    await runBenchmark("go-go-scope batch (100 items)", async () => {
+    await runBenchmark("go-go-scope parallel (100 items)", async () => {
       await using s = scope();
-      await s.batch(items, {
-        process: (item) => Promise.resolve(item * 2),
-      });
+      await s.parallel(
+        items.map((item) => () => Promise.resolve(item * 2))
+      );
     })
   );
 
-  // go-go-scope batch with concurrency
+  // go-go-scope parallel with concurrency
   results.push(
-    await runBenchmark("go-go-scope batch with concurrency (100 items, limit 5)", async () => {
+    await runBenchmark("go-go-scope parallel with concurrency (100 items, limit 5)", async () => {
       await using s = scope();
-      await s.batch(items, {
-        process: (item) => Promise.resolve(item * 2),
-        concurrency: 5,
-      });
+      await s.parallel(
+        items.map((item) => () => Promise.resolve(item * 2)),
+        { concurrency: 5 }
+      );
     })
   );
 
@@ -515,10 +515,10 @@ async function main() {
   console.log("\n🆕 v1.3.0 Features\n");
 
   const batchResult = allResults.find(
-    (r) => r.name === "go-go-scope batch (100 items)"
+    (r) => r.name === "go-go-scope parallel (100 items)"
   );
   if (batchResult) {
-    console.log(`Batch processing: ${batchResult.opsPerSecond.toFixed(0)} ops/sec`);
+    console.log(`Parallel: ${batchResult.opsPerSecond.toFixed(0)} ops/sec`);
   }
 
   const retryResult = allResults.find(

@@ -16,8 +16,6 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.override(key, factory, cleanup?)`](#scopeoverridekey-factory-cleanup)
   - [`scope.race(factories)`](#scoperacefactories)
   - [`scope.parallel(factories, options?)`](#scopeparallelfactories-options)
-  - [`scope.parallel() vs scope.batch()`](#scopeparallel-vs-scopebatch---when-to-use-each)
-  - [`scope.batch(items, options)`](#scopebatchitems-options)
   - [`scope.channel(capacity?)`](#scopechannelcapacity)
   - [`scope.stream(source)`](#scopestreamsource)
   - [`scope.poll(fn, onValue, options?)`](#scopepollfn-onvalue-options)
@@ -27,7 +25,6 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.metrics()`](#scopemetrics)
   - [`scope.broadcast()`](#scopebroadcast)
   - [`scope.pool(options)`](#scopepooloptions)
-  - [`scope.parallelAggregate(factories)`](#scopeparallelaggregatefactories)
   - [`scope.getProfileReport()`](#scopegetprofilereport)
 - [Types](#types)
   - [Result](#result)
@@ -597,13 +594,17 @@ if (err) {
 
 ### `scope.parallel(factories, options?)`
 
-Run factories in parallel. Uses the scope's concurrency limit and signal.
+Run multiple tasks in parallel with optional progress tracking, concurrency control, and error handling.
 
 ```typescript
 parallel<T>(
   factories: readonly ((signal: AbortSignal) => Promise<T>)[]),
-  options?: { failFast?: boolean }
-): Promise<Result<unknown, T>[]>
+  options?: {
+    concurrency?: number
+    onProgress?: (completed: number, total: number, result: Result<unknown, T>) => void
+    continueOnError?: boolean
+  }
+): Promise<ParallelAggregateResult<T>>
 ```
 
 **Parameters:**
@@ -611,144 +612,48 @@ parallel<T>(
 | Name | Type | Description |
 |------|------|-------------|
 | `factories` | Array of functions | Each receives an `AbortSignal` and returns a `Promise` |
-| `options.failFast` | `boolean` | If `true`, stops on first error and throws |
+| `options.concurrency` | `number` | Max concurrent operations (default: scope's limit or unlimited) |
+| `options.onProgress` | Function | Called after each task completes with `(completed, total, result)` |
+| `options.continueOnError` | `boolean` | Continue processing on error (default: false) |
 
-**Returns:** `Promise<Result<unknown, T>[]>` - Array of result tuples
+**Returns:** `Promise<ParallelAggregateResult<T>>` - Object with:
+- `completed`: Array of `{ index, value }` for successful tasks
+- `errors`: Array of `{ index, error }` for failed tasks
+- `allCompleted`: Boolean indicating if all tasks succeeded
 
 **Examples:**
 
 ```typescript
 await using s = scope({ concurrency: 3 })
 
-// Default: failFast = false, returns Results for all tasks
-const results = await s.parallel([
+// Basic usage
+const result = await s.parallel([
   () => fetchUser(1),  // might fail
   () => fetchUser(2),  // might fail
   () => fetchUser(3),  // might fail
 ])
 
-for (const [err, user] of results) {
-  if (err) console.log('Failed:', err)
-  else console.log('User:', user)
-}
+console.log(`Completed: ${result.completed.length}`)
+console.log(`Failed: ${result.errors.length}`)
 
-// With failFast: throws on first error
-try {
-  await s.parallel([
-    () => Promise.resolve('a'),
-    () => Promise.reject(new Error('fail')),
-  ], { failFast: true })
-} catch (e) {
-  // e is the Error
-}
-```
-
----
-
-### `scope.parallel()` vs `scope.batch()` - When to Use Each
-
-| Feature | `parallel()` | `batch()` |
-|---------|--------------|-----------|
-| **Input** | Array of factory functions | Array of items + process function |
-| **Best for** | Different async operations | Same operation on many items |
-| **Progress tracking** | ❌ No | ✅ Yes (`onProgress` callback) |
-| **Continue on error** | ❌ No | ✅ Yes (`continueOnError` option) |
-| **Result structure** | `Result[]` (by index) | `{ successful[], failed[], total, completed }` |
-| **Access to original item** | ❌ Index only | ✅ Yes (in results) |
-
-**Use `parallel()` when:**
-- Running different types of operations (e.g., fetch user, fetch orders, fetch settings)
-- Each task is independent and unique
-- You don't need progress tracking
-- You want simple `Result[]` output
-
-```typescript
-// Different operations
-const [userResult, orderResult, statsResult] = await s.parallel([
-  () => fetchUser(id),
-  () => fetchOrders(userId),
-  () => calculateStats()
-])
-```
-
-**Use `batch()` when:**
-- Running the same operation on many items (e.g., process 1000 files)
-- You need progress tracking for UI feedback
-- You want to continue even if some items fail
-- You need to know exactly which items succeeded/failed
-
-```typescript
-// Same operation on many items
-const results = await s.batch(urls, {
-  process: (url) => fetch(url),
-  concurrency: 5,
-  onProgress: (completed, total) => console.log(`${completed}/${total}`),
-  continueOnError: true
-})
-
-// Know exactly what failed
-for (const { item, index, error } of results.failed) {
-  console.log(`URL ${item} at index ${index} failed:`, error)
-}
-```
-
----
-
-### `scope.batch(items, options)`
-
-Process an array of items with concurrency control, progress tracking, and error handling.
-
-```typescript
-batch<T, R>(
-  items: readonly T[],
-  options: {
-    process: (item: T, index: number) => Promise<R>
-    concurrency?: number
-    onProgress?: (completed: number, total: number, result: Result<unknown, R>) => void
-    continueOnError?: boolean
+// With progress tracking and per-call concurrency
+const result = await s.parallel(
+  urls.map(url => () => fetch(url)),
+  {
+    concurrency: 5,
+    onProgress: (done, total) => console.log(`${done}/${total}`),
+    continueOnError: true
   }
-): Promise<BatchResult<T, R>>
-```
+)
 
-**Parameters:**
+// Access successful results
+for (const { index, value } of result.completed) {
+  console.log(`Task ${index} succeeded:`, value)
+}
 
-| Name | Type | Description |
-|------|------|-------------|
-| `items` | `readonly T[]` | Array of items to process |
-| `options.process` | Function | Process function receiving `(item, index)` |
-| `options.concurrency` | `number` | Max concurrent operations (default: unlimited) |
-| `options.onProgress` | Function | Called after each item completes |
-| `options.continueOnError` | `boolean` | Continue processing on error (default: false) |
-
-**Returns:** `Promise<BatchResult<T, R>>` with:
-- `successful`: Array of `{ item, index, result }` for successful items
-- `failed`: Array of `{ item, index, error }` for failed items
-- `total`: Total number of items
-- `completed`: Number successfully processed
-- `errors`: Number that failed
-- `allSuccessful`: Boolean indicating if all succeeded
-
-**Example:**
-
-```typescript
-await using s = scope({ concurrency: 5 })
-
-const results = await s.batch(urls, {
-  process: (url) => fetch(url).then(r => r.json()),
-  concurrency: 5,
-  onProgress: (completed, total) => {
-    updateProgressBar((completed / total) * 100)
-  },
-  continueOnError: true
-})
-
-console.log(`✓ ${results.completed}/${results.total} URLs fetched`)
-
-if (results.failed.length > 0) {
-  console.log('Failed URLs:')
-  for (const { item: url, error } of results.failed) {
-    console.log(`  - ${url}: ${error.message}`)
-  }
+// Access errors
+for (const { index, error } of result.errors) {
+  console.log(`Task ${index} failed:`, error)
 }
 ```
 
@@ -1320,42 +1225,6 @@ const users = await dbPool.execute(async (conn) => {
 
 ---
 
-### `scope.parallelAggregate(factories)`
-
-Run factories in parallel and collect all results and errors.
-
-```typescript
-parallelAggregate<T>(
-  factories: readonly ((signal: AbortSignal) => Promise<T>)[]
-): Promise<ParallelAggregateResult<T>>
-```
-
-**Parameters:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `factories` | Array of functions | Each receives an `AbortSignal` and returns a `Promise` |
-
-**Returns:** `Promise<ParallelAggregateResult<T>>` - Object with `completed`, `errors`, and `allCompleted`
-
-**Example:**
-
-```typescript
-await using s = scope()
-
-const result = await s.parallelAggregate([
-  () => fetchUser(1),    // succeeds
-  () => fetchUser(2),    // succeeds
-  () => fetchUser(999),  // fails
-])
-
-console.log(result.completed)  // [{ index: 0, value: user1 }, { index: 1, value: user2 }]
-console.log(result.errors)     // [{ index: 2, error: NotFoundError }]
-console.log(result.allCompleted)  // false
-```
-
----
-
 ### `scope.getProfileReport()`
 
 Get detailed profiling information about task execution.
@@ -1668,15 +1537,18 @@ const [err, winner] = await race([
 
 ### `parallel(factories, options?)`
 
-Run operations in parallel without a scope.
+Run operations in parallel without a scope. Returns a structured result with both successes and failures.
 
 ```typescript
 import { parallel } from 'go-go-scope'
 
-const results = await parallel([
+const result = await parallel([
   () => fetchUser(1),
   () => fetchUser(2),
 ], { concurrency: 3 })
+
+console.log(result.completed.length) // Successfully fetched
+console.log(result.errors.length)    // Failed
 ```
 
 ### `poll(fn, onValue, options?)`

@@ -334,7 +334,7 @@ Collect all errors from parallel execution, not just individual failures.
 ```typescript
 await using s = scope()
 
-const result = await s.parallelAggregate([
+const result = await s.parallel([
   () => fetchUser(1),    // succeeds
   () => fetchUser(2),    // succeeds
   () => fetchUser(999),  // fails (not found)
@@ -353,34 +353,26 @@ console.log(result.allCompleted)  // false
 ### Processing Results
 
 ```typescript
-const { completed, errors } = await s.parallelAggregate(
-  urls.map(url => () => fetch(url))
+const result = await s.parallel(
+  urls.map(url => () => fetch(url)),
+  { continueOnError: true }
 )
 
 // Process successful results
-for (const { index, value } of completed) {
+for (const { index, value } of result.completed) {
   console.log(`URL ${urls[index]} succeeded:`, value)
 }
 
 // Handle errors
-for (const { index, error } of errors) {
+for (const { index, error } of result.errors) {
   console.error(`URL ${urls[index]} failed:`, error)
 }
 
 // Check if all succeeded
-if (errors.length === 0) {
+if (result.allCompleted) {
   console.log('All URLs fetched successfully')
 }
 ```
-
-### Compared to parallel()
-
-| Feature | `parallel()` | `parallelAggregate()` |
-|---------|-------------|----------------------|
-| Returns | `Result[]` | `{ completed, errors, allCompleted }` |
-| Error handling | Per-task | All errors collected |
-| Success access | `result[i][1]` | `result.completed.find(c => c.index === i)` |
-| Use case | Simple parallelism | When you need all results/errors |
 
 ---
 

@@ -4,7 +4,7 @@
 
 import { context as otelContext, trace } from "@opentelemetry/api";
 import createDebug from "debug";
-import { batch } from "./batch.js";
+
 import { BroadcastChannel } from "./broadcast-channel.js";
 import { Channel } from "./channel.js";
 import { CircuitBreaker } from "./circuit-breaker.js";
@@ -16,7 +16,6 @@ import { Semaphore } from "./semaphore.js";
 import { Task } from "./task.js";
 import type {
 	CircuitBreakerOptions,
-	ErrorConstructor,
 	Failure,
 	Logger,
 	ParallelAggregateResult,
@@ -1597,192 +1596,208 @@ export class Scope<
 	}
 
 	/**
-	 * Run multiple tasks in parallel.
-	 * Tasks run within this scope and inherit its configuration.
-	 * Returns an array of Result tuples - never throws by default.
+	 * Run multiple tasks in parallel with optional progress tracking,
+	 * concurrency control, and error handling.
+	 *
+	 * Returns a structured result with both successes and failures separated,
+	 * making it easy to handle partial failures.
 	 *
 	 * @param factories - Array of factory functions that create promises
-	 * @param options - Optional configuration (failFast defaults to false)
-	 * @returns A Promise that resolves to an array of Result tuples, or throws if failFast is true
+	 * @param options - Optional configuration for concurrency, progress, and error handling
+	 * @returns A Promise that resolves to a structured result with completed and failed tasks
+	 *
+	 * @example
+	 * ```typescript
+	 * // Basic usage
+	 * const result = await s.parallel([
+	 *   () => fetchUser(1),
+	 *   () => fetchUser(2),
+	 *   () => fetchUser(999), // This might fail
+	 * ])
+	 *
+	 * console.log(result.completed) // Successfully fetched users
+	 * console.log(result.errors)    // Failed fetches
+	 * console.log(result.allCompleted) // false if any failed
+	 * ```
+	 *
+	 * @example
+	 * ```typescript
+	 * // With progress tracking and concurrency limit
+	 * const result = await s.parallel(
+	 *   urls.map(url => () => fetch(url)),
+	 *   {
+	 *     concurrency: 5,
+	 *     onProgress: (completed, total) => {
+	 *       console.log(`${completed}/${total} done`)
+	 *     },
+	 *     continueOnError: true
+	 *   }
+	 * )
+	 * ```
 	 */
 	async parallel<T>(
 		factories: readonly ((signal: AbortSignal) => Promise<T>)[],
-		options?: { failFast?: boolean },
-	): Promise<Result<unknown, T>[]> {
-		if (factories.length === 0) {
-			if (debugScope.enabled) {
-				debugScope("[parallel] no factories, returning empty array");
-			}
-			return [];
-		}
+		options?: {
+			/** Maximum concurrent operations (default: unlimited, or scope's concurrency limit) */
+			concurrency?: number;
+			/** Called after each task completes */
+			onProgress?: (
+				completed: number,
+				total: number,
+				result: Result<unknown, T>,
+			) => void;
+			/** Continue processing on error (default: false) */
+			continueOnError?: boolean;
+		},
+	): Promise<ParallelAggregateResult<T>> {
+		const {
+			concurrency: optionConcurrency,
+			onProgress,
+			continueOnError,
+		} = options ?? {};
 
-		const concurrency = this.concurrencySemaphore?.totalPermits ?? 0;
-		const failFast = options?.failFast ?? false;
-		const totalTasks = factories.length;
-		const debugEnabled = debugScope.enabled;
+		// Use provided concurrency, or scope's semaphore, or unlimited
+		const scopeConcurrency = this.concurrencySemaphore?.totalPermits ?? 0;
+		const concurrency =
+			optionConcurrency !== undefined
+				? optionConcurrency
+				: scopeConcurrency > 0
+					? scopeConcurrency
+					: 0;
 
-		if (debugEnabled) {
+		const total = factories.length;
+
+		if (debugScope.enabled) {
 			debugScope(
-				"[parallel] starting parallel execution (tasks: %d, concurrency: %d, failFast: %s)",
-				totalTasks,
+				"[parallel] starting (tasks: %d, concurrency: %d, continueOnError: %s)",
+				total,
 				concurrency > 0 ? concurrency : "unlimited",
-				failFast,
+				continueOnError ?? false,
 			);
 		}
 
-		// Check if signal is already aborted
-		if (this.signal.aborted) {
-			if (debugEnabled) {
-				debugScope("[parallel] already aborted");
-			}
-			return factories.map(() => [this.signal.reason, undefined]);
+		// Check cancellation before starting
+		if (this.abortController.signal.aborted) {
+			throw this.abortController.signal.reason;
 		}
 
-		const s = new Scope({ signal: this.signal, tracer: this.tracer });
-		let completedCount = 0;
-		let errorCount = 0;
+		const completed: { index: number; value: T }[] = [];
+		const errors: { index: number; error: unknown }[] = [];
 
-		try {
-			// Helper to process a single task - always returns Result
-			const processTask = async (
-				factory: (signal: AbortSignal) => Promise<T>,
-				_idx: number,
-			): Promise<Result<unknown, T>> => {
-				const result = await s.task(({ signal }) => factory(signal));
-				if (result[0]) {
-					errorCount++;
-					if (debugEnabled) {
-						debugScope(
-							"[parallel] task %d/%d failed (failFast: %s)",
-							errorCount,
-							totalTasks,
-							failFast,
-						);
-					}
-				} else {
-					completedCount++;
-					if (debugEnabled) {
-						debugScope(
-							"[parallel] task %d/%d completed",
-							completedCount,
-							totalTasks,
-						);
-					}
-				}
-				return result;
-			};
+		if (concurrency <= 0 || concurrency >= factories.length) {
+			// No concurrency limit - run all in parallel
+			const childScope = new Scope({
+				signal: this.signal,
+				tracer: this.tracer,
+			});
 
-			// If no concurrency limit, run all in parallel
-			if (concurrency <= 0 || concurrency >= factories.length) {
-				if (debugEnabled) {
-					debugScope("[parallel] running all tasks in parallel");
-				}
-				const results = await Promise.all(
-					factories.map((f, i) => processTask(f, i)),
+			try {
+				const promises = factories.map((factory, idx) =>
+					childScope
+						.task(({ signal }) => factory(signal))
+						.then((result): [number, Result<unknown, T>] => [idx, result]),
 				);
 
-				// Check for errors if failFast
-				if (failFast) {
-					const firstError = results.find((r) => r[0]);
-					if (firstError?.[0]) {
-						throw firstError[0];
+				// If not continuing on error, use Promise.all to fail fast
+				const results = continueOnError
+					? await Promise.all(promises)
+					: await Promise.all(promises).catch((error) => {
+							// First error - stop processing
+							return [[-1, [error, undefined]] as [number, Result<unknown, T>]];
+						});
+
+				for (const [idx, result] of results) {
+					if (idx === -1) continue; // Skip error marker
+
+					const [err, value] = result;
+					if (err) {
+						errors.push({ index: idx, error: err });
+						if (onProgress) {
+							onProgress(completed.length + errors.length, total, result);
+						}
+						if (!continueOnError) break;
+					} else {
+						completed.push({ index: idx, value: value as T });
+						if (onProgress) {
+							onProgress(completed.length + errors.length, total, result);
+						}
 					}
 				}
-
-				return results;
+			} finally {
+				await childScope[Symbol.asyncDispose]();
 			}
-
-			// Run with limited concurrency using a worker pool
-			if (debugEnabled) {
-				debugScope(
-					"[parallel] running with concurrency limit: %d",
-					concurrency,
-				);
-			}
-			const results: Result<unknown, T>[] = new Array(factories.length);
+		} else {
+			// With concurrency limit
+			const executing: Promise<void>[] = [];
 			let index = 0;
-			let hasError = false;
 
-			const worker = async (workerId: number): Promise<void> => {
-				if (debugEnabled) {
-					debugScope("[parallel] worker %d started", workerId);
+			for (const factory of factories) {
+				// Check cancellation
+				if (this.abortController.signal.aborted) {
+					throw this.abortController.signal.reason;
 				}
-				let tasksProcessed = 0;
-				while (index < factories.length) {
-					// Check if we should stop due to error in failFast mode
-					if (failFast && hasError) {
-						if (debugEnabled) {
-							debugScope(
-								"[parallel] worker %d stopping due to error",
-								workerId,
-							);
-						}
-						break;
-					}
 
-					const currentIndex = index++;
-					const factory = factories[currentIndex];
-					if (!factory) continue;
+				const currentIndex = index++;
 
-					if (debugEnabled) {
-						debugScope(
-							"[parallel] worker %d processing task %d",
-							workerId,
-							currentIndex,
-						);
-					}
+				const promise = (async () => {
+					try {
+						const result = await this.task((ctx) => factory(ctx.signal));
+						const [err, value] = result;
 
-					const result = await processTask(factory, currentIndex);
-					results[currentIndex] = result;
-					if (result[0]) {
-						hasError = true;
-						if (failFast) {
-							if (debugEnabled) {
-								debugScope(
-									"[parallel] worker %d aborting due to error",
-									workerId,
-								);
+						if (err) {
+							errors.push({ index: currentIndex, error: err });
+							if (onProgress) {
+								onProgress(completed.length + errors.length, total, result);
 							}
-							break;
+							if (!continueOnError) {
+								throw new Error("parallel stopped on first error");
+							}
+						} else {
+							completed.push({
+								index: currentIndex,
+								value: value as T,
+							});
+							if (onProgress) {
+								onProgress(completed.length + errors.length, total, result);
+							}
+						}
+					} catch (error) {
+						// Handle unexpected errors
+						errors.push({ index: currentIndex, error });
+						if (onProgress) {
+							onProgress(completed.length + errors.length, total, [
+								error,
+								undefined,
+							]);
+						}
+						if (!continueOnError) {
+							throw error;
 						}
 					}
-					tasksProcessed++;
-				}
-				if (debugEnabled) {
-					debugScope(
-						"[parallel] worker %d finished, processed %d tasks",
-						workerId,
-						tasksProcessed,
-					);
-				}
-			};
+				})();
 
-			const workers: Promise<void>[] = [];
-			const workerCount = Math.min(concurrency, factories.length);
-			for (let i = 0; i < workerCount; i++) {
-				workers.push(worker(i));
-			}
+				executing.push(promise);
 
-			await Promise.all(workers);
-
-			// Check for errors if failFast
-			if (failFast && hasError) {
-				const firstError = results.find((r) => r[0]);
-				if (firstError?.[0]) {
-					throw firstError[0];
+				if (executing.length >= concurrency) {
+					try {
+						await Promise.race(executing);
+					} catch {
+						if (!continueOnError) break;
+					}
 				}
 			}
 
-			debugScope(
-				"[parallel] all tasks completed: %d/%d, errors: %d",
-				completedCount,
-				totalTasks,
-				errorCount,
-			);
-			return results;
-		} finally {
-			await s[Symbol.asyncDispose]();
+			// Wait for remaining
+			if (continueOnError || errors.length === 0) {
+				await Promise.all(executing).catch(() => {});
+			}
 		}
+
+		return {
+			completed,
+			errors,
+			allCompleted: errors.length === 0,
+		};
 	}
 
 	/**
@@ -2191,107 +2206,6 @@ export class Scope<
 			},
 		});
 		return pool;
-	}
-
-	/**
-	 * Run multiple tasks in parallel and aggregate errors.
-	 * Unlike parallel(), this returns a structured result with both successes and failures.
-	 *
-	 * @example
-	 * ```typescript
-	 * const result = await s.parallelAggregate([
-	 *   () => fetchUser(1),
-	 *   () => fetchUser(2),
-	 *   () => fetchUser(999), // This might fail
-	 * ])
-	 *
-	 * console.log(result.completed) // Successfully fetched users
-	 * console.log(result.errors)    // Failed fetches
-	 * console.log(result.allCompleted) // false if any failed
-	 * ```
-	 */
-	async parallelAggregate<T>(
-		factories: readonly ((signal: AbortSignal) => Promise<T>)[],
-	): Promise<ParallelAggregateResult<T>> {
-		const results = await this.parallel(factories);
-
-		const completed: { index: number; value: T }[] = [];
-		const errors: { index: number; error: unknown }[] = [];
-
-		for (let i = 0; i < results.length; i++) {
-			const result = results[i];
-			if (!result) continue;
-			const [err, value] = result;
-			if (err) {
-				errors.push({ index: i, error: err });
-			} else {
-				completed.push({ index: i, value: value as T });
-			}
-		}
-
-		return {
-			completed,
-			errors,
-			allCompleted: errors.length === 0,
-		};
-	}
-
-	/**
-	 * Process an array of items with concurrency control and progress tracking.
-	 *
-	 * @param items - Items to process
-	 * @param options - Processing options
-	 * @returns Batch result with successful and failed items
-	 *
-	 * @example
-	 * ```typescript
-	 * await using s = scope()
-	 *
-	 * const results = await s.batch(urls, {
-	 *   process: (url) => fetch(url).then(r => r.json()),
-	 *   concurrency: 5,
-	 *   onProgress: (completed, total) => console.log(`${completed}/${total}`),
-	 *   continueOnError: true
-	 * })
-	 *
-	 * console.log(`Processed: ${results.completed}/${results.total}`)
-	 * console.log(`Failed: ${results.errors}`)
-	 * ```
-	 */
-	async batch<T, R>(
-		items: readonly T[],
-		options: {
-			/** Function to process each item */
-			process: (item: T, index: number) => Promise<R>;
-			/** Maximum concurrent operations (default: unlimited) */
-			concurrency?: number;
-			/** Called after each item is processed */
-			onProgress?: (
-				completed: number,
-				total: number,
-				result: Result<unknown, R>,
-			) => void;
-			/** Continue processing on error (default: false) */
-			continueOnError?: boolean;
-		},
-	): Promise<{
-		successful: { item: T; index: number; result: R }[];
-		failed: { item: T; index: number; error: unknown }[];
-		total: number;
-		completed: number;
-		errors: number;
-		allSuccessful: boolean;
-	}> {
-		const { process, concurrency, onProgress, continueOnError } = options;
-
-		// Use scope's signal for cancellation
-		return batch(items, {
-			process,
-			concurrency,
-			onProgress,
-			continueOnError,
-			signal: this.abortController.signal,
-		});
 	}
 
 	/**
