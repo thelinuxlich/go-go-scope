@@ -20,6 +20,12 @@ import type { ScopeOptions } from "../scope.js";
 import { Scope } from "../scope.js";
 import type { TaskOptions } from "../types.js";
 
+// Re-export time controller
+export {
+	createTestScope,
+	createTimeController,
+} from "./time-controller.js";
+
 /**
  * Options for creating a mock scope
  */
@@ -30,6 +36,8 @@ export interface MockScopeOptions {
 	deterministic?: boolean;
 	/** Pre-configured services to inject */
 	services?: Record<string, unknown>;
+	/** Services to override (for mocking existing services) */
+	overrides?: Record<string, unknown>;
 	/** Initial aborted state */
 	aborted?: boolean;
 	/** Abort reason if aborted */
@@ -61,6 +69,8 @@ export interface MockScope extends Scope<Record<string, never>> {
 	getTaskCalls: () => TaskCall[];
 	/** Clear recorded task calls */
 	clearTaskCalls: () => void;
+	/** Override a service with a mock implementation */
+	mockService: <K extends string, T>(key: K, value: T) => MockScope;
 }
 
 /**
@@ -105,12 +115,12 @@ export function createMockScope(options: MockScopeOptions = {}): MockScope {
 
 	// Override task method to track calls
 	const originalTask = baseScope.task.bind(baseScope);
-	mockScope.task = <T>(
+	mockScope.task = <T, E extends Error = Error>(
 		fn: (ctx: {
 			services: Record<string, never>;
 			signal: AbortSignal;
 		}) => Promise<T>,
-		taskOptions?: TaskOptions,
+		taskOptions?: TaskOptions<E>,
 	) => {
 		mockScope.taskCalls.push({ fn, options: taskOptions });
 		return originalTask(fn, taskOptions);
@@ -138,6 +148,19 @@ export function createMockScope(options: MockScopeOptions = {}): MockScope {
 			(mockScope as unknown as Record<string, unknown>)[key] = value;
 		}
 	}
+
+	// Apply overrides if provided
+	if (options.overrides) {
+		for (const [key, value] of Object.entries(options.overrides)) {
+			(mockScope as unknown as Record<string, unknown>)[key] = value;
+		}
+	}
+
+	// Add mockService helper
+	mockScope.mockService = function <K extends string, T>(key: K, value: T) {
+		(this as unknown as Record<string, unknown>)[key] = value;
+		return this;
+	};
 
 	// Set initial aborted state if specified
 	if (options.aborted) {

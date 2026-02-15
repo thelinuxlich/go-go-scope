@@ -79,6 +79,7 @@
 		"@types/debug": "^4.1.12",
 		"@types/node": "^24",
 		"effect": "^3.19.16",
+		"go-go-try": "^7.2.1",
 		"pkgroll": "^2.25.2",
 		"typescript": "^5.9.3",
 		"vitest": "^4.0.18"

@@ -8,6 +8,7 @@ Patterns for building fault-tolerant applications with `go-go-scope`.
 - [Retry](#retry)
 - [Timeout](#timeout)
 - [Deadlock Detection](#deadlock-detection)
+- [Typed Error Handling](#typed-error-handling)
 
 ---
 
@@ -211,6 +212,195 @@ await s.task(async () => {
 The deadlock detector monitors tasks waiting on resources (channels, semaphores, pools) and warns if they've been waiting longer than the configured timeout.
 
 **Note:** This detects *potential* deadlocks (tasks stuck waiting), not actual circular waits.
+
+---
+
+---
+
+## Typed Error Handling
+
+Use [`go-go-try`](https://github.com/thelinuxlich/go-go-try) alongside `go-go-scope` for automatic union inference of typed errors. This enables exhaustive pattern matching on error types without explicit type annotations.
+
+### Why Typed Errors?
+
+Instead of `unknown` error types, define specific tagged error classes using the `taggedError` helper:
+
+```typescript
+import { taggedError } from 'go-go-try'
+
+// Define tagged error classes with the helper
+const DatabaseError = taggedError('DatabaseError')
+const NetworkError = taggedError('NetworkError')
+const ValidationError = taggedError('ValidationError')
+
+// Create a union type
+import type { TaggedUnion } from 'go-go-try'
+type AppError = TaggedUnion<[typeof DatabaseError, typeof NetworkError, typeof ValidationError]>
+// Equivalent to: DatabaseError | NetworkError | ValidationError
+```
+
+### Using Typed Errors with `errorClass`
+
+Use the `errorClass` option to automatically wrap errors in typed error classes. This enables automatic union inference when combined with go-go-try's `success()` and `failure()` helpers.
+
+```typescript
+import { scope } from 'go-go-scope'
+import { taggedError, success, failure } from 'go-go-try'
+
+const DatabaseError = taggedError('DatabaseError')
+const NetworkError = taggedError('NetworkError')
+
+// No explicit return type needed!
+// TypeScript infers: Promise<Result<DatabaseError | NetworkError, User>>
+async function fetchUser(id: string) {
+  await using s = scope()
+  
+  // Database operation - errors wrapped in DatabaseError
+  const [dbErr, user] = await s.task(
+    () => queryDatabase(id),
+    { errorClass: DatabaseError }
+  )
+  if (dbErr) return failure(dbErr)
+  
+  // Network operation - errors wrapped in NetworkError
+  const [netErr, enriched] = await s.task(
+    () => enrichUserData(user!),
+    { errorClass: NetworkError }
+  )
+  if (netErr) return failure(netErr)
+  
+  return success(enriched)
+}
+
+// Usage with exhaustive pattern matching
+const [err, user] = await fetchUser('123')
+if (err) {
+  switch (err._tag) {
+    case 'DatabaseError':
+      console.error('DB failed:', err.message)
+      break
+    case 'NetworkError': 
+      console.error('Network issue:', err.message)
+      break
+    default:
+      // Compile-time safety: TypeScript errors if any case is missing
+      const _exhaustive: never = err
+  }
+} else {
+  console.log('Got user:', user.name)
+}
+```
+
+### Alternative: Using goTryRaw with Raw Operations
+
+If you don't need all scope features (like automatic cancellation signal propagation), use `goTryRaw` directly on raw operations:
+
+```typescript
+import { scope } from 'go-go-scope'
+import { taggedError, success, failure, goTryRaw } from 'go-go-try'
+
+const DatabaseError = taggedError('DatabaseError')
+const NetworkError = taggedError('NetworkError')
+
+// Use goTryRaw directly on raw operations (not wrapped in s.task)
+async function fetchUser(id: string) {
+  await using s = scope({ timeout: 5000 })
+  
+  // goTryRaw wraps the operation and converts errors
+  const [dbErr, user] = await goTryRaw(
+    () => queryDatabase(id),  // Raw operation
+    DatabaseError
+  )
+  if (dbErr) return failure(dbErr)
+  
+  const [netErr, enriched] = await goTryRaw(
+    () => enrichUserData(user!),  // Raw operation
+    NetworkError
+  )
+  if (netErr) return failure(netErr)
+  
+  return success(enriched)
+}
+```
+
+> **Note:** When using `goTryRaw` with raw operations, you lose automatic `AbortSignal` propagation. For cancellation support, pass the signal manually:
+> ```typescript
+> const [err, data] = await goTryRaw(
+>   () => fetch(`/api/data?id=${id}`, { signal: s.signal }),
+>   NetworkError
+> )
+> ```
+
+### With Scope Features
+
+Combine typed errors with all `go-go-scope` features:
+
+```typescript
+import { scope } from 'go-go-scope'
+import { taggedError, success, failure } from 'go-go-try'
+
+const DatabaseError = taggedError('DatabaseError')
+const CacheError = taggedError('CacheError')
+
+async function resilientFetch(id: string) {
+  await using s = scope({
+    timeout: 10000,
+    circuitBreaker: { failureThreshold: 3 },
+    retry: { maxRetries: 2 }
+  })
+  
+  // All scope features work with typed errors
+  const [dbErr, data] = await s.task(
+    () => fetchFromDatabase(id),
+    { errorClass: DatabaseError }
+  )
+  if (dbErr) return failure(dbErr)
+  
+  const [cacheErr, cached] = await s.task(
+    () => updateCache(data!),
+    { errorClass: CacheError }
+  )
+  if (cacheErr) return failure(cacheErr)
+  
+  return success(cached!)
+}
+```
+
+### Helper Functions
+
+The `go-go-try` package provides:
+
+- **`taggedError(tag)`** - Creates a tagged error class for discriminated unions
+- **`goTryRaw(fn, ErrorClass)`** - Wraps a function/promise and converts errors to your typed error class
+- **`success(value)`** - Returns `Success<T>` for consistent return types
+- **`failure(error)`** - Returns `Failure<E>` for consistent return types
+- **`TaggedUnion<[...]>`** - Helper type to create union types from tagged error classes
+
+### `go-go-scope` Integration
+
+The `errorClass` option in `TaskOptions` enables typed error handling:
+
+```typescript
+task<T, E extends Error = Error>(
+  fn: (ctx: { services: Services; signal: AbortSignal }) => Promise<T>,
+  options?: TaskOptions<E>
+): Task<Result<E, T>>
+```
+
+When `errorClass` is provided, errors are automatically wrapped in that class.
+
+### Type Inference Benefits
+
+1. **No explicit types needed** - TypeScript infers the union automatically
+2. **Exhaustive checking** - Pattern matching ensures all cases are handled
+3. **Type narrowing** - Inside each `case`, the error is fully typed
+4. **Refactoring safety** - Adding a new error type causes TypeScript errors where not handled
+
+### Installation
+
+```bash
+npm install go-go-scope go-go-try
+```
 
 ---
 

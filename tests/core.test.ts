@@ -447,6 +447,130 @@ describe("Scope", () => {
 	});
 });
 
+describe("override()", () => {
+	test("replaces an existing service", async () => {
+		await using s = scope()
+			.provide("config", () => ({ env: "production" }))
+			.override("config", () => ({ env: "testing" }));
+
+		const config = s.use("config");
+		expect(config.env).toBe("testing");
+	});
+
+	test("throws when overriding non-existent service", async () => {
+		await using s = scope();
+
+		expect(() => {
+			s.override("db", () => ({ query: () => "mock" }));
+		}).toThrow("Cannot override service 'db': it was not provided");
+	});
+
+	test("allows chaining with provide()", async () => {
+		await using s = scope()
+			.provide("db", () => ({ name: "real" }))
+			.provide("cache", () => ({ name: "real-cache" }))
+			.override("db", () => ({ name: "mock" }));
+
+		expect(s.use("db").name).toBe("mock");
+		expect(s.use("cache").name).toBe("real-cache");
+	});
+
+	test("registers cleanup for overridden service", async () => {
+		const cleanups: string[] = [];
+
+		{
+			await using s = scope()
+				.provide(
+					"db",
+					() => ({ name: "real" }),
+					() => cleanups.push("real-cleanup"),
+				)
+				.override(
+					"db",
+					() => ({ name: "mock" }),
+					() => cleanups.push("mock-cleanup"),
+				);
+
+			expect(s.use("db").name).toBe("mock");
+		}
+
+		// Both cleanups should run (LIFO)
+		expect(cleanups).toEqual(["mock-cleanup", "real-cleanup"]);
+	});
+
+	test("works with task context", async () => {
+		interface Database {
+			query: () => string;
+		}
+
+		await using s = scope()
+			.provide<"db", Database>("db", () => ({ query: () => "real" }))
+			.override<"db", Database>("db", () => ({ query: () => "mock" }));
+
+		const [err, result] = await s.task(({ services }) => {
+			return services.db.query();
+		});
+
+		expect(err).toBeUndefined();
+		expect(result).toBe("mock");
+	});
+
+	test("throws on disposed scope", async () => {
+		const s = scope().provide("db", () => ({ query: () => "real" }));
+		await s[Symbol.asyncDispose]();
+
+		expect(() => {
+			s.override("db", () => ({ query: () => "mock" }));
+		}).toThrow("Cannot override service on disposed scope");
+	});
+
+	test("allows multiple overrides", async () => {
+		await using s = scope()
+			.provide("value", () => 1)
+			.override("value", () => 2)
+			.override("value", () => 3);
+
+		expect(s.use("value")).toBe(3);
+	});
+});
+
+describe("has()", () => {
+	test("returns true for existing service", async () => {
+		await using s = scope().provide("db", () => ({ query: () => "result" }));
+
+		expect(s.has("db")).toBe(true);
+	});
+
+	test("returns false for non-existent service", async () => {
+		await using s = scope();
+
+		expect(s.has("db")).toBe(false);
+	});
+
+	test("returns false for disposed scope", async () => {
+		const s = scope().provide("db", () => ({ query: () => "result" }));
+		await s[Symbol.asyncDispose]();
+
+		expect(s.has("db")).toBe(false);
+	});
+
+	test("returns true after override", async () => {
+		await using s = scope()
+			.provide("db", () => ({ query: () => "real" }))
+			.override("db", () => ({ query: () => "mock" }));
+
+		expect(s.has("db")).toBe(true);
+	});
+
+	test("works with inherited services from parent", async () => {
+		await using parent = scope().provide("db", () => ({ query: () => "parent" }));
+		await using child = scope({ parent });
+
+		expect(child.has("db")).toBe(true);
+		expect(parent.has("db")).toBe(true);
+	});
+});
+
 describe("AsyncDisposableResource", () => {
 	test("acquires and disposes correctly", async () => {
 		let disposed = false;
@@ -738,6 +862,191 @@ describe("task() with retry option", () => {
 		expect(taskSpan?.attributes?.["task.duration_ms"]).toBeGreaterThanOrEqual(
 			40,
 		);
+	});
+});
+
+describe("errorClass option", () => {
+	test("returns untyped error when errorClass is not provided", async () => {
+		await using s = scope();
+
+		const [err, value] = await s.task(() =>
+			Promise.reject(new Error("plain error")),
+		);
+
+		expect(err).toBeInstanceOf(Error);
+		expect((err as Error).message).toBe("plain error");
+		expect(value).toBeUndefined();
+	});
+
+	test("wraps error in provided error class", async () => {
+		await using s = scope();
+
+		class CustomError extends Error {
+			constructor(
+				message: string,
+				options?: { cause?: unknown },
+			) {
+				super(message, options);
+				this.name = "CustomError";
+			}
+		}
+
+		const [err, value] = await s.task(
+			() => Promise.reject(new Error("original error")),
+			{ errorClass: CustomError },
+		);
+
+		expect(err).toBeInstanceOf(CustomError);
+		expect(err?.message).toBe("original error");
+		expect((err as CustomError)?.cause).toBeInstanceOf(Error);
+		expect(((err as CustomError)?.cause as Error)?.message).toBe(
+			"original error",
+		);
+		expect(value).toBeUndefined();
+	});
+
+	test("returns success value unchanged", async () => {
+		await using s = scope();
+
+		class CustomError extends Error {
+			constructor(message: string) {
+				super(message);
+				this.name = "CustomError";
+			}
+		}
+
+		const [err, value] = await s.task(() => Promise.resolve("success"), {
+			errorClass: CustomError,
+		});
+
+		expect(err).toBeUndefined();
+		expect(value).toBe("success");
+	});
+
+	test("handles non-Error values and wraps them", async () => {
+		await using s = scope();
+
+		class CustomError extends Error {
+			constructor(message: string) {
+				super(message);
+				this.name = "CustomError";
+			}
+		}
+
+		// Task that throws a string
+		const [err, value] = await s.task(
+			() => {
+				throw "string error";
+			},
+			{ errorClass: CustomError },
+		);
+
+		expect(err).toBeInstanceOf(CustomError);
+		expect(err?.message).toBe("string error");
+		expect(value).toBeUndefined();
+	});
+
+	test("works with taggedError-style classes", async () => {
+		await using s = scope();
+
+		// Simulating go-go-try's taggedError
+		const DatabaseError = class extends Error {
+			readonly _tag = "DatabaseError" as const;
+			constructor(
+				message: string,
+				options?: { cause?: unknown },
+			) {
+				super(message, options);
+				this.name = "DatabaseError";
+			}
+		};
+
+		const NetworkError = class extends Error {
+			readonly _tag = "NetworkError" as const;
+			constructor(
+				message: string,
+				options?: { cause?: unknown },
+			) {
+				super(message, options);
+				this.name = "NetworkError";
+			}
+		};
+
+		// First operation fails with DatabaseError
+		const [dbErr, user] = await s.task(
+			() => Promise.reject(new Error("DB failed")),
+			{ errorClass: DatabaseError },
+		);
+
+		if (dbErr) {
+			expect(dbErr._tag).toBe("DatabaseError");
+			expect(dbErr).toBeInstanceOf(DatabaseError);
+		}
+
+		// Second operation succeeds
+		const [netErr, data] = await s.task(
+			() => Promise.resolve({ id: "123", name: "Test" }),
+			{ errorClass: NetworkError },
+		);
+
+		expect(netErr).toBeUndefined();
+		expect(data).toEqual({ id: "123", name: "Test" });
+	});
+
+	test("combines with retry option", async () => {
+		await using s = scope();
+
+		class RetryableError extends Error {
+			constructor(message: string) {
+				super(message);
+				this.name = "RetryableError";
+			}
+		}
+
+		let attempts = 0;
+		const [err, value] = await s.task(
+			() => {
+				attempts++;
+				if (attempts < 2) {
+					throw new Error("transient failure");
+				}
+				return "success after retry";
+			},
+			{
+				errorClass: RetryableError,
+				retry: { maxRetries: 2 },
+			},
+		);
+
+		expect(err).toBeUndefined();
+		expect(value).toBe("success after retry");
+		expect(attempts).toBe(2);
+	});
+
+	test("combines with timeout option", async () => {
+		await using s = scope();
+
+		class TimeoutError extends Error {
+			constructor(message: string) {
+				super(message);
+				this.name = "TimeoutError";
+			}
+		}
+
+		const [err, value] = await s.task(
+			() =>
+				new Promise<string>((resolve) => {
+					setTimeout(() => resolve("too late"), 1000);
+				}),
+			{
+				errorClass: TimeoutError,
+				timeout: 50,
+			},
+		);
+
+		expect(err).toBeInstanceOf(TimeoutError);
+		expect(err?.message).toContain("timeout");
+		expect(value).toBeUndefined();
 	});
 });
 

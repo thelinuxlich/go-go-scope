@@ -104,6 +104,86 @@ await workerPool.execute(async (worker) => {
 
 ---
 
+## Type-Safe Dependency Injection
+
+The `provide()` / `use()` API is fully type-safe - TypeScript tracks which services are available and will give compile-time errors for invalid keys.
+
+**⚠️ Important:** Always chain `provide()` calls with scope creation. Type safety depends on capturing the return type of each `provide()` call.
+
+### Basic Type Safety
+
+```typescript
+// ✓ CORRECT - chain provide() calls
+const s = scope()
+  .provide('db', () => ({ query: () => 'result' }))
+  .provide('cache', () => ({ get: () => 'cached' }))
+
+// ✓ Type-safe access
+const db = s.use('db')     // Type: { query: () => string }
+const cache = s.use('cache') // Type: { get: () => string }
+
+// ✗ Compile error - 'invalid' is not a valid service key
+s.use('invalid')  // TypeScript Error: Argument of type '"invalid"' is not assignable
+```
+
+### Common Mistake: Separate Statements
+
+```typescript
+// ✗ WRONG - TypeScript loses track of services
+const s = scope()  // Scope with no services
+s.provide('db', () => ({ query: () => 'result' }))  // Return value ignored!
+s.use('db')  // ✗ TypeScript error: 'db' is not recognized
+
+// ✓ CORRECT - chain calls to preserve type information
+const s = scope()
+  .provide('db', () => ({ query: () => 'result' }))
+s.use('db')  // ✓ Works - TypeScript knows about 'db'
+```
+
+### Type Inference in Tasks
+
+```typescript
+await using s = scope()
+  .provide('db', () => ({ 
+    query: (sql: string) => Promise.resolve([sql]) 
+  }))
+
+const [err, result] = await s.task(({ services }) => {
+  // services.db is fully typed
+  return services.db.query('SELECT 1')  // ✓ Type-checked
+})
+```
+
+### Chaining Preserves Types
+
+```typescript
+const s = scope()
+  .provide('a', () => 1)
+  .provide('b', () => 2)
+  .provide('c', () => 3)
+
+// All services are tracked in the type
+s.use('a')  // ✓ number
+s.use('b')  // ✓ number
+s.use('c')  // ✓ number
+s.use('d')  // ✗ Type error - 'd' doesn't exist
+```
+
+### Override Type Safety
+
+```typescript
+const s = scope()
+  .provide('db', () => ({ name: 'postgres' }))
+
+// ✓ Can override existing service
+s.override('db', () => ({ name: 'mock' }))
+
+// ✗ Type error - must be an existing key
+s.override('cache', () => ({}) )  // Error: 'cache' doesn't exist
+```
+
+---
+
 ## Parent-Child Scopes
 
 Scopes can inherit from parents for cancellation propagation and service sharing.
@@ -165,6 +245,48 @@ await using child = scope({ signal: parent.signal })
 
 // Must provide own db
 child.provide('db', () => openAnotherDatabase())
+```
+
+### Overriding Parent Services (Testing)
+
+Child scopes can override parent services for testing:
+
+```typescript
+await using parent = scope()
+  .provide('db', () => openProductionDatabase())
+  .provide('api', () => createRealApiClient())
+
+// For testing: inherit everything but override the database
+await using testScope = scope({ parent })
+  .override('db', () => createTestDatabase())
+
+// testScope.use('db') returns test database
+// testScope.use('api') still returns real API client from parent
+```
+
+This is especially useful for integration tests where you want most real services but need to mock specific ones:
+
+```typescript
+describe('UserService integration', () => {
+  test('creates user with real cache but mock email', async () => {
+    await using parent = scope()
+      .provide('db', () => createTestDatabase())
+      .provide('cache', () => createRealCache())
+      .provide('email', () => createRealEmailService())
+
+    await using testScope = scope({ parent })
+      .override('email', () => createMockEmailService())
+
+    // Test runs with real db + cache, but mock email
+    const [err, user] = await testScope.task(
+      ({ services }) => createUser(services, { email: 'test@example.com' })
+    )
+
+    expect(err).toBeUndefined()
+    // Verify mock email was "sent"
+    expect(testScope.use('email').sentEmails).toHaveLength(1)
+  })
+})
 ```
 
 ### Common Patterns

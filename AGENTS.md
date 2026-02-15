@@ -50,49 +50,66 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 │   ├── index.ts               # Main exports (re-exports from other files)
 │   ├── types.ts               # All type definitions, interfaces, and enums
 │   ├── factory.ts             # scope() factory function
-│   ├── race.ts                # race() function
-│   ├── parallel.ts            # parallel() function
-│   ├── stream.ts              # stream() function
-│   ├── poll.ts                # poll() function
 │   ├── task.ts                # Task class - lazy disposable Promise
 │   ├── scope.ts               # Scope class - structured concurrency primitive
 │   ├── channel.ts             # Channel class - Go-style concurrent communication
-│   ├── semaphore.ts           # Semaphore class - rate limiting primitive
 │   ├── broadcast-channel.ts   # BroadcastChannel class - pub/sub patterns
+│   ├── semaphore.ts           # Semaphore class - rate limiting primitive
 │   ├── circuit-breaker.ts     # CircuitBreaker class - fault tolerance
 │   ├── resource-pool.ts       # ResourcePool class - managed resource pools
 │   ├── profiler.ts            # Profiler class - task performance profiling
-│   ├── logger.ts              # Logger utilities - structured logging
 │   ├── deadlock-detector.ts   # DeadlockDetector class - deadlock detection
+│   ├── logger.ts              # Logger utilities - structured logging
 │   ├── metrics-exporter.ts    # Metrics export utilities
+│   ├── race.ts                # Standalone race() function
+│   ├── parallel.ts            # Standalone parallel() function
+│   ├── stream.ts              # Standalone stream() function
+│   ├── poll.ts                # Standalone poll() function
 │   ├── rate-limiting.ts       # Standalone debounce and throttle utilities
 │   └── testing/               # Test utilities
 │       └── index.ts           # Mock scopes, spies, timers for testing
 ├── benchmarks/                # Benchmark suite
-│   └── index.ts               # Performance benchmarks
+│   └── index.ts               # Performance benchmarks comparing with native Promise
 ├── tests/                     # Test suite organized by category
-│   ├── core.test.ts           # Core functionality (Task, Scope, race, parallel, retry, OpenTelemetry)
+│   ├── core.test.ts           # Core functionality (Task, Scope, retry, OpenTelemetry)
 │   ├── concurrency.test.ts    # Channels, Semaphore, CircuitBreaker, stream, poll
 │   ├── rate-limiting.test.ts  # Debounce, throttle, metrics, hooks, select
+│   ├── prometheus.test.ts     # Prometheus metrics export formats
+│   ├── testing.test.ts        # Test utilities validation
 │   └── performance.test.ts    # Performance benchmarks
 ├── dist/                      # Compiled output (generated, NOT committed)
 │   ├── index.mjs              # ESM build
 │   ├── index.cjs              # CommonJS build
 │   ├── index.d.mts            # ESM type definitions
-│   └── index.d.cts            # CommonJS type definitions
+│   ├── index.d.cts            # CommonJS type definitions
+│   └── testing/               # Testing utilities build outputs
 ├── examples/                  # Usage examples
-│   └── jaeger-tracing.ts      # OpenTelemetry tracing example with Jaeger
+│   ├── jaeger-tracing.ts      # OpenTelemetry tracing example with Jaeger
+│   ├── prometheus-metrics.ts  # Prometheus metrics endpoint example
+│   ├── prometheus-push.ts     # Prometheus Pushgateway example
+│   ├── prometheus-simple.ts   # Simple Prometheus metrics example
+│   └── testing-utilities.ts   # Testing utilities usage example
 ├── docs/                      # Documentation
 │   ├── 01-quick-start.md      # Quick start guide
 │   ├── 02-concepts.md         # Core concepts
 │   ├── 03-api-reference.md    # Complete API reference
-│   ├── 04-advanced-features.md # Advanced features guide
-│   ├── 05-comparisons.md      # Comparisons with other libraries
-│   └── 06-integrations.md     # Integration guides
+│   ├── 04-concurrency-patterns.md    # Channels, broadcast, select
+│   ├── 05-resilience-patterns.md     # Circuit breakers, retry, timeouts
+│   ├── 06-observability.md           # Metrics, logging, profiling, tracing
+│   ├── 07-rate-limiting.md           # Debounce, throttle, concurrency
+│   ├── 08-testing.md                 # Mock scopes, spies, and timers
+│   ├── 09-advanced-patterns.md       # Resource pools, parent-child scopes
+│   ├── 10-comparisons.md             # vs Vanilla JS, vs Effect
+│   └── 11-integrations.md            # OpenTelemetry, Prometheus, Grafana
+├── grafana/                   # Grafana provisioning
+│   └── provisioning/          # Dashboards and datasources
 ├── package.json               # Package configuration
 ├── tsconfig.json              # TypeScript configuration (ES2022, NodeNext, strict)
 ├── vitest.config.ts           # Vitest test configuration (globals enabled)
-├── docker-compose.yml         # Jaeger, Prometheus & Grafana setup
+├── docker-compose.yml         # Jaeger, Prometheus, Pushgateway & Grafana setup
+├── prometheus.yml             # Prometheus configuration
+├── .gitignore                 # Git ignore rules
+├── .npmignore                 # NPM publish ignore rules
 ├── LICENSE                    # MIT License
 └── README.md                  # Project overview
 ```
@@ -124,6 +141,7 @@ npm run example:jaeger
 npm run prometheus:up
 npm run prometheus:down
 npm run example:prometheus
+npm run example:prometheus:push
 
 # Start all monitoring (Jaeger + Prometheus + Grafana)
 npm run monitoring:up
@@ -246,6 +264,8 @@ task<T>(fn: (ctx: { services: Services; signal: AbortSignal }) => Promise<T>): T
   - flushPromises
   - assertScopeDisposed
 
+- **tests/performance.test.ts**: Performance benchmarks
+
 ### Test Patterns
 - Uses Vitest with globals enabled (no need to import `describe`, `test`, `expect`)
 - Tests use `await using` and `using` syntax extensively
@@ -268,6 +288,7 @@ npx vitest run tests/concurrency.test.ts
 npx vitest run tests/rate-limiting.test.ts
 npx vitest run tests/prometheus.test.ts
 npx vitest run tests/testing.test.ts
+npx vitest run tests/performance.test.ts
 ```
 
 ### Writing New Tests
@@ -324,11 +345,14 @@ test("cancels when scope disposed", async () => {
      - `race()` - Race multiple tasks
      - `parallel()` - Run tasks in parallel with concurrency limit
      - `channel()` - Create Go-style channels
+     - `broadcast()` - Create broadcast channels
      - `stream()` - Wrap async iterables
      - `poll()` - Interval polling with controller
      - `debounce()` / `throttle()` - Rate limiting
      - `select()` - Wait on multiple channel operations
+     - `resourcePool()` - Create managed resource pools
      - `metrics()` - Get collected metrics
+     - `profile()` - Get profiling report
    - Properties: `signal`, `isDisposed`, `tracer`, `concurrency`, `circuitBreaker`
 
 3. **AsyncDisposableResource<T>** (`scope.ts`): Resource wrapper
@@ -344,27 +368,49 @@ test("cancels when scope disposed", async () => {
    - Methods: `send()`, `receive()`, `close()`, `[Symbol.asyncIterator]`
    - Properties: `isClosed`, `size`, `cap`
 
-5. **Semaphore** (`semaphore.ts`): Rate limiting primitive
+5. **BroadcastChannel<T>** (`broadcast-channel.ts`): Pub/sub broadcast channel
+   - All subscribers receive every message
+   - Supports filtering via subscriber functions
+   - Auto-closes on parent scope disposal
+   - Methods: `send()`, `subscribe()`, `close()`
+
+6. **Semaphore** (`semaphore.ts`): Rate limiting primitive
    - Acquire/release pattern with auto-release on error
    - Respects scope cancellation
    - Queue-based fairness
    - Methods: `acquire()`, `execute()`, `[Symbol.asyncDispose]`
    - Properties: `available`, `availablePermits`, `waiting`, `waiterCount`, `totalPermits`
 
-6. **CircuitBreaker** (`circuit-breaker.ts`): Fault tolerance
+7. **CircuitBreaker** (`circuit-breaker.ts`): Fault tolerance
    - States: closed, open, half-open
    - Configurable failure threshold and reset timeout
    - Respects parent AbortSignal
    - Methods: `execute()`, `reset()`, `[Symbol.asyncDispose]`
    - Properties: `currentState`, `failureCount`, `failureThreshold`, `resetTimeout`
 
+8. **ResourcePool<T>** (`resource-pool.ts`): Managed resource pools
+   - Min/max pool size management
+   - Acquire timeout support
+   - Auto-cleanup on scope disposal
+   - Methods: `acquire()`, `release()`, `drain()`, `[Symbol.asyncDispose]`
+
+9. **Profiler** (`profiler.ts`): Task performance profiling
+   - Tracks execution time per pipeline stage
+   - Records retry attempts
+   - Methods: `startTask()`, `endTask()`, `report()`
+
+10. **DeadlockDetector** (`deadlock-detector.ts`): Deadlock detection
+    - Monitors task execution times
+    - Configurable timeout with callback
+    - Methods: `check()`, `dispose()`
+
 ### Utility Functions
 
-- **scope(options?)**: Factory for Scope instances (`index.ts`)
-- **race(factories, options?)**: Race with automatic cancellation of losers (`index.ts`)
-- **parallel(factories, options?)**: Parallel execution with concurrency limit (`index.ts`)
-- **stream(source, signal?)**: Async iterable wrapper with cancellation (`index.ts`)
-- **poll(fn, onValue, options?)**: Interval polling with cleanup (`index.ts`, deprecated in favor of `scope().poll()`)
+- **scope(options?)**: Factory for Scope instances (`factory.ts`)
+- **race(factories, options?)**: Race with automatic cancellation of losers (`race.ts`)
+- **parallel(factories, options?)**: Parallel execution with concurrency limit (`parallel.ts`)
+- **stream(source, signal?)**: Async iterable wrapper with cancellation (`stream.ts`)
+- **poll(fn, onValue, options?)**: Interval polling with cleanup (`poll.ts`)
 - **debounce(scope, fn, options?)**: Debounced function wrapper (`rate-limiting.ts`)
 - **throttle(scope, fn, options?)**: Throttled function wrapper (`rate-limiting.ts`)
 
@@ -385,6 +431,7 @@ Advanced features are added to Scope as methods:
 ```typescript
 // Scope methods that create resources:
 channel<T>(capacity?: number): Channel<T>
+broadcast<T>(): BroadcastChannel<T>
 stream<T>(source: AsyncIterable<T>): AsyncGenerator<T>
 poll<T>(fn, onValue, options?): PollController
 race<T>(factories): Promise<Result<unknown, T>>
@@ -392,7 +439,9 @@ parallel<T>(factories, options?): Promise<Result<unknown, T>[]>
 debounce<T, Args>(fn, options?): (...args: Args) => Promise<Result<unknown, T>>
 throttle<T, Args>(fn, options?): (...args: Args) => Promise<Result<unknown, T>>
 select<T>(cases): Promise<Result<unknown, T>>
+resourcePool<T>(options): ResourcePool<T>
 metrics(): ScopeMetrics | undefined
+profile(): ScopeProfileReport | undefined
 ```
 
 ### Debug Logging
@@ -416,7 +465,7 @@ Enable with: `DEBUG=go-go-scope:* node your-app.js`
 
 ## Package Exports
 
-The package supports both ESM and CommonJS:
+The package supports both ESM and CommonJS with subpath exports:
 
 ```json
 {
@@ -425,17 +474,71 @@ The package supports both ESM and CommonJS:
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "exports": {
-    "require": {
-      "types": "./dist/index.d.cts",
-      "default": "./dist/index.cjs"
+    ".": {
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      },
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      }
     },
-    "import": {
-      "types": "./dist/index.d.mts",
-      "default": "./dist/index.mjs"
+    "./testing": {
+      "require": {
+        "types": "./dist/testing/index.d.cts",
+        "default": "./dist/testing/index.cjs"
+      },
+      "import": {
+        "types": "./dist/testing/index.d.mts",
+        "default": "./dist/testing/index.mjs"
+      }
     }
   }
 }
 ```
+
+Usage:
+```typescript
+// Main imports
+import { scope, Task, Scope } from 'go-go-scope';
+
+// Testing utilities (separate import)
+import { createMockScope, createSpy } from 'go-go-scope/testing';
+```
+
+## Typed Error Handling with go-go-try
+
+Combine with [`go-go-try`](https://github.com/thelinuxlich/go-go-try) for automatic union inference of typed errors:
+
+```typescript
+import { scope } from 'go-go-scope'
+import { taggedError, success, failure } from 'go-go-try'
+
+const DatabaseError = taggedError('DatabaseError')
+const NetworkError = taggedError('NetworkError')
+
+// Automatic union inference: Result<DatabaseError | NetworkError, User>
+async function fetchUser(id: string) {
+  await using s = scope()
+  
+  const [dbErr, user] = await s.task(
+    () => queryDb(id),
+    { errorClass: DatabaseError }
+  )
+  if (dbErr) return failure(dbErr)
+  
+  const [netErr, enriched] = await s.task(
+    () => enrich(user!),
+    { errorClass: NetworkError }
+  )
+  if (netErr) return failure(netErr)
+  
+  return success(enriched)
+}
+```
+
+See [Resilience Patterns](./docs/05-resilience-patterns.md#typed-error-handling) for detailed documentation.
 
 ## Dependencies
 
@@ -471,6 +574,7 @@ The package supports both ESM and CommonJS:
 - No external runtime dependencies besides `debug` (well-maintained, widely used)
 - Task functions receive AbortSignal to handle cancellation safely
 - Circuit breaker prevents cascading failures
+- Resource pools have acquisition timeouts to prevent indefinite blocking
 
 ## Common Tasks
 
@@ -491,6 +595,12 @@ The package supports both ESM and CommonJS:
 - Ensure AbortSignal propagation is maintained
 - Verify LIFO disposal order is preserved
 - Run full test suite before committing
+
+### Adding Testing Utilities
+1. Add utility to `src/testing/index.ts`
+2. Update type exports in `src/index.ts` if needed
+3. Add tests in `tests/testing.test.ts`
+4. Create example in `examples/testing-utilities.ts` if appropriate
 
 ## License
 

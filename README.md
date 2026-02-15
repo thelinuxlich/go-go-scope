@@ -84,6 +84,39 @@ Requires TypeScript 5.2+ and `ESNext.Disposable` lib.
 - ✅ **OpenTelemetry** - Distributed tracing support
 - ✅ **Test Utilities** - Mock scopes, spies, and timers
 
+## Typed Error Handling
+
+Combine with [`go-go-try`](https://github.com/thelinuxlich/go-go-try) for automatic union inference of typed errors:
+
+```typescript
+import { scope } from 'go-go-scope'
+import { taggedError, success, failure } from 'go-go-try'
+
+const DatabaseError = taggedError('DatabaseError')
+const NetworkError = taggedError('NetworkError')
+
+// TypeScript infers: Result<DatabaseError | NetworkError, User>
+async function fetchUser(id: string) {
+  await using s = scope()
+  
+  const [dbErr, user] = await s.task(
+    () => queryDb(id),
+    { errorClass: DatabaseError }
+  )
+  if (dbErr) return failure(dbErr)
+  
+  const [netErr, enriched] = await s.task(
+    () => enrich(user!),
+    { errorClass: NetworkError }
+  )
+  if (netErr) return failure(netErr)
+  
+  return success(enriched)
+}
+```
+
+See [Resilience Patterns](./docs/05-resilience-patterns.md#typed-error-handling) for more details.
+
 ## Why go-go-scope?
 
 **Before:**

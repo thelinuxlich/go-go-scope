@@ -6,6 +6,8 @@ Helper functions for testing code that uses `go-go-scope`.
 
 - [Installation](#installation)
 - [createMockScope](#createmockscope)
+- [Mocking Services](#mocking-services)
+- [Using override() for Testing](#using-override-for-testing)
 - [createControlledTimer](#createcontrolledtimer)
 - [createSpy](#createspy)
 - [flushPromises](#flushpromises)
@@ -46,6 +48,7 @@ test('should track task calls', async () => {
 - `autoAdvanceTimers` - Automatically advance timers
 - `deterministic` - Use deterministic random seeds
 - `services` - Pre-configured services to inject
+- `overrides` - Services to override (for mocking)
 - `aborted` - Start in aborted state
 - `abortReason` - Initial abort reason
 
@@ -53,6 +56,223 @@ test('should track task calls', async () => {
 - `getTaskCalls()` - Get all recorded task calls
 - `clearTaskCalls()` - Clear recorded calls
 - `abort(reason?)` - Abort the scope
+- `mockService(key, value)` - Override a service with a mock
+
+---
+
+## Mocking Services
+
+Replace real services with mocks for isolated unit testing.
+
+### Using `overrides` Option
+
+Provide services first, then override them with mocks:
+
+```typescript
+import { createMockScope } from 'go-go-scope/testing'
+
+test('should use mocked database', async () => {
+  const mockDb = {
+    query: vi.fn().mockResolvedValue([{ id: 1, name: 'John' }])
+  }
+
+  const s = createMockScope({
+    services: {
+      db: { query: () => { throw new Error('Should not be called') } }
+    },
+    overrides: {
+      db: mockDb
+    }
+  })
+
+  // Your code uses s.use('db') which now returns mockDb
+  const result = await (s as any).db.query('SELECT * FROM users')
+  
+  expect(mockDb.query).toHaveBeenCalledWith('SELECT * FROM users')
+  expect(result).toEqual([{ id: 1, name: 'John' }])
+})
+```
+
+### Using `mockService()` Method
+
+Override services at any time:
+
+```typescript
+import { createMockScope } from 'go-go-scope/testing'
+
+test('should allow runtime mocking', async () => {
+  const s = createMockScope({
+    services: {
+      api: { baseUrl: 'https://api.example.com' }
+    }
+  })
+
+  // Replace the API with a mock
+  s.mockService('api', {
+    baseUrl: 'https://mock-api.example.com',
+    fetch: vi.fn().mockResolvedValue({ data: 'mocked' })
+  })
+
+  // Now code using s.use('api') gets the mock
+  const api = (s as any).api
+  expect(api.baseUrl).toBe('https://mock-api.example.com')
+})
+```
+
+### Chaining Mocks
+
+Chain multiple mocks in a fluent style:
+
+```typescript
+const s = createMockScope({ services: { db: realDb, cache: realCache } })
+  .mockService('db', mockDb)
+  .mockService('cache', mockCache)
+```
+
+---
+
+## Using override() for Testing
+
+The `override()` method on `Scope` allows replacing services in any scope, making it perfect for testing production code with dependency injection.
+
+### Basic Override Pattern
+
+```typescript
+import { scope } from 'go-go-scope'
+import { describe, test, expect, vi } from 'vitest'
+
+// Your production code
+async function fetchUser(userId: string, s: Scope) {
+  const db = s.use('db')
+  return db.query('SELECT * FROM users WHERE id = ?', [userId])
+}
+
+describe('fetchUser', () => {
+  test('returns user from database', async () => {
+    await using s = scope()
+      .provide('db', () => ({
+        query: vi.fn().mockResolvedValue({ id: '1', name: 'John' })
+      }))
+
+    const user = await fetchUser('1', s)
+
+    expect(user).toEqual({ id: '1', name: 'John' })
+  })
+
+  test('handles database error', async () => {
+    await using s = scope()
+      .provide('db', () => ({
+        query: vi.fn().mockRejectedValue(new Error('Connection failed'))
+      }))
+
+    await expect(fetchUser('1', s)).rejects.toThrow('Connection failed')
+  })
+})
+```
+
+### Testing with Real + Mock Services
+
+```typescript
+// Production service that uses multiple dependencies
+async function processOrder(orderId: string, s: Scope) {
+  const db = s.use('db')
+  const payment = s.use('payment')
+  const email = s.use('email')
+
+  const order = await db.getOrder(orderId)
+  const result = await payment.charge(order.total)
+  await email.sendConfirmation(order.customerEmail, result.id)
+  
+  return result
+}
+
+describe('processOrder', () => {
+  test('charges payment and sends email', async () => {
+    const mockPayment = {
+      charge: vi.fn().mockResolvedValue({ id: 'pay_123', status: 'success' })
+    }
+    const mockEmail = {
+      sendConfirmation: vi.fn().mockResolvedValue(undefined)
+    }
+
+    await using s = scope()
+      .provide('db', () => ({
+        getOrder: vi.fn().mockResolvedValue({ 
+          id: 'ord_1', 
+          total: 100,
+          customerEmail: 'john@example.com'
+        })
+      }))
+      .provide('payment', () => mockPayment)  // Real implementation
+      .provide('email', () => mockEmail)      // Real implementation
+      // Override just the payment service for this test
+      .override('payment', () => ({
+        charge: vi.fn().mockResolvedValue({ id: 'mock_pay', status: 'success' })
+      }))
+
+    const result = await processOrder('ord_1', s)
+
+    expect(result.id).toBe('mock_pay')
+  })
+})
+```
+
+### Testing with Task Context
+
+When services are injected via task context, override works seamlessly:
+
+```typescript
+// Production code
+async function getUserWithRetry(userId: string, s: Scope) {
+  const [err, user] = await s.task(
+    ({ services }) => services.api.fetchUser(userId),
+    { retry: { maxRetries: 3 } }
+  )
+  
+  if (err) throw err
+  return user
+}
+
+describe('getUserWithRetry', () => {
+  test('retries on failure', async () => {
+    const fetchUser = vi.fn()
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockResolvedValueOnce({ id: '1', name: 'John' })
+
+    await using s = scope()
+      .provide('api', () => ({ fetchUser: vi.fn() }))  // Placeholder
+      .override('api', () => ({ fetchUser }))          // Real mock
+
+    const user = await getUserWithRetry('1', s)
+
+    expect(fetchUser).toHaveBeenCalledTimes(3)
+    expect(user).toEqual({ id: '1', name: 'John' })
+  })
+})
+```
+
+### Testing Parent-Child Scope Inheritance
+
+Override services in child scopes while keeping parent services intact:
+
+```typescript
+describe('parent-child with overrides', () => {
+  test('child can override parent services', async () => {
+    await using parent = scope()
+      .provide('db', () => ({ name: 'real-db', query: () => 'real' }))
+
+    await using child = scope({ parent })
+      .override('db', () => ({ name: 'mock-db', query: () => 'mock' }))
+
+    // Parent still has real service
+    expect(parent.use('db').name).toBe('real-db')
+    
+    // Child has mock
+    expect(child.use('db').name).toBe('mock-db')
+  })
+})
+```
 
 ---
 

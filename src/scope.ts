@@ -4,6 +4,7 @@
 
 import { context as otelContext, trace } from "@opentelemetry/api";
 import createDebug from "debug";
+import { batch } from "./batch.js";
 import { BroadcastChannel } from "./broadcast-channel.js";
 import { Channel } from "./channel.js";
 import { CircuitBreaker } from "./circuit-breaker.js";
@@ -15,6 +16,7 @@ import { Semaphore } from "./semaphore.js";
 import { Task } from "./task.js";
 import type {
 	CircuitBreakerOptions,
+	ErrorConstructor,
 	Failure,
 	Logger,
 	ParallelAggregateResult,
@@ -198,6 +200,8 @@ export class Scope<
 	private readonly logger: Logger;
 	private readonly deadlockDetector?: DeadlockDetector;
 	private readonly profiler: Profiler;
+	private childScopes: Scope<Record<string, unknown>>[] = [];
+	private readonly parent?: Scope<Record<string, unknown>>;
 
 	constructor(options?: ScopeOptions<Record<string, unknown>>) {
 		this.id = ++scopeIdCounter;
@@ -230,10 +234,16 @@ export class Scope<
 
 		// Inherit from parent scope if provided
 		const parent = options?.parent;
+		this.parent = parent;
 		const parentSignal = parent?.signal ?? options?.signal;
 		const parentServices = parent?.services;
 		if (parentServices) {
 			this.services = { ...parentServices } as Services;
+		}
+
+		// Register as child scope if parent exists
+		if (parent) {
+			parent.registerChild(this);
 		}
 
 		// Inherit options from parent if not explicitly provided
@@ -349,7 +359,9 @@ export class Scope<
 		// Set up timeout if provided
 		if (options?.timeout !== undefined && options.timeout > 0) {
 			this.timeoutId = setTimeout(() => {
-				const error = new Error(`timeout after ${options.timeout}ms`);
+				const error = new Error(
+					`Scope '${this.name}' timeout after ${options.timeout}ms`,
+				);
 				if (debugScope.enabled) {
 					debugScope("[%s] timeout after %dms", this.name, options.timeout);
 				}
@@ -467,14 +479,17 @@ export class Scope<
 	 * Supports retry and timeout via TaskOptions.
 	 * Scope-level concurrency and circuit breaker (if configured) are automatically applied.
 	 *
+	 * When `errorClass` is provided in options, errors will be wrapped in that class,
+	 * enabling automatic union inference when combined with go-go-try's success/failure helpers.
+	 *
 	 * @param fn - Function that receives { services, signal } and returns a Promise
 	 * @param options - Optional task configuration for tracing and execution
 	 * @returns A disposable Task that resolves to a Result
 	 */
-	task<T>(
+	task<T, E extends Error = Error>(
 		fn: (ctx: { services: Services; signal: AbortSignal }) => Promise<T>,
-		options?: TaskOptions,
-	): Task<Result<unknown, T>> {
+		options?: TaskOptions<E>,
+	): Task<Result<E, T>> {
 		if (this.disposed) {
 			throw new Error("Cannot spawn task on disposed scope");
 		}
@@ -761,7 +776,11 @@ export class Scope<
 				executeFn = (sig) =>
 					new Promise((resolve, reject) => {
 						const timeoutId = setTimeout(() => {
-							reject(new Error(`timeout after ${timeoutMs}ms`));
+							reject(
+								new Error(
+									`Task '${taskName}' in scope '${this.name}' timeout after ${timeoutMs}ms`,
+								),
+							);
 						}, timeoutMs);
 
 						innerFn(sig)
@@ -824,13 +843,24 @@ export class Scope<
 			}
 		};
 
+		// Get error class from options for typed error handling
+		const errorClass = options?.errorClass;
+
 		// Create the task with the full pipeline
-		const task = new Task<Result<unknown, T>>(async (signal) => {
+		const task = new Task<Result<E, T>>(async (signal) => {
 			try {
 				const result = await wrappedFn(signal);
 				return [undefined, result] as Success<T>;
 			} catch (error) {
-				return [error, undefined] as Failure<unknown>;
+				// Wrap error in typed error class if provided
+				if (errorClass) {
+					const wrappedError = new errorClass(
+						error instanceof Error ? error.message : String(error),
+						{ cause: error },
+					);
+					return [wrappedError as E, undefined] as Failure<E>;
+				}
+				return [error as E, undefined] as Failure<E>;
 			}
 		}, parentSignal);
 
@@ -900,8 +930,8 @@ export class Scope<
 	 * Provide a service that will be available to tasks in this scope.
 	 * Services are automatically cleaned up when the scope exits.
 	 *
-	 * @param key - Unique key for the service
-	 * @param factory - Function to create the service
+	 * @param key - Unique key for the service (string or symbol)
+	 * @param factory - Function to create the service, receives current services
 	 * @param cleanup - Optional cleanup function (defaults to no-op)
 	 * @returns The scope with the service added (for chaining)
 	 *
@@ -913,20 +943,42 @@ export class Scope<
 	 *
 	 * const result = await s.spawn((svcs) => svcs.db.query('SELECT 1'))
 	 * ```
+	 *
+	 * @example
+	 * ```typescript
+	 * // Using symbols for better encapsulation
+	 * const DatabaseKey = Symbol('Database')
+	 *
+	 * await using s = scope()
+	 *   .provide(DatabaseKey, () => openDatabase())
+	 *
+	 * const db = s.use(DatabaseKey)
+	 * ```
+	 *
+	 * @example
+	 * ```typescript
+	 * // Factory can access previously defined services
+	 * await using s = scope()
+	 *   .provide('config', () => ({ dbUrl: 'postgres://localhost' }))
+	 *   .provide('db', ({ services }) => {
+	 *     // Access previously defined services
+	 *     return createDatabase(services.config.dbUrl)
+	 *   })
+	 * ```
 	 */
-	provide<K extends string, T>(
+	provide<K extends string | symbol, T>(
 		key: K,
-		factory: () => T,
+		factory: (ctx: { services: Services }) => T,
 		cleanup?: (service: T) => void | Promise<void>,
 	): Scope<Services & Record<K, T>> {
 		if (this.disposed) {
 			throw new Error("Cannot provide service on disposed scope");
 		}
 
-		const service = factory();
+		const service = factory({ services: this.services });
 
 		// Store service
-		(this.services as Record<string, unknown>)[key] = service;
+		(this.services as Record<string | symbol, unknown>)[key] = service;
 
 		// Register cleanup if provided
 		if (cleanup) {
@@ -956,6 +1008,75 @@ export class Scope<
 	}
 
 	/**
+	 * Override an existing service with a new implementation.
+	 * Useful for testing - allows replacing real services with mocks/fakes.
+	 *
+	 * The old service's cleanup function (if any) will NOT be called immediately;
+	 * it will be cleaned up when the scope is disposed along with the new service's cleanup.
+	 *
+	 * @param key - Key of an existing service to override (string or symbol)
+	 * @param factory - Function to create the replacement service
+	 * @param cleanup - Optional cleanup function for the new service
+	 * @returns The scope (for chaining)
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *   .provide('db', () => realDatabase())
+	 *   .override('db', () => mockDatabase())  // Replace with mock for testing
+	 *
+	 * // s.use('db') now returns the mock
+	 * ```
+	 */
+	override<K extends keyof Services, T extends Services[K]>(
+		key: K,
+		factory: (ctx: { services: Services }) => T,
+		cleanup?: (service: T) => void | Promise<void>,
+	): Scope<Services> {
+		if (this.disposed) {
+			throw new Error("Cannot override service on disposed scope");
+		}
+
+		// Check if service exists
+		if (!(key in this.services)) {
+			throw new Error(
+				`Cannot override service '${String(key)}': it was not provided`,
+			);
+		}
+
+		const service = factory({ services: this.services });
+
+		// Store service (replaces existing)
+		(this.services as Record<string | symbol, unknown>)[
+			key as string | symbol
+		] = service;
+
+		// Register cleanup if provided
+		if (cleanup) {
+			const cleanupDisposable: AsyncDisposable = {
+				async [Symbol.asyncDispose]() {
+					await cleanup(service);
+				},
+			};
+			this.disposables.push(cleanupDisposable);
+			if (this.enableMetrics) {
+				this.metricsData.resourcesRegistered++;
+			}
+		}
+
+		if (debugScope.enabled) {
+			debugScope(
+				"[%s] overridden service '%s' (total disposables: %d)",
+				this.name,
+				String(key),
+				this.disposables.length,
+			);
+		}
+
+		return this;
+	}
+
+	/**
 	 * Get a service by key.
 	 *
 	 * @param key - The service key
@@ -966,6 +1087,19 @@ export class Scope<
 			throw new Error("Cannot use service on disposed scope");
 		}
 		return this.services[key];
+	}
+
+	/**
+	 * Check if a service is registered.
+	 *
+	 * @param key - The service key
+	 * @returns True if the service exists
+	 */
+	has<K extends keyof Services>(key: K): boolean {
+		if (this.disposed) {
+			return false;
+		}
+		return key in this.services;
 	}
 
 	/**
@@ -2103,10 +2237,167 @@ export class Scope<
 	}
 
 	/**
+	 * Process an array of items with concurrency control and progress tracking.
+	 *
+	 * @param items - Items to process
+	 * @param options - Processing options
+	 * @returns Batch result with successful and failed items
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * const results = await s.batch(urls, {
+	 *   process: (url) => fetch(url).then(r => r.json()),
+	 *   concurrency: 5,
+	 *   onProgress: (completed, total) => console.log(`${completed}/${total}`),
+	 *   continueOnError: true
+	 * })
+	 *
+	 * console.log(`Processed: ${results.completed}/${results.total}`)
+	 * console.log(`Failed: ${results.errors}`)
+	 * ```
+	 */
+	async batch<T, R>(
+		items: readonly T[],
+		options: {
+			/** Function to process each item */
+			process: (item: T, index: number) => Promise<R>;
+			/** Maximum concurrent operations (default: unlimited) */
+			concurrency?: number;
+			/** Called after each item is processed */
+			onProgress?: (
+				completed: number,
+				total: number,
+				result: Result<unknown, R>,
+			) => void;
+			/** Continue processing on error (default: false) */
+			continueOnError?: boolean;
+		},
+	): Promise<{
+		successful: { item: T; index: number; result: R }[];
+		failed: { item: T; index: number; error: unknown }[];
+		total: number;
+		completed: number;
+		errors: number;
+		allSuccessful: boolean;
+	}> {
+		const { process, concurrency, onProgress, continueOnError } = options;
+
+		// Use scope's signal for cancellation
+		return batch(items, {
+			process,
+			concurrency,
+			onProgress,
+			continueOnError,
+			signal: this.abortController.signal,
+		});
+	}
+
+	/**
 	 * Get the profile report for this scope.
 	 * Only available if profiler was enabled in scope options.
 	 */
 	getProfileReport() {
 		return this.profiler.getReport();
+	}
+
+	/**
+	 * Register a child scope for metrics aggregation.
+	 * @internal
+	 */
+	registerChild(child: Scope<Record<string, unknown>>): void {
+		this.childScopes.push(child);
+	}
+
+	/**
+	 * Get a debug visualization of the scope tree.
+	 * Useful for debugging scope hierarchies and active tasks.
+	 *
+	 * @returns String representation of the scope tree
+	 *
+	 * @example
+	 * ```typescript
+	 * console.log(s.debugTree())
+	 * // Scope(api-request) [running]
+	 * //   ├─ Task(fetchUser) - running 1200ms
+	 * //   ├─ Task(fetchOrders) - completed 350ms
+	 * //   └─ ChildScope(cache-refresh)
+	 * //      └─ Task(updateCache) - pending
+	 * ```
+	 */
+	debugTree(): string {
+		return this.buildDebugTree(0);
+	}
+
+	private buildDebugTree(indent: number): string {
+		const prefix = "  ".repeat(indent);
+		const status = this.disposed ? "disposed" : "running";
+		const lines: string[] = [`${prefix}Scope(${this.name}) [${status}]`];
+
+		// Add active tasks
+		for (const task of this.activeTasks) {
+			const taskStatus = task.isSettled
+				? "completed"
+				: task.isStarted
+					? "running"
+					: "pending";
+			lines.push(`${prefix}  └─ Task(${task.id}) - ${taskStatus}`);
+		}
+
+		// Add child scopes
+		for (const child of this.childScopes) {
+			lines.push(child.buildDebugTree(indent + 1));
+		}
+
+		return lines.join("\n");
+	}
+
+	/**
+	 * Aggregate metrics from this scope and all child scopes.
+	 * Returns combined metrics across the entire scope tree.
+	 *
+	 * @returns Aggregated metrics or undefined if metrics not enabled
+	 */
+	aggregateMetrics(): ScopeMetrics | undefined {
+		if (!this.enableMetrics) return undefined;
+
+		const ownMetrics = this.metrics();
+		if (!ownMetrics) return undefined;
+
+		// Collect metrics from all children recursively
+		const allMetrics: ScopeMetrics[] = [ownMetrics];
+		for (const child of this.childScopes) {
+			const childMetrics = child.aggregateMetrics();
+			if (childMetrics) {
+				allMetrics.push(childMetrics);
+			}
+		}
+
+		// Aggregate
+		const aggregated: ScopeMetrics = {
+			tasksSpawned: allMetrics.reduce((sum, m) => sum + m.tasksSpawned, 0),
+			tasksCompleted: allMetrics.reduce((sum, m) => sum + m.tasksCompleted, 0),
+			tasksFailed: allMetrics.reduce((sum, m) => sum + m.tasksFailed, 0),
+			totalTaskDuration: allMetrics.reduce(
+				(sum, m) => sum + m.totalTaskDuration,
+				0,
+			),
+			avgTaskDuration:
+				allMetrics.reduce((sum, m) => sum + m.avgTaskDuration, 0) /
+				allMetrics.length,
+			p95TaskDuration: Math.max(...allMetrics.map((m) => m.p95TaskDuration)),
+			resourcesRegistered: allMetrics.reduce(
+				(sum, m) => sum + m.resourcesRegistered,
+				0,
+			),
+			resourcesDisposed: allMetrics.reduce(
+				(sum, m) => sum + m.resourcesDisposed,
+				0,
+			),
+			scopeDuration: ownMetrics.scopeDuration,
+		};
+
+		return aggregated;
 	}
 }

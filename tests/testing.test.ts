@@ -68,6 +68,51 @@ describe("testing utilities", () => {
 			expect((s as unknown as { db: unknown }).db).toBeDefined();
 		});
 
+		test("applies overrides if provided", () => {
+			const s = createMockScope({
+				services: {
+					db: { name: "real" },
+				},
+				overrides: {
+					db: { name: "mock" },
+				},
+			});
+
+			expect((s as unknown as { db: { name: string } }).db.name).toBe("mock");
+		});
+
+		test("mockService helper works", () => {
+			const s = createMockScope({
+				services: {
+					api: { baseUrl: "https://api.example.com" },
+				},
+			});
+
+			s.mockService("api", { baseUrl: "https://mock-api.example.com" });
+
+			expect((s as unknown as { api: { baseUrl: string } }).api.baseUrl).toBe(
+				"https://mock-api.example.com",
+			);
+		});
+
+		test("mockService returns scope for chaining", () => {
+			const s = createMockScope({
+				services: {
+					db: { name: "real" },
+					cache: { name: "real" },
+				},
+			});
+
+			s.mockService("db", { name: "mock-db" }).mockService("cache", {
+				name: "mock-cache",
+			});
+
+			expect((s as unknown as { db: { name: string } }).db.name).toBe("mock-db");
+			expect((s as unknown as { cache: { name: string } }).cache.name).toBe(
+				"mock-cache",
+			);
+		});
+
 		test("tasks return correct results", async () => {
 			const s = createMockScope();
 

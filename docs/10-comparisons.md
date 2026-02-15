@@ -6,6 +6,7 @@ How `go-go-scope` compares to other approaches.
 
 - [vs Vanilla JavaScript](#vs-vanilla-javascript)
 - [vs Effect](#vs-effect)
+- [Testing with Dependency Injection](#testing-with-dependency-injection)
 - [Feature Matrix](#feature-matrix)
 
 ---
@@ -441,11 +442,392 @@ Both enforce: **parent-bounded lifetimes** and **guaranteed cleanup**.
 
 ---
 
+## Testing with Dependency Injection
+
+A detailed comparison of testing approaches with different DI libraries.
+
+### The Scenario
+
+Testing a `UserService` that depends on `Database` and `EmailService`:
+
+```typescript
+// UserService.ts - Production code
+export async function createUser(
+  data: { name: string; email: string },
+  scope: Scope
+) {
+  const db = scope.use('db')
+  const email = scope.use('email')
+  
+  const user = await db.insert('users', data)
+  await email.sendWelcome(data.email, user.id)
+  
+  return user
+}
+```
+
+### go-go-scope (Current)
+
+**Test with `override()`:**
+
+```typescript
+import { scope } from 'go-go-scope'
+import { describe, test, expect, vi } from 'vitest'
+
+describe('createUser', () => {
+  test('creates user and sends email', async () => {
+    const mockDb = {
+      insert: vi.fn().mockResolvedValue({ id: 1, name: 'John', email: 'john@example.com' })
+    }
+    const mockEmail = {
+      sendWelcome: vi.fn().mockResolvedValue(undefined)
+    }
+
+    await using s = scope()
+      .provide('db', () => ({} as any))      // Placeholder
+      .provide('email', () => ({} as any))   // Placeholder
+      .override('db', () => mockDb)
+      .override('email', () => mockEmail)
+
+    const user = await createUser(
+      { name: 'John', email: 'john@example.com' },
+      s
+    )
+
+    expect(mockDb.insert).toHaveBeenCalledWith('users', { name: 'John', email: 'john@example.com' })
+    expect(mockEmail.sendWelcome).toHaveBeenCalledWith('john@example.com', 1)
+    expect(user.id).toBe(1)
+  })
+})
+```
+
+**Test with `createMockScope`:**
+
+```typescript
+import { createMockScope } from 'go-go-scope/testing'
+
+describe('createUser', () => {
+  test('creates user with mocks', async () => {
+    const mockDb = { insert: vi.fn().mockResolvedValue({ id: 1 }) }
+    const mockEmail = { sendWelcome: vi.fn().mockResolvedValue(undefined) }
+
+    const s = createMockScope({
+      services: {
+        db: mockDb,
+        email: mockEmail
+      }
+    })
+
+    const user = await createUser({ name: 'John', email: 'john@example.com' }, s)
+
+    expect(user.id).toBe(1)
+  })
+})
+```
+
+**Pros:**
+- ✅ Type-safe service replacement
+- ✅ No decorators or metadata needed
+- ✅ Works with native `await using`
+- ✅ Easy to override individual services
+- ✅ Cleanup automatically handled
+
+**Cons:**
+- ❌ Need to provide placeholder before override
+- ❌ Service keys are strings (not symbols)
+
+---
+
+### InversifyJS
+
+```typescript
+// UserService.ts with InversifyJS
+import { injectable, inject } from 'inversify'
+import 'reflect-metadata'
+
+@injectable()
+export class UserService {
+  constructor(
+    @inject('Database') private db: Database,
+    @inject('EmailService') private email: EmailService
+  ) {}
+
+  async createUser(data: { name: string; email: string }) {
+    const user = await this.db.insert('users', data)
+    await this.email.sendWelcome(data.email, user.id)
+    return user
+  }
+}
+```
+
+**Testing with InversifyJS:**
+
+```typescript
+import { Container } from 'inversify'
+import { UserService } from './UserService'
+
+describe('UserService', () => {
+  test('creates user with mocks', async () => {
+    // Create container with mocks
+    const container = new Container()
+    
+    container.bind('Database').toConstantValue({
+      insert: vi.fn().mockResolvedValue({ id: 1 })
+    })
+    
+    container.bind('EmailService').toConstantValue({
+      sendWelcome: vi.fn().mockResolvedValue(undefined)
+    })
+    
+    container.bind(UserService).toSelf()
+
+    const service = container.get(UserService)
+    const user = await service.createUser({ name: 'John', email: 'john@example.com' })
+
+    expect(user.id).toBe(1)
+  })
+})
+```
+
+**Pros:**
+- ✅ Symbol-based injection (type-safe)
+- ✅ Supports multiple binding types (singleton, transient, etc.)
+- ✅ Large ecosystem
+
+**Cons:**
+- ❌ Requires `reflect-metadata` polyfill
+- ❌ Decorators needed (`@injectable`, `@inject`)
+- ❌ More verbose setup for tests
+- ❌ Container lifecycle management
+- ❌ ~15KB bundle size
+
+---
+
+### TSyringe
+
+```typescript
+// UserService.ts with TSyringe
+import { injectable, inject } from 'tsyringe'
+
+@injectable()
+export class UserService {
+  constructor(
+    @inject('Database') private db: Database,
+    @inject('EmailService') private email: EmailService
+  ) {}
+
+  async createUser(data: { name: string; email: string }) {
+    const user = await this.db.insert('users', data)
+    await this.email.sendWelcome(data.email, user.id)
+    return user
+  }
+}
+```
+
+**Testing with TSyringe:**
+
+```typescript
+import { container } from 'tsyringe'
+import { UserService } from './UserService'
+
+describe('UserService', () => {
+  test('creates user with mocks', async () => {
+    // Clear and reset container
+    container.clearInstances()
+    
+    container.register('Database', {
+      useValue: { insert: vi.fn().mockResolvedValue({ id: 1 }) }
+    })
+    
+    container.register('EmailService', {
+      useValue: { sendWelcome: vi.fn().mockResolvedValue(undefined) }
+    })
+
+    const service = container.resolve(UserService)
+    const user = await service.createUser({ name: 'John', email: 'john@example.com' })
+
+    expect(user.id).toBe(1)
+  })
+})
+```
+
+**Pros:**
+- ✅ Auto-registration support
+- ✅ Class-based resolution
+
+**Cons:**
+- ❌ Requires decorators
+- ❌ Global container can leak between tests
+- ❌ Need to manually clear/reset container
+- ❌ ~8KB bundle size
+
+---
+
+### Effect (Layers)
+
+```typescript
+// UserService.ts with Effect
+import { Effect, Context } from 'effect'
+
+export interface Database {
+  insert: (table: string, data: unknown) => Effect.Effect<unknown, Error>
+}
+
+export interface EmailService {
+  sendWelcome: (email: string, userId: number) => Effect.Effect<void, Error>
+}
+
+export const DatabaseTag = Context.Tag<Database>('Database')
+export const EmailServiceTag = Context.Tag<EmailService>('EmailService')
+
+export const createUser = (data: { name: string; email: string }) => 
+  Effect.gen(function* (_) {
+    const db = yield* _(DatabaseTag)
+    const email = yield* _(EmailServiceTag)
+    
+    const user = yield* _(db.insert('users', data))
+    yield* _(email.sendWelcome(data.email, user.id))
+    
+    return user
+  })
+```
+
+**Testing with Effect:**
+
+```typescript
+import { Effect, Layer } from 'effect'
+
+describe('createUser', () => {
+  test('creates user with mocks', async () => {
+    const mockDb: Database = {
+      insert: vi.fn().mockReturnValue(Effect.succeed({ id: 1 }))
+    }
+    const mockEmail: EmailService = {
+      sendWelcome: vi.fn().mockReturnValue(Effect.succeed(undefined))
+    }
+
+    const TestLayer = Layer.succeed(DatabaseTag, mockDb)
+      .pipe(Layer.merge(Layer.succeed(EmailServiceTag, mockEmail)))
+
+    const program = createUser({ name: 'John', email: 'john@example.com' }).pipe(
+      Effect.provide(TestLayer)
+    )
+
+    const user = await Effect.runPromise(program)
+    expect(user.id).toBe(1)
+  })
+})
+```
+
+**Pros:**
+- ✅ Powerful composition with Layers
+- ✅ Type-safe at every level
+- ✅ No decorators needed
+
+**Cons:**
+- ❌ Must wrap everything in Effect
+- ❌ Steep learning curve
+- ❌ Different mental model (functional)
+- ❌ Need to create Effect wrappers for mocks
+
+---
+
+### Manual Constructor Injection (No DI Library)
+
+```typescript
+// UserService.ts - Plain TypeScript
+export class UserService {
+  constructor(
+    private db: Database,
+    private email: EmailService
+  ) {}
+
+  async createUser(data: { name: string; email: string }) {
+    const user = await this.db.insert('users', data)
+    await this.email.sendWelcome(data.email, user.id)
+    return user
+  }
+}
+```
+
+**Testing:**
+
+```typescript
+describe('UserService', () => {
+  test('creates user with mocks', async () => {
+    const mockDb = { insert: vi.fn().mockResolvedValue({ id: 1 }) }
+    const mockEmail = { sendWelcome: vi.fn().mockResolvedValue(undefined) }
+
+    const service = new UserService(mockDb, mockEmail)
+    const user = await service.createUser({ name: 'John', email: 'john@example.com' })
+
+    expect(user.id).toBe(1)
+  })
+})
+```
+
+**Pros:**
+- ✅ Zero dependencies
+- ✅ Simplest possible approach
+- ✅ Full type safety
+
+**Cons:**
+- ❌ No lifecycle management
+- ❌ No automatic cleanup
+- ❌ Manual wiring for every test
+- ❌ Can't easily swap implementations at runtime
+
+---
+
+### Testing Comparison Matrix
+
+| Aspect | go-go-scope | InversifyJS | TSyringe | Effect | Manual |
+|--------|-------------|-------------|----------|--------|--------|
+| **Boilerplate** | Low | High | Medium | High | None |
+| **Type Safety** | ✅ Full | ✅ Full | ✅ Full | ✅ Full | ✅ Full |
+| **Decorators needed** | ❌ No | ✅ Yes | ✅ Yes | ❌ No | ❌ No |
+| **Test setup time** | Fast | Medium | Medium | Slow | Fast |
+| **Runtime overhead** | None | Metadata | Metadata | Fiber runtime | None |
+| **Mock replacement** | `override()` | Container rebind | Register | Layer.provide | Constructor args |
+| **Cleanup handling** | Automatic | Manual | Manual | Automatic | Manual |
+| **Bundle impact** | ~3KB | ~15KB | ~8KB | ~50KB | 0KB |
+| **Test isolation** | ✅ Excellent | ⚠️ Care needed | ⚠️ Clear container | ✅ Excellent | ✅ Excellent |
+| **Learning curve** | Low | Medium | Low | High | None |
+
+---
+
+### Recommendation
+
+**Choose go-go-scope when:**
+- You want simple, type-safe DI without decorators
+- You're already using structured concurrency
+- You need automatic cleanup in tests
+- You want minimal bundle size
+
+**Choose InversifyJS when:**
+- You need advanced DI features (custom providers, child containers)
+- You're building a large enterprise app
+- You don't mind decorators and metadata
+
+**Choose TSyringe when:**
+- You want auto-registration and simple decorators
+- You're in the Microsoft ecosystem
+
+**Choose Effect when:**
+- You're fully committed to functional programming
+- You want composable, testable effects as first-class
+
+**Choose Manual injection when:**
+- Your app is small
+- You don't need runtime DI
+- You prefer explicit over implicit
+
 ## Feature Matrix
 
 | Feature | Vanilla JS | go-go-scope | Effect |
 |---------|------------|-------------|--------|
 | Cancellation | Manual | Automatic | Automatic |
+| Cancellation helpers | None | ✅ Utilities | Built-in |
 | Timeouts | Manual setTimeout | Built-in | Built-in |
 | Retry | Manual | Built-in | Excellent |
 | Race cancellation | Manual | Automatic | Automatic |

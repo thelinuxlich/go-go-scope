@@ -15,6 +15,7 @@ export class CircuitBreaker implements AsyncDisposable {
 	private readonly _failureThreshold: number;
 	private readonly _resetTimeout: number;
 	private stateExpiryTime?: number; // Cache when open state should transition to half-open
+	private readonly hooks: CircuitBreakerOptions;
 
 	constructor(
 		options: CircuitBreakerOptions = {},
@@ -22,6 +23,7 @@ export class CircuitBreaker implements AsyncDisposable {
 	) {
 		this._failureThreshold = options.failureThreshold ?? 5;
 		this._resetTimeout = options.resetTimeout ?? 30000;
+		this.hooks = options;
 	}
 
 	/**
@@ -38,8 +40,7 @@ export class CircuitBreaker implements AsyncDisposable {
 		if (this.state === "open") {
 			const now = Date.now();
 			if (this.stateExpiryTime && now >= this.stateExpiryTime) {
-				this.state = "half-open";
-				this.stateExpiryTime = undefined;
+				this.transitionToHalfOpen();
 			} else {
 				throw new Error("Circuit breaker is open");
 			}
@@ -121,12 +122,20 @@ export class CircuitBreaker implements AsyncDisposable {
 	}
 
 	private onSuccess(): void {
+		const previousState = this.state;
 		this.failures = 0;
-		this.state = "closed";
+
+		if (this.state !== "closed") {
+			this.state = "closed";
+			this.hooks.onStateChange?.(previousState, "closed", 0);
+			this.hooks.onClose?.();
+		}
+
 		this.stateExpiryTime = undefined;
 	}
 
 	private onFailure(): void {
+		const previousState = this.state;
 		this.failures++;
 		const now = Date.now();
 
@@ -134,7 +143,17 @@ export class CircuitBreaker implements AsyncDisposable {
 			this.state = "open";
 			// Cache the expiry time to avoid repeated Date.now() calls
 			this.stateExpiryTime = now + this._resetTimeout;
+			this.hooks.onStateChange?.(previousState, "open", this.failures);
+			this.hooks.onOpen?.(this.failures);
 		}
+	}
+
+	private transitionToHalfOpen(): void {
+		const previousState = this.state;
+		this.state = "half-open";
+		this.stateExpiryTime = undefined;
+		this.hooks.onStateChange?.(previousState, "half-open", this.failures);
+		this.hooks.onHalfOpen?.();
 	}
 }
 

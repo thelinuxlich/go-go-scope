@@ -5,8 +5,18 @@
  * with automatic cleanup via the `using` and `await using` syntax.
  */
 
+// Re-export batch utility
+export { batch } from "./batch.js";
 // Re-export classes
 export { BroadcastChannel } from "./broadcast-channel.js";
+// Re-export cancellation utilities
+export {
+	abortPromise,
+	onAbort,
+	raceSignals,
+	throwIfAborted,
+	whenAborted,
+} from "./cancellation.js";
 export { Channel } from "./channel.js";
 export { CircuitBreaker } from "./circuit-breaker.js";
 export { DeadlockDetector } from "./deadlock-detector.js";
@@ -23,6 +33,14 @@ export { race } from "./race.js";
 // Re-export rate limiting utilities
 export { debounce, throttle } from "./rate-limiting.js";
 export { ResourcePool } from "./resource-pool.js";
+// Re-export retry strategies
+export {
+	decorrelatedJitter,
+	exponentialBackoff,
+	fullJitterBackoff,
+	jitter,
+	linear,
+} from "./retry-strategies.js";
 export type {
 	ScopeOptions,
 	ScopeOptions as ScopeOptionsType,
@@ -32,7 +50,6 @@ export { AsyncDisposableResource, Scope } from "./scope.js";
 export { Semaphore } from "./semaphore.js";
 export { stream } from "./stream.js";
 export { Task } from "./task.js";
-
 // Re-export types
 export type {
 	CircuitBreakerOptions,

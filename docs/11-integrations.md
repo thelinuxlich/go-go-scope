@@ -21,6 +21,91 @@ How to integrate `go-go-scope` with other libraries and monitoring systems.
 npm install go-go-try
 ```
 
+### Automatic Union Inference (New in v7.2+)
+
+Use `taggedError` with the `errorClass` option for automatic union inference of typed errors:
+
+```typescript
+import { scope } from 'go-go-scope'
+import { taggedError, success, failure } from 'go-go-try'
+
+// Define tagged error classes using the helper
+const DatabaseError = taggedError('DatabaseError')
+const NetworkError = taggedError('NetworkError')
+
+// Automatic union inference - no explicit return type needed!
+// TypeScript infers: Promise<Result<DatabaseError | NetworkError, User>>
+async function fetchUser(id: string) {
+  await using s = scope({ timeout: 5000 })
+  
+  // errorClass wraps errors in the typed error class
+  const [dbErr, user] = await s.task(
+    () => queryDatabase(id),
+    { errorClass: DatabaseError }
+  )
+  if (dbErr) return failure(dbErr)
+  
+  const [netErr, enriched] = await s.task(
+    () => enrichUserData(user!),
+    { errorClass: NetworkError }
+  )
+  if (netErr) return failure(netErr)
+  
+  return success(enriched)
+}
+
+// Exhaustive pattern matching with type narrowing
+const [err, user] = await fetchUser('123')
+if (err) {
+  switch (err._tag) {
+    case 'DatabaseError':
+      console.error('DB failed:', err.message)
+      break
+    case 'NetworkError':
+      console.error('Network issue:', err.message)
+      break
+    default:
+      // Compile-time safety: TypeScript ensures all cases are handled
+      const _exhaustive: never = err
+  }
+} else {
+  console.log('Got user:', user.name)
+}
+```
+
+### Benefits
+
+- **No explicit types needed** - TypeScript infers the union automatically
+- **Exhaustive checking** - Pattern matching ensures all error cases are handled
+- **Type narrowing** - Inside each `case`, the error is fully typed with the `_tag` discriminator
+- **Refactoring safety** - Adding a new error type causes TypeScript errors where not handled
+
+### Alternative: Using goTryRaw Directly
+
+If you don't need scope's automatic signal propagation, use `goTryRaw` directly on raw operations:
+
+```typescript
+import { scope } from 'go-go-scope'
+import { taggedError, success, failure, goTryRaw } from 'go-go-try'
+
+const DatabaseError = taggedError('DatabaseError')
+
+async function fetchUser(id: string) {
+  await using s = scope({ timeout: 5000 })
+  
+  // Use goTryRaw on raw operations (not s.task)
+  const [err, user] = await goTryRaw(
+    () => queryDatabase(id),  // Raw operation
+    DatabaseError
+  )
+  if (err) return failure(err)
+  
+  return success(user!)
+}
+```
+
+> **Note:** `goTryRaw(s.task(...))` doesn't work because `s.task()` already returns `Result<unknown, T>`, which would cause double-wrapping.
+
 ### Using goTry Inside Tasks
 
 Use `goTry` inside big tasks to handle individual operations without breaking the entire task:

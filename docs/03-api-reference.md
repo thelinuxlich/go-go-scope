@@ -12,6 +12,8 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [TaskOptions](#taskoptions-type)
   - [`scope.provide(key, factory, cleanup?)`](#scopeprovidekey-factory-cleanup)
   - [`scope.use(key)`](#scopeusekey)
+  - [`scope.has(key)`](#scopehaskey)
+  - [`scope.override(key, factory, cleanup?)`](#scopeoverridekey-factory-cleanup)
   - [`scope.race(factories)`](#scoperacefactories)
   - [`scope.parallel(factories, options?)`](#scopeparallelfactories-options)
   - [`scope.channel(capacity?)`](#scopechannelcapacity)
@@ -382,6 +384,40 @@ return result
 
 **Note:** Resources are disposed in LIFO order (reverse of creation).
 
+**Type Safety:**
+
+The `provide()` method returns a `Scope` with updated type information. TypeScript tracks which services are available:
+
+```typescript
+const s = scope()
+  .provide('db', () => ({ query: () => 'result' }))
+  .provide('cache', () => ({ get: () => 'cached' }))
+
+// TypeScript knows these are valid:
+s.use('db')     // ✓ No error
+s.use('cache')  // ✓ No error
+
+// TypeScript catches this at compile time:
+s.use('invalid')  // ✗ Type error: '"invalid"' is not assignable
+```
+
+**⚠️ Important:** For type safety, always chain `provide()` calls with scope creation. Do not call `provide()` on separate statements:
+
+```typescript
+// ✓ CORRECT - chaining preserves type safety
+const s = scope()
+  .provide('db', () => ({ query: () => 'result' }))
+  .provide('cache', () => ({ get: () => 'cached' }))
+
+s.use('db')     // ✓ TypeScript knows 'db' exists
+s.use('cache')  // ✓ TypeScript knows 'cache' exists
+
+// ✗ WRONG - separate statements lose type tracking
+const s = scope()  // Scope<Record<string, never>>
+s.provide('db', () => ({ query: () => 'result' }))  // Return value ignored!
+s.use('db')  // ✗ Type error - TypeScript doesn't know about 'db'
+```
+
 ---
 
 ### `scope.use(key)`
@@ -405,6 +441,115 @@ use<K extends keyof Services>(key: K): Services[K]
 ```typescript
 const db = s.use('db')
 await db.query('SELECT 1')
+```
+
+---
+
+### `scope.has(key)`
+
+Check if a service is registered.
+
+```typescript
+has<K extends keyof Services>(key: K): boolean
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `key` | `string` | Service identifier |
+
+**Returns:** `true` if the service exists, `false` otherwise (or if scope is disposed)
+
+**Example:**
+
+```typescript
+if (s.has('db')) {
+  const db = s.use('db')
+  await db.query('SELECT 1')
+} else {
+  console.log('Database service not available')
+}
+```
+
+---
+
+### `scope.override(key, factory, cleanup?)`
+
+Replaces an existing service with a new implementation. Useful for testing - allows replacing real services with mocks or fakes.
+
+The old service's cleanup function (if any) will NOT be called immediately; it will be cleaned up when the scope is disposed along with the new service's cleanup.
+
+```typescript
+override<K extends keyof Services, T extends Services[K]>(
+  key: K,
+  factory: () => T,
+  cleanup?: (service: T) => void | Promise<void>
+): Scope<Services>
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `key` | `string` | Service identifier (must already exist) |
+| `factory` | `() => T` | Factory function that creates the replacement service |
+| `cleanup` | `(service: T) => void \| Promise<void>` | Optional cleanup function |
+
+**Returns:** The scope (for chaining)
+
+**Throws:**
+- Error if the service doesn't exist
+- Error if called on a disposed scope
+
+**Example:**
+
+```typescript
+// In production code
+await using s = scope()
+  .provide('db', () => createRealDatabase())
+
+// In test code - replace with mock
+await using s = scope()
+  .provide('db', () => createRealDatabase())
+  .override('db', () => createMockDatabase())
+
+// Can also use cleanup
+await using s = scope()
+  .provide('db', () => createRealDatabase(), (db) => db.close())
+  .override('db', 
+    () => createMockDatabase(), 
+    (mock) => mock.cleanup()
+  )
+
+// Chain with other methods
+await using s = scope()
+  .provide('db', () => realDb)
+  .provide('cache', () => realCache)
+  .override('db', () => mockDb)  // Just override db, keep real cache
+```
+
+**Testing Pattern:**
+
+```typescript
+// Test a service with mocked dependencies
+test('should fetch user', async () => {
+  const mockDb = {
+    query: vi.fn().mockResolvedValue({ id: 1, name: 'John' })
+  }
+
+  await using s = scope()
+    .provide('db', () => ({} as any))  // Placeholder
+    .override('db', () => mockDb)
+
+  const [err, user] = await s.task(({ services }) => {
+    return services.db.query('SELECT * FROM users WHERE id = 1')
+  })
+
+  expect(err).toBeUndefined()
+  expect(user).toEqual({ id: 1, name: 'John' })
+  expect(mockDb.query).toHaveBeenCalledWith('SELECT * FROM users WHERE id = 1')
+})
 ```
 
 ---

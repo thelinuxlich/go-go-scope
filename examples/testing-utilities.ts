@@ -107,6 +107,61 @@ async function testAssertScopeDisposed() {
 	console.log(`✅ Signal aborted: ${s.signal.aborted}`);
 }
 
+async function testMockServices() {
+	console.log("\n🎭 Testing Mock Services\n");
+
+	// Example 1: Using overrides option
+	const mockDb = {
+		query: (sql: string) => Promise.resolve([{ id: 1, name: "Mock User" }]),
+	};
+
+	const s1 = createMockScope({
+		services: {
+			db: { query: () => Promise.reject(new Error("Real DB")) },
+		},
+		overrides: {
+			db: mockDb,
+		},
+	});
+
+	// Access the mock service
+	const db1 = (s1 as unknown as { db: typeof mockDb }).db;
+	const result1 = await db1.query("SELECT * FROM users");
+	console.log(`✅ Override works: ${JSON.stringify(result1)}`);
+
+	// Example 2: Using mockService method
+	const s2 = createMockScope({
+		services: {
+			api: { baseUrl: "https://api.example.com" },
+		},
+	});
+
+	// Replace the API service
+	s2.mockService("api", {
+		baseUrl: "https://mock-api.example.com",
+		fetch: (path: string) => Promise.resolve({ data: "mocked" }),
+	});
+
+	const api2 = (s2 as unknown as { api: { baseUrl: string } }).api;
+	console.log(`✅ mockService works: baseUrl = ${api2.baseUrl}`);
+
+	// Example 3: Chaining mocks
+	const s3 = createMockScope({
+		services: {
+			db: { name: "real-db" },
+			cache: { name: "real-cache" },
+		},
+	});
+
+	s3.mockService("db", { name: "mock-db" }).mockService("cache", {
+		name: "mock-cache",
+	});
+
+	const db3 = (s3 as unknown as { db: { name: string } }).db;
+	const cache3 = (s3 as unknown as { cache: { name: string } }).cache;
+	console.log(`✅ Chained mocks: db=${db3.name}, cache=${cache3.name}`);
+}
+
 async function main() {
 	console.log("=".repeat(60));
 	console.log("go-go-scope Test Utilities Example");
@@ -117,6 +172,7 @@ async function main() {
 	await testSpy();
 	await testFlushPromises();
 	await testAssertScopeDisposed();
+	await testMockServices();
 
 	console.log("\n" + "=".repeat(60));
 	console.log("✅ All testing utilities demonstrated!");

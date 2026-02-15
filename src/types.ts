@@ -7,14 +7,77 @@ import type { Context, Span, SpanOptions, Tracer } from "@opentelemetry/api";
 // Re-export OpenTelemetry types for users
 export type { Context, Span, SpanOptions, Tracer };
 
-export type Result<E, T> = readonly [E | undefined, T | undefined];
 export type Success<T> = readonly [undefined, T];
 export type Failure<E> = readonly [E, undefined];
+export type Result<E, T> = Success<T> | Failure<E>;
+
+/**
+ * Error class constructor type for typed error handling.
+ */
+export type ErrorConstructor<E> = new (
+	message: string,
+	options?: { cause?: unknown },
+) => E;
+
+/**
+ * Retry delay function type.
+ */
+export type RetryDelayFn = (attempt: number, error: unknown) => number;
+
+/**
+ * Predefined retry delay strategies.
+ */
+export interface RetryStrategies {
+	/**
+	 * Exponential backoff with optional jitter.
+	 * @param options.initial - Initial delay in ms (default: 100)
+	 * @param options.max - Maximum delay in ms (default: 30000)
+	 * @param options.multiplier - Multiplier for each attempt (default: 2)
+	 * @param options.jitter - Jitter factor 0-1 (default: 0)
+	 * @returns Delay function for retry option
+	 *
+	 * @example
+	 * ```typescript
+	 * retry: {
+	 *   delay: exponentialBackoff({ initial: 100, max: 5000, jitter: 0.3 })
+	 * }
+	 * ```
+	 */
+	exponentialBackoff(options?: {
+		initial?: number;
+		max?: number;
+		multiplier?: number;
+		jitter?: number;
+	}): RetryDelayFn;
+
+	/**
+	 * Fixed delay with jitter.
+	 * @param baseDelay - Base delay in ms
+	 * @param jitterFactor - Jitter factor 0-1 (default: 0.1)
+	 * @returns Delay function for retry option
+	 *
+	 * @example
+	 * ```typescript
+	 * retry: {
+	 *   delay: jitter(1000, 0.2)  // 1000ms ± 20%
+	 * }
+	 * ```
+	 */
+	jitter(baseDelay: number, jitterFactor?: number): RetryDelayFn;
+
+	/**
+	 * Linear increasing delay.
+	 * @param baseDelay - Base delay in ms
+	 * @param increment - Amount to add each attempt
+	 * @returns Delay function for retry option
+	 */
+	linear(baseDelay: number, increment: number): RetryDelayFn;
+}
 
 /**
  * Options for spawning a task with tracing.
  */
-export interface TaskOptions {
+export interface TaskOptions<E extends Error = Error> {
 	/**
 	 * OpenTelemetry tracing options.
 	 */
@@ -38,10 +101,13 @@ export interface TaskOptions {
 		maxRetries?: number;
 		/**
 		 * Delay between retries in milliseconds.
-		 * Can be a fixed number or a function that receives the attempt number (1-based) and error.
+		 * Can be a fixed number, a function, or use built-in strategies:
+		 * - `exponentialBackoff({ initial, max, jitter })`
+		 * - `jitter(baseDelay, jitterFactor)`
+		 * - `linear(baseDelay, increment)`
 		 * Default: 0 (no delay)
 		 */
-		delay?: number | ((attempt: number, error: unknown) => number);
+		delay?: number | RetryDelayFn;
 		/**
 		 * Function to determine if an error should trigger a retry.
 		 * Return true to retry, false to throw immediately.
@@ -64,6 +130,32 @@ export interface TaskOptions {
 	 * Runs alongside the default scope cleanup.
 	 */
 	onCleanup?: () => void | Promise<void>;
+	/**
+	 * Optional error class to wrap errors in for typed error handling.
+	 * When provided, errors will be wrapped in this class, enabling automatic
+	 * union inference when combined with go-go-try's success/failure helpers.
+	 *
+	 * @example
+	 * ```typescript
+	 * import { taggedError, success, failure } from 'go-go-try'
+	 *
+	 * const DatabaseError = taggedError('DatabaseError')
+	 *
+	 * async function fetchUser(id: string) {
+	 *   await using s = scope()
+	 *
+	 *   const [err, user] = await s.task(
+	 *     () => queryDatabase(id),
+	 *     { errorClass: DatabaseError }
+	 *   )
+	 *   if (err) return failure(err)
+	 *
+	 *   return success(user!)
+	 * }
+	 * // TypeScript infers: Result<DatabaseError, User>
+	 * ```
+	 */
+	errorClass?: ErrorConstructor<E>;
 }
 
 /**
@@ -146,6 +238,11 @@ export interface ScopeMetrics {
 }
 
 /**
+ * Circuit breaker state type.
+ */
+export type CircuitBreakerState = "closed" | "open" | "half-open";
+
+/**
  * Options for configuring a circuit breaker in a scope.
  * Pass these to `scope({ circuitBreaker: {...} })` to enable circuit breaking
  * for all tasks spawned within that scope.
@@ -155,6 +252,18 @@ export interface CircuitBreakerOptions {
 	failureThreshold?: number;
 	/** Time in ms before attempting to close. Default: 30000 */
 	resetTimeout?: number;
+	/** Called when circuit breaker state changes */
+	onStateChange?: (
+		from: CircuitBreakerState,
+		to: CircuitBreakerState,
+		failureCount: number,
+	) => void;
+	/** Called when circuit opens */
+	onOpen?: (failureCount: number) => void;
+	/** Called when circuit closes */
+	onClose?: () => void;
+	/** Called when circuit enters half-open state */
+	onHalfOpen?: () => void;
 }
 
 /**

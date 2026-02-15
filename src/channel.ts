@@ -200,6 +200,8 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 	 * Dispose the channel, aborting all pending operations.
 	 */
 	async [Symbol.asyncDispose](): Promise<void> {
+		// Prevent double disposal
+		if (this.aborted) return;
 		this.close();
 		this.aborted = true;
 		this.abortReason = new Error("channel disposed");
@@ -226,5 +228,146 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 		}
 		this.receiveQueue.length = 0;
 		this.receiveQueueHead = 0;
+	}
+
+	/**
+	 * Transform each value using a mapping function.
+	 * Returns a new channel with transformed values.
+	 *
+	 * @param fn - Mapping function
+	 * @returns New channel with mapped values
+	 *
+	 * @example
+	 * ```typescript
+	 * const numbers = s.channel<number>(10)
+	 * const doubled = numbers.map(x => x * 2)
+	 *
+	 * await numbers.send(5)
+	 * console.log(await doubled.receive()) // 10
+	 * ```
+	 */
+	map<R>(fn: (value: T) => R): Channel<R> {
+		const mapped = new Channel<R>(this.capacity);
+
+		// Start async mapping process
+		(async () => {
+			try {
+				for await (const value of this) {
+					if (value !== undefined) {
+						await mapped.send(fn(value));
+					}
+				}
+			} finally {
+				mapped.close();
+			}
+		})();
+
+		return mapped;
+	}
+
+	/**
+	 * Filter values based on a predicate.
+	 * Returns a new channel with only values that match the predicate.
+	 *
+	 * @param predicate - Filter function
+	 * @returns New channel with filtered values
+	 *
+	 * @example
+	 * ```typescript
+	 * const numbers = s.channel<number>(10)
+	 * const evens = numbers.filter(x => x % 2 === 0)
+	 *
+	 * await numbers.send(1)
+	 * await numbers.send(2)
+	 * console.log(await evens.receive()) // 2 (1 was filtered out)
+	 * ```
+	 */
+	filter(predicate: (value: T) => boolean): Channel<T> {
+		const filtered = new Channel<T>(this.capacity);
+
+		// Start async filtering process
+		(async () => {
+			try {
+				for await (const value of this) {
+					if (value !== undefined && predicate(value)) {
+						await filtered.send(value);
+					}
+				}
+			} finally {
+				filtered.close();
+			}
+		})();
+
+		return filtered;
+	}
+
+	/**
+	 * Reduce all values to a single value.
+	 * Returns a promise that resolves when the channel is closed.
+	 *
+	 * @param fn - Reducer function
+	 * @param initial - Initial accumulator value
+	 * @returns Promise with final accumulated value
+	 *
+	 * @example
+	 * ```typescript
+	 * const numbers = s.channel<number>(10)
+	 *
+	 * const sumPromise = numbers.reduce((acc, x) => acc + x, 0)
+	 *
+	 * await numbers.send(1)
+	 * await numbers.send(2)
+	 * await numbers.send(3)
+	 * numbers.close()
+	 *
+	 * const sum = await sumPromise // 6
+	 * ```
+	 */
+	async reduce<R>(fn: (accumulator: R, value: T) => R, initial: R): Promise<R> {
+		let result = initial;
+		try {
+			for await (const value of this) {
+				if (value !== undefined) {
+					result = fn(result, value);
+				}
+			}
+		} catch (error) {
+			// Channel was disposed, return accumulated result
+			if (error instanceof Error && error.message === "channel disposed") {
+				return result;
+			}
+			throw error;
+		}
+		return result;
+	}
+
+	/**
+	 * Take only the first n values from the channel.
+	 * Returns a new channel that automatically closes after n values.
+	 *
+	 * @param count - Number of values to take
+	 * @returns New channel limited to n values
+	 */
+	take(count: number): Channel<T> {
+		const taken = new Channel<T>(this.capacity);
+		let takenCount = 0;
+
+		(async () => {
+			try {
+				for await (const value of this) {
+					if (value !== undefined) {
+						await taken.send(value);
+						takenCount++;
+						if (takenCount >= count) {
+							break;
+						}
+					}
+				}
+			} finally {
+				taken.close();
+			}
+		})();
+
+		return taken;
 	}
 }

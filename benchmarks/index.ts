@@ -4,7 +4,7 @@
  */
 
 import { performance } from "perf_hooks";
-import { scope, parallel, race } from "../dist/index.mjs";
+import { scope, parallel, race, exponentialBackoff, batch } from "../dist/index.mjs";
 
 interface BenchmarkResult {
   name: string;
@@ -281,6 +281,179 @@ async function benchResourcePool(): Promise<BenchmarkResult[]> {
   return results;
 }
 
+async function benchBatch(): Promise<BenchmarkResult[]> {
+  console.log("\n📊 Batch Processing Benchmarks\n");
+
+  const results: BenchmarkResult[] = [];
+  const items = Array.from({ length: 100 }, (_, i) => i);
+
+  // Native Promise.all
+  results.push(
+    await runBenchmark("Promise.all (100 items)", async () => {
+      await Promise.all(items.map((i) => Promise.resolve(i * 2)));
+    })
+  );
+
+  // go-go-scope batch
+  results.push(
+    await runBenchmark("go-go-scope batch (100 items)", async () => {
+      await using s = scope();
+      await s.batch(items, {
+        process: (item) => Promise.resolve(item * 2),
+      });
+    })
+  );
+
+  // go-go-scope batch with concurrency
+  results.push(
+    await runBenchmark("go-go-scope batch with concurrency (100 items, limit 5)", async () => {
+      await using s = scope();
+      await s.batch(items, {
+        process: (item) => Promise.resolve(item * 2),
+        concurrency: 5,
+      });
+    })
+  );
+
+  return results;
+}
+
+async function benchRetry(): Promise<BenchmarkResult[]> {
+  console.log("\n📊 Retry Strategy Benchmarks\n");
+
+  const results: BenchmarkResult[] = [];
+  let attemptCount = 0;
+
+  // Fixed delay retry
+  results.push(
+    await runBenchmark("Retry with fixed delay", async () => {
+      attemptCount = 0;
+      await using s = scope();
+      await s.task(
+        () => {
+          attemptCount++;
+          if (attemptCount < 3) throw new Error("fail");
+          return Promise.resolve("success");
+        },
+        {
+          retry: {
+            maxRetries: 3,
+            delay: 0, // No delay for benchmark
+          },
+        }
+      );
+    })
+  );
+
+  // Exponential backoff
+  results.push(
+    await runBenchmark("Retry with exponential backoff", async () => {
+      attemptCount = 0;
+      await using s = scope();
+      await s.task(
+        () => {
+          attemptCount++;
+          if (attemptCount < 3) throw new Error("fail");
+          return Promise.resolve("success");
+        },
+        {
+          retry: {
+            maxRetries: 3,
+            delay: exponentialBackoff({ initial: 1, max: 10 }),
+          },
+        }
+      );
+    })
+  );
+
+  return results;
+}
+
+async function benchChannelHelpers(): Promise<BenchmarkResult[]> {
+  console.log("\n📊 Channel Helper Benchmarks\n");
+
+  const results: BenchmarkResult[] = [];
+
+  // Channel map
+  results.push(
+    await runBenchmark("Channel.map()", async () => {
+      const ch = new (await import("../dist/index.mjs")).Channel<number>(10);
+      const mapped = ch.map((x) => x * 2);
+
+      await ch.send(21);
+      await mapped.receive();
+      ch.close();
+      await mapped[Symbol.asyncDispose]();
+    })
+  );
+
+  // Channel filter
+  results.push(
+    await runBenchmark("Channel.filter()", async () => {
+      const ch = new (await import("../dist/index.mjs")).Channel<number>(10);
+      const filtered = ch.filter((x) => x % 2 === 0);
+
+      await ch.send(2);
+      await filtered.receive();
+      ch.close();
+      await filtered[Symbol.asyncDispose]();
+    })
+  );
+
+  // Channel reduce
+  results.push(
+    await runBenchmark("Channel.reduce()", async () => {
+      const ch = new (await import("../dist/index.mjs")).Channel<number>(10);
+
+      const sumPromise = ch.reduce((a, b) => a + b, 0);
+
+      await ch.send(1);
+      await ch.send(2);
+      await ch.send(3);
+      ch.close();
+
+      await sumPromise;
+    })
+  );
+
+  return results;
+}
+
+async function benchDebugTree(): Promise<BenchmarkResult[]> {
+  console.log("\n📊 Debug Visualization Benchmarks\n");
+
+  const results: BenchmarkResult[] = [];
+
+  // Debug tree generation
+  results.push(
+    await runBenchmark("debugTree() with 10 tasks", async () => {
+      await using s = scope({ name: "parent" });
+
+      for (let i = 0; i < 10; i++) {
+        s.task(() => Promise.resolve(i));
+      }
+
+      s.debugTree();
+    })
+  );
+
+  // Debug tree with child scopes
+  results.push(
+    await runBenchmark("debugTree() with nested scopes", async () => {
+      await using parent = scope({ name: "parent" });
+
+      for (let i = 0; i < 5; i++) {
+        await using child = scope({ parent, name: `child-${i}` });
+        child.task(() => Promise.resolve(i));
+      }
+
+      parent.debugTree();
+    })
+  );
+
+  return results;
+}
+
 function printResults(results: BenchmarkResult[]) {
   console.log("─".repeat(70));
   console.log(
@@ -298,7 +471,7 @@ function printResults(results: BenchmarkResult[]) {
 }
 
 async function main() {
-  console.log("🚀 go-go-scope Benchmark Suite\n");
+  console.log("🚀 go-go-scope Benchmark Suite v1.3.0\n");
   console.log("Comparing performance with native Promise patterns\n");
 
   const allResults: BenchmarkResult[] = [];
@@ -309,6 +482,10 @@ async function main() {
   allResults.push(...(await benchCancellation()));
   allResults.push(...(await benchChannels()));
   allResults.push(...(await benchResourcePool()));
+  allResults.push(...(await benchBatch()));
+  allResults.push(...(await benchRetry()));
+  allResults.push(...(await benchChannelHelpers()));
+  allResults.push(...(await benchDebugTree()));
 
   console.log("\n\n📈 Overall Results\n");
   printResults(allResults);
@@ -332,6 +509,30 @@ async function main() {
   if (nativeAll && scopeParallel) {
     const overhead = scopeParallel.avgTime / nativeAll.avgTime;
     console.log(`Parallel execution overhead: ${overhead.toFixed(2)}x`);
+  }
+
+  // New v1.3.0 features summary
+  console.log("\n🆕 v1.3.0 Features\n");
+
+  const batchResult = allResults.find(
+    (r) => r.name === "go-go-scope batch (100 items)"
+  );
+  if (batchResult) {
+    console.log(`Batch processing: ${batchResult.opsPerSecond.toFixed(0)} ops/sec`);
+  }
+
+  const retryResult = allResults.find(
+    (r) => r.name === "Retry with exponential backoff"
+  );
+  if (retryResult) {
+    console.log(`Retry with backoff: ${retryResult.opsPerSecond.toFixed(0)} ops/sec`);
+  }
+
+  const debugTreeResult = allResults.find(
+    (r) => r.name === "debugTree() with 10 tasks"
+  );
+  if (debugTreeResult) {
+    console.log(`Debug tree generation: ${debugTreeResult.opsPerSecond.toFixed(0)} ops/sec`);
   }
 
   console.log("\n✅ Benchmarks complete!");
