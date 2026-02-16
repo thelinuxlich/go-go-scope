@@ -12,6 +12,7 @@ Lightweight helper functions for working with `AbortSignal` without introducing 
 - [raceSignals](#racesignals)
 - [whenAborted](#whenaborted)
 - [Usage Examples](#usage-examples)
+- [Edge Cases and Careful Handling](#edge-cases-and-careful-handling)
 
 ---
 
@@ -350,6 +351,225 @@ await s.task(async ({ signal }) => {
   }
 })
 ```
+
+---
+
+## Edge Cases and Careful Handling
+
+While `AbortSignal` is the web standard for cancellation, it has some limitations that require careful handling. Understanding these edge cases will help you write more robust code.
+
+### 1. AbortSignal is Advisory
+
+The most important limitation: **AbortSignal only cancels operations that check for it**. If code doesn't respect the signal, it runs to completion regardless of cancellation.
+
+```typescript
+await using s = scope()
+
+const task = s.task(async ({ signal }) => {
+  const response = await fetch('/api/data', { signal })
+  // ❌ Problem: This line executes even if signal is aborted
+  // if fetch completed but abort fired during the await
+  await saveToDatabase(response)  // No signal check!
+})
+
+await s[Symbol.asyncDispose]()
+```
+
+**Solution:** Check the signal at critical points:
+
+```typescript
+await s.task(async ({ signal }) => {
+  const response = await fetch('/api/data', { signal })
+  
+  // ✅ Check before proceeding
+  throwIfAborted(signal)
+  
+  await saveToDatabase(response)
+})
+```
+
+### 2. Non-Cancellable Operations
+
+Some operations cannot be cancelled:
+
+```typescript
+await s.task(async ({ signal }) => {
+  // ❌ This blocks the event loop and ignores AbortSignal
+  const crypto = require('crypto')
+  crypto.pbkdf2Sync('password', 'salt', 100000, 64, 'sha512')
+  
+  // Signal is already aborted, but this still runs
+  throwIfAborted(signal)  // Too late!
+})
+```
+
+**Solution:** Use async alternatives that respect the signal:
+
+```typescript
+import { pbkdf2 } from 'node:crypto'
+import { promisify } from 'node:util'
+
+const pbkdf2Async = promisify(pbkdf2)
+
+await s.task(async ({ signal }) => {
+  // ✅ Check before heavy work
+  throwIfAborted(signal)
+  
+  // Do the work
+  const key = await pbkdf2Async('password', 'salt', 100000, 64, 'sha512')
+  
+  // ✅ Check after
+  throwIfAborted(signal)
+  
+  return key
+})
+```
+
+### 3. Missing Signal Propagation
+
+A common mistake is not passing the signal to all async operations:
+
+```typescript
+await s.task(async ({ signal }) => {
+  const data = await fetchWithSignal(url, signal)
+  
+  // ❌ Forgot to pass signal - won't be cancelled!
+  const processed = await processData(data)
+  
+  return processed
+})
+```
+
+**Solution:** Pass signal to all cancellable operations:
+
+```typescript
+await s.task(async ({ signal }) => {
+  const data = await fetchWithSignal(url, signal)
+  
+  // ✅ Pass signal through
+  const processed = await processData(data, { signal })
+  
+  return processed
+})
+```
+
+### 4. Race Between Completion and Cancellation
+
+There's a window where a task can complete after abort fires but before the scope notices:
+
+```typescript
+await using s = scope()
+
+const task = s.task(async ({ signal }) => {
+  await delay(100)
+  // At this point, signal might be aborted
+  // but we're about to return
+  return 'completed'
+})
+
+// Fire abort
+timeout(() => s[Symbol.asyncDispose](), 50)
+
+// Task might complete before disposal checks
+const [err, result] = await task
+// Could get result even though scope was disposed!
+```
+
+**Solution:** Check signal before returning:
+
+```typescript
+await s.task(async ({ signal }) => {
+  await delay(100)
+  
+  // ✅ Verify still valid
+  throwIfAborted(signal)
+  
+  return 'completed'
+})
+```
+
+### 5. Cleanup Ordering
+
+Resources are disposed in LIFO order, but disposal is async and can fail:
+
+```typescript
+await using s = scope()
+
+s.provide('db', () => connect(), db => db.close())
+s.provide('cache', () => createCache(), cache => cache.flush())
+
+// On disposal:
+// 1. cache.flush() runs
+// 2. If flush() throws, db.close() still runs
+// 3. But errors might hide each other
+```
+
+**Solution:** Use hooks to track cleanup:
+
+```typescript
+await using s = scope({
+  hooks: {
+    onDispose: (index, error) => {
+      if (error) {
+        console.error(`Resource ${index} failed to dispose:`, error)
+      }
+    }
+  }
+})
+```
+
+### 6. Signal State After Disposal
+
+After a scope is disposed, its signal remains aborted. Be careful with cached references:
+
+```typescript
+const scopes: Scope[] = []
+
+async function createWorker() {
+  await using s = scope()
+  scopes.push(s)  // ❌ Don't do this - scope will dispose
+  
+  // Later, trying to use cached scope:
+  // s.signal is aborted, s.task() throws
+}
+```
+
+**Solution:** Pass scopes explicitly or use parent-child relationships:
+
+```typescript
+async function createWorker(parent: Scope) {
+  // ✅ Child scope inherits parent's lifetime
+  await using s = scope({ parent })
+  
+  // When parent disposes, child is automatically cancelled
+}
+```
+
+### Best Practices Checklist
+
+- [ ] Check `signal.aborted` or use `throwIfAborted()` before and after heavy operations
+- [ ] Pass `signal` to all cancellable async operations (fetch, streams, timeouts)
+- [ ] Use `onAbort()` to register cleanup for external resources
+- [ ] Avoid synchronous blocking operations in tasks
+- [ ] Don't cache scope references that outlive their `await using` block
+- [ ] Test cancellation by disposing scopes mid-operation
+- [ ] Use child scopes for operations that should be cancelled together
+
+### Comparison with Fiber-Based Systems
+
+Libraries like Effect use fibers (cooperative multitasking) which provide:
+- Precise interruption at yield points
+- Uninterruptible sections for critical code
+- Guaranteed finalizer execution
+
+go-go-scope uses native Promises + AbortSignal which:
+- ✅ Works with standard web APIs
+- ✅ No runtime overhead
+- ✅ Familiar async/await syntax
+- ⚠️ Requires discipline to check signals
+- ⚠️ Cannot interrupt blocking sync code
+
+For most applications, careful use of AbortSignal provides sufficient cancellation guarantees. For mission-critical systems requiring absolute shutdown guarantees, consider fiber-based alternatives.
 
 ---
 

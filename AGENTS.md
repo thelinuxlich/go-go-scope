@@ -9,12 +9,13 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 - Structured concurrency with automatic parent-child cancellation
 - Built-in timeout support with automatic cancellation
 - Structured racing where losers are cancelled
-- Go-style channels for concurrent communication
+- Go-style channels for concurrent communication with `map`, `filter`, `reduce`, `take` operations
 - Broadcast channels for pub/sub patterns
 - Semaphores for rate limiting
 - Circuit breaker pattern for preventing cascading failures
-- Retry logic with configurable delays and conditions
-- Dependency injection via `provide()`/`use()`
+- Retry logic with configurable delays and conditions (exponential backoff, jitter, linear)
+- `parallel()` for processing arrays with progress tracking and error handling
+- Dependency injection via `provide()`/`use()`/`override()`
 - Stream processing with automatic cancellation
 - Polling utilities with start/stop control
 - Debounce and throttle rate-limiting utilities
@@ -26,6 +27,8 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 - Deadlock detection
 - Structured logging integration
 - OpenTelemetry tracing integration
+- Cancellation utilities: `throwIfAborted`, `onAbort`, `abortPromise`, `raceSignals`, `whenAborted`
+- Debug visualization via `debugTree()` for scope hierarchies
 - Built-in debug logging via the `debug` module
 
 ## Technology Stack
@@ -34,14 +37,16 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 - **Target**: ES2022 with NodeNext module resolution
 - **Required Features**: `Symbol.dispose`, `Symbol.asyncDispose` (ES2022+ or Node.js 18+)
 - **Build Tool**: [pkgroll](https://github.com/privatenumber/pkgroll) v2.25.2 - Zero-config TypeScript package bundler
-- **Linter/Formatter**: [Biome](https://biomejs.dev/) v2.3.15
-- **Testing**: [Vitest](https://vitest.dev/) v4.0.18
+- **Linter/Formatter**: [Biome](https://biomejs.dev/) v2.4.0
+- **Testing**: [Vitest](https://vitest.dev/) v4.0.18 with globals enabled
 - **Runtime Dependencies**: 
   - `debug` ^4.4.3 (for debug logging)
   - `@opentelemetry/api` ^1.9.0 (for tracing)
 - **Dev Dependencies**:
   - OpenTelemetry SDK and exporters for tracing examples
   - Type definitions for Node.js and debug
+  - `effect` ^3.19.17 for comparison examples
+  - `go-go-try` ^7.3.0 for typed error handling examples
 
 ## Project Structure
 
@@ -59,23 +64,28 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 │   ├── resource-pool.ts       # ResourcePool class - managed resource pools
 │   ├── profiler.ts            # Profiler class - task performance profiling
 │   ├── deadlock-detector.ts   # DeadlockDetector class - deadlock detection
+│   ├── cancellation.ts        # Cancellation utilities (throwIfAborted, onAbort, etc.)
 │   ├── logger.ts              # Logger utilities - structured logging
 │   ├── metrics-exporter.ts    # Metrics export utilities
+│   ├── retry-strategies.ts    # Retry delay strategies (exponential, jitter, linear)
 │   ├── race.ts                # Standalone race() function
 │   ├── parallel.ts            # Standalone parallel() function
 │   ├── stream.ts              # Standalone stream() function
 │   ├── poll.ts                # Standalone poll() function
 │   ├── rate-limiting.ts       # Standalone debounce and throttle utilities
 │   └── testing/               # Test utilities
-│       └── index.ts           # Mock scopes, spies, timers for testing
+│       ├── index.ts           # Mock scopes, spies, timers for testing
+│       └── time-controller.ts # Time control for deterministic tests
 ├── benchmarks/                # Benchmark suite
 │   └── index.ts               # Performance benchmarks comparing with native Promise
 ├── tests/                     # Test suite organized by category
 │   ├── core.test.ts           # Core functionality (Task, Scope, retry, OpenTelemetry)
 │   ├── concurrency.test.ts    # Channels, Semaphore, CircuitBreaker, stream, poll
 │   ├── rate-limiting.test.ts  # Debounce, throttle, metrics, hooks, select
+│   ├── cancellation.test.ts   # Cancellation utility functions
 │   ├── prometheus.test.ts     # Prometheus metrics export formats
 │   ├── testing.test.ts        # Test utilities validation
+│   ├── type-check.test.ts     # TypeScript type-level tests
 │   └── performance.test.ts    # Performance benchmarks
 ├── dist/                      # Compiled output (generated, NOT committed)
 │   ├── index.mjs              # ESM build
@@ -88,6 +98,7 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 │   ├── prometheus-metrics.ts  # Prometheus metrics endpoint example
 │   ├── prometheus-push.ts     # Prometheus Pushgateway example
 │   ├── prometheus-simple.ts   # Simple Prometheus metrics example
+│   ├── go-go-try-integration.ts # Typed error handling with go-go-try
 │   └── testing-utilities.ts   # Testing utilities usage example
 ├── docs/                      # Documentation
 │   ├── 01-quick-start.md      # Quick start guide
@@ -100,7 +111,9 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 │   ├── 08-testing.md                 # Mock scopes, spies, and timers
 │   ├── 09-advanced-patterns.md       # Resource pools, parent-child scopes
 │   ├── 10-comparisons.md             # vs Vanilla JS, vs Effect
-│   └── 11-integrations.md            # OpenTelemetry, Prometheus, Grafana
+│   ├── 11-integrations.md            # OpenTelemetry, Prometheus, Grafana
+│   ├── 12-cancellation.md            # Cancellation utilities and helpers
+│   └── 13-recipes.md                 # Common patterns and solutions
 ├── grafana/                   # Grafana provisioning
 │   └── provisioning/          # Dashboards and datasources
 ├── package.json               # Package configuration
@@ -249,6 +262,13 @@ task<T>(fn: (ctx: { services: Services; signal: AbortSignal }) => Promise<T>): T
   - Metrics (tasks spawned/completed/failed, duration statistics, resources)
   - Lifecycle Hooks (beforeTask, afterTask, onCancel, onDispose)
   - Select (multiple channel operations, empty cases, closed channels)
+
+- **tests/cancellation.test.ts**: Cancellation utilities
+  - throwIfAborted
+  - onAbort
+  - abortPromise
+  - raceSignals
+  - whenAborted
   
 - **tests/prometheus.test.ts**: Prometheus metrics export
   - JSON format export
@@ -263,6 +283,11 @@ task<T>(fn: (ctx: { services: Services; signal: AbortSignal }) => Promise<T>): T
   - createSpy
   - flushPromises
   - assertScopeDisposed
+  - createTestScope
+  - createTimeController
+
+- **tests/type-check.test.ts**: TypeScript type-level tests
+  - Type inference validations
 
 - **tests/performance.test.ts**: Performance benchmarks
 
@@ -286,8 +311,10 @@ npm run test:watch
 npx vitest run tests/core.test.ts
 npx vitest run tests/concurrency.test.ts
 npx vitest run tests/rate-limiting.test.ts
+npx vitest run tests/cancellation.test.ts
 npx vitest run tests/prometheus.test.ts
 npx vitest run tests/testing.test.ts
+npx vitest run tests/type-check.test.ts
 npx vitest run tests/performance.test.ts
 ```
 
@@ -339,9 +366,10 @@ test("cancels when scope disposed", async () => {
    - Supports parent scope inheritance (services, tracer, concurrency, circuit breaker)
    - Creates OpenTelemetry spans when tracer is provided
    - Supports lifecycle hooks and metrics collection
+   - Supports deadlock detection and task profiling
    - Methods:
      - `task()` - Spawn tasks with Result tuple return
-     - `provide()` / `use()` - Dependency injection
+     - `provide()` / `use()` / `has()` / `override()` - Dependency injection
      - `race()` - Race multiple tasks
      - `parallel()` - Run tasks in parallel with concurrency limit
      - `channel()` - Create Go-style channels
@@ -350,9 +378,11 @@ test("cancels when scope disposed", async () => {
      - `poll()` - Interval polling with controller
      - `debounce()` / `throttle()` - Rate limiting
      - `select()` - Wait on multiple channel operations
-     - `resourcePool()` - Create managed resource pools
+     - `resourcePool()` / `pool()` - Create managed resource pools
      - `metrics()` - Get collected metrics
      - `profile()` - Get profiling report
+     - `debugTree()` - Visualize scope hierarchy
+     - `onDispose()` - Register cleanup callbacks
    - Properties: `signal`, `isDisposed`, `tracer`, `concurrency`, `circuitBreaker`
 
 3. **AsyncDisposableResource<T>** (`scope.ts`): Resource wrapper
@@ -366,6 +396,7 @@ test("cancels when scope disposed", async () => {
    - Implements `AsyncIterable` for `for await...of` support
    - Auto-closes on parent scope disposal
    - Methods: `send()`, `receive()`, `close()`, `[Symbol.asyncIterator]`
+   - Helper methods: `map()`, `filter()`, `reduce()`, `take()`
    - Properties: `isClosed`, `size`, `cap`
 
 5. **BroadcastChannel<T>** (`broadcast-channel.ts`): Pub/sub broadcast channel
@@ -392,7 +423,7 @@ test("cancels when scope disposed", async () => {
    - Min/max pool size management
    - Acquire timeout support
    - Auto-cleanup on scope disposal
-   - Methods: `acquire()`, `release()`, `drain()`, `[Symbol.asyncDispose]`
+   - Methods: `acquire()`, `release()`, `execute()`, `drain()`, `[Symbol.asyncDispose]`
 
 9. **Profiler** (`profiler.ts`): Task performance profiling
    - Tracks execution time per pipeline stage
@@ -404,6 +435,13 @@ test("cancels when scope disposed", async () => {
     - Configurable timeout with callback
     - Methods: `check()`, `dispose()`
 
+11. **Cancellation Utilities** (`cancellation.ts`): AbortSignal helpers
+    - `throwIfAborted(signal)` - Throws if signal is aborted
+    - `onAbort(signal, callback)` - Register abort callback
+    - `abortPromise(signal)` - Promise that rejects on abort
+    - `raceSignals(signals)` - Race multiple signals
+    - `whenAborted(signal)` - Wait for abort signal
+
 ### Utility Functions
 
 - **scope(options?)**: Factory for Scope instances (`factory.ts`)
@@ -413,6 +451,14 @@ test("cancels when scope disposed", async () => {
 - **poll(fn, onValue, options?)**: Interval polling with cleanup (`poll.ts`)
 - **debounce(scope, fn, options?)**: Debounced function wrapper (`rate-limiting.ts`)
 - **throttle(scope, fn, options?)**: Throttled function wrapper (`rate-limiting.ts`)
+
+### Retry Strategies
+
+- **exponentialBackoff(options?)**: Exponential backoff with optional jitter
+- **jitter(baseDelay, jitterFactor?)**: Fixed delay with jitter
+- **linear(baseDelay, increment)**: Linear increasing delay
+- **fullJitterBackoff**: Full jitter strategy
+- **decorrelatedJitter**: Decorrelated jitter strategy
 
 ### Task Execution Pipeline
 
@@ -435,13 +481,15 @@ broadcast<T>(): BroadcastChannel<T>
 stream<T>(source: AsyncIterable<T>): AsyncGenerator<T>
 poll<T>(fn, onValue, options?): PollController
 race<T>(factories): Promise<Result<unknown, T>>
-parallel<T>(factories, options?): Promise<Result<unknown, T>[]>
+parallel<T>(factories, options?): ParallelAggregateResult<T>
 debounce<T, Args>(fn, options?): (...args: Args) => Promise<Result<unknown, T>>
 throttle<T, Args>(fn, options?): (...args: Args) => Promise<Result<unknown, T>>
 select<T>(cases): Promise<Result<unknown, T>>
 resourcePool<T>(options): ResourcePool<T>
+pool<T>(options): ResourcePool<T>  // alias
 metrics(): ScopeMetrics | undefined
 profile(): ScopeProfileReport | undefined
+debugTree(): string
 ```
 
 ### Debug Logging
@@ -460,6 +508,7 @@ Namespaces:
 - `go-go-scope:parallel` - Parallel execution events
 - `go-go-scope:race` - Race execution events
 - `go-go-scope:poll` - Polling events
+- `go-go-scope:cancellation` - Cancellation utility events
 
 Enable with: `DEBUG=go-go-scope:* node your-app.js`
 
@@ -504,7 +553,7 @@ Usage:
 import { scope, Task, Scope } from 'go-go-scope';
 
 // Testing utilities (separate import)
-import { createMockScope, createSpy } from 'go-go-scope/testing';
+import { createMockScope, createSpy, createControlledTimer, flushPromises, assertScopeDisposed } from 'go-go-scope/testing';
 ```
 
 ## Typed Error Handling with go-go-try
@@ -547,14 +596,15 @@ See [Resilience Patterns](./docs/05-resilience-patterns.md#typed-error-handling)
 - `@opentelemetry/api` ^1.9.0 - OpenTelemetry API for tracing
 
 ### Dev Dependencies
-- `@biomejs/biome` ^2.3.15 - Linter/formatter
+- `@biomejs/biome` ^2.4.0 - Linter/formatter
 - `@opentelemetry/exporter-trace-otlp-http` ^0.212.0 - OTLP trace exporter
 - `@opentelemetry/resources` ^2.5.1 - OpenTelemetry resources
 - `@opentelemetry/sdk-node` ^0.212.0 - OpenTelemetry Node.js SDK
 - `@opentelemetry/semantic-conventions` ^1.39.0 - Semantic conventions
 - `@types/debug` ^4.1.12 - Type definitions for debug
 - `@types/node` ^24 - Type definitions for Node.js
-- `effect` ^3.19.16 - For comparison examples
+- `effect` ^3.19.17 - For comparison examples
+- `go-go-try` ^7.3.0 - For typed error handling examples
 - `pkgroll` ^2.25.2 - Build tool
 - `typescript` ^5.9.3 - TypeScript compiler
 - `vitest` ^4.0.18 - Test framework
