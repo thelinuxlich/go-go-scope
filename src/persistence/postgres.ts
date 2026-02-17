@@ -13,7 +13,15 @@
  * const persistence = new PostgresAdapter(pool, { keyPrefix: 'myapp:' })
  *
  * await using s = scope({ persistence })
- * using lock = await s.acquireLock('resource:123')
+ *
+ * // Acquire a lock with 30 second TTL
+ * const lock = await s.acquireLock('resource:123', 30000)
+ * if (!lock) {
+ *   throw new Error('Could not acquire lock')
+ * }
+ *
+ * // Lock automatically expires after TTL
+ * // Optional: release early with await lock.release()
  * ```
  */
 
@@ -71,6 +79,10 @@ export class PostgresAdapter
 			await client.query("BEGIN");
 
 			try {
+				// Use client-side time for consistency
+				const now = new Date();
+				const expiresAt = new Date(now.getTime() + ttl);
+
 				// Check if lock exists and is not expired
 				const checkResult = await client.query(
 					"SELECT owner, expires_at FROM go_goscope_locks WHERE key = $1 FOR UPDATE",
@@ -79,8 +91,10 @@ export class PostgresAdapter
 
 				if (checkResult.rows.length > 0) {
 					// Lock exists - check if expired
-					const expiresAt = new Date(checkResult.rows[0].expires_at).getTime();
-					if (expiresAt > Date.now()) {
+					const rowExpiresAt = new Date(
+						checkResult.rows[0].expires_at,
+					).getTime();
+					if (rowExpiresAt > Date.now()) {
 						// Lock is still valid - same owner can reacquire
 						if (checkResult.rows[0].owner !== lockOwner) {
 							await client.query("ROLLBACK");
@@ -90,14 +104,14 @@ export class PostgresAdapter
 					}
 					// Lock is expired or same owner - update it
 					await client.query(
-						"UPDATE go_goscope_locks SET owner = $2, expires_at = NOW() + INTERVAL '1 millisecond' * $3 WHERE key = $1",
-						[fullKey, lockOwner, ttl],
+						"UPDATE go_goscope_locks SET owner = $2, expires_at = $3 WHERE key = $1",
+						[fullKey, lockOwner, expiresAt],
 					);
 				} else {
 					// No lock exists - insert new one
 					await client.query(
-						"INSERT INTO go_goscope_locks (key, owner, expires_at) VALUES ($1, $2, NOW() + INTERVAL '1 millisecond' * $3)",
-						[fullKey, lockOwner, ttl],
+						"INSERT INTO go_goscope_locks (key, owner, expires_at) VALUES ($1, $2, $3)",
+						[fullKey, lockOwner, expiresAt],
 					);
 				}
 
@@ -109,17 +123,21 @@ export class PostgresAdapter
 							"DELETE FROM go_goscope_locks WHERE key = $1 AND owner = $2",
 							[fullKey, lockOwner],
 						);
-						client.release();
 					},
 					extend: async (newTtl: number) => {
 						return this.extendLock(fullKey, newTtl, lockOwner);
 					},
 					isValid: async () => {
+						// Use client-side time for consistency
 						const result = await this.pool.query(
-							"SELECT owner FROM go_goscope_locks WHERE key = $1 AND expires_at > NOW()",
+							"SELECT owner, expires_at FROM go_goscope_locks WHERE key = $1",
 							[fullKey],
 						);
-						return result.rows[0]?.owner === lockOwner;
+						if (!result.rows[0]) return false;
+						return (
+							result.rows[0].owner === lockOwner &&
+							new Date(result.rows[0].expires_at).getTime() > Date.now()
+						);
 					},
 				};
 
@@ -137,7 +155,8 @@ export class PostgresAdapter
 	private async cleanupExpiredLocks(): Promise<void> {
 		// Clean up expired locks periodically
 		await this.pool.query(
-			"DELETE FROM go_goscope_locks WHERE expires_at < NOW()",
+			"DELETE FROM go_goscope_locks WHERE expires_at < $1",
+			[new Date()],
 		);
 	}
 

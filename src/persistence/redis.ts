@@ -13,7 +13,15 @@
  * const persistence = new RedisAdapter(redis, { keyPrefix: 'myapp:' })
  *
  * await using s = scope({ persistence })
- * using lock = await s.acquireLock('resource:123')
+ *
+ * // Acquire a lock with 30 second TTL
+ * const lock = await s.acquireLock('resource:123', 30000)
+ * if (!lock) {
+ *   throw new Error('Could not acquire lock')
+ * }
+ *
+ * // Lock automatically expires after TTL via Redis native expiry
+ * // Optional: release early with await lock.release()
  * ```
  */
 

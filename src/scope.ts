@@ -161,7 +161,15 @@ export interface ScopeOptions<
 	 * const persistence = new RedisAdapter(redis)
 	 *
 	 * await using s = scope({ persistence })
-	 * using lock = await s.acquireLock('resource:123')
+	 *
+	 * // Acquire a lock with 30 second TTL
+	 * const lock = await s.acquireLock('resource:123', 30000)
+	 * if (!lock) {
+	 *   throw new Error('Could not acquire lock')
+	 * }
+	 *
+	 * // Lock automatically expires after TTL
+	 * // Optional: release early with await lock.release()
 	 * ```
 	 */
 	persistence?: PersistenceProviders;
@@ -2594,9 +2602,12 @@ export class Scope<
 	 *
 	 * Requires a LockProvider to be configured via `persistence` option.
 	 *
-	 * The lock will expire automatically after the TTL. The lock is NOT released
-	 * when the scope disposes - it respects the TTL to prevent race conditions
-	 * in distributed scenarios.
+	 * **Important:** The lock uses TTL (time-to-live) as the primary cleanup mechanism.
+	 * The lock will automatically expire after the specified TTL, even if your process
+	 * crashes. This ensures deadlocks cannot occur in distributed scenarios.
+	 *
+	 * The lock is NOT released when the scope disposes - it respects the full TTL.
+	 * Call `release()` only if you want to release the lock early before TTL expires.
 	 *
 	 * @param key - Unique lock identifier
 	 * @param ttl - Time-to-live in milliseconds (default: 30000)
@@ -2611,15 +2622,18 @@ export class Scope<
 	 *
 	 * await using s = scope({ persistence })
 	 *
-	 * // Try to acquire lock
+	 * // Acquire lock with 5 second TTL
 	 * const lock = await s.acquireLock('resource:123', 5000)
 	 * if (!lock) {
 	 *   console.log('Resource busy')
 	 *   return
 	 * }
 	 *
-	 * // Lock will expire automatically after 5 seconds (TTL)
-	 * // Release manually when done (optional but recommended):
+	 * // The lock automatically expires after 5 seconds (TTL).
+	 * // This is the primary cleanup mechanism - even if your process crashes,
+	 * // the lock will be released after the TTL expires.
+	 *
+	 * // Optional: Release early if you finish before TTL expires
 	 * await lock.release()
 	 * ```
 	 */

@@ -312,20 +312,6 @@ In Jaeger UI, you'll see:
 └── [send-notification] task - 30ms ✓
 ```
 
-### Docker Compose for Jaeger
-
-```yaml
-version: '3'
-services:
-  jaeger:
-    image: jaegertracing/all-in-one:latest
-    ports:
-      - "16686:16686"  # Jaeger UI
-      - "4318:4318"    # OTLP HTTP
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-```
-
 Run with: `npm run jaeger:up`
 
 View traces at: http://localhost:16687
@@ -698,8 +684,11 @@ if (!lock) {
   return
 }
 
-// Lock will expire automatically after 30 seconds (TTL)
-// Release manually when done (optional but recommended):
+// The lock will automatically expire after 30 seconds (TTL)
+// This is the primary cleanup mechanism - even if your process crashes,
+// the lock will be released after the TTL expires.
+
+// Optional: Release early when done (before TTL expires)
 await lock.release()
 ```
 
@@ -729,10 +718,11 @@ if (lock) {
     console.log('Lock is still valid')
   }
   
-  // Extend lock TTL
+  // Extend lock TTL if you need more time
   await lock.extend(10000) // Extend to 10 more seconds
   
-  // Release when done
+  // The lock will automatically expire after the TTL.
+  // Optional: Release early if you finish before TTL expires.
   await lock.release()
 } else {
   console.log('Resource is locked by another process')
@@ -741,12 +731,16 @@ if (lock) {
 
 **Lock TTL Behavior:**
 
+The **TTL (time-to-live) is the primary cleanup mechanism** for distributed locks. When you acquire a lock, it will automatically expire after the specified TTL, allowing other processes to acquire it.
+
 If a node acquires a lock and then crashes:
 - **Redis**: Lock expires via native TTL after specified time
 - **PostgreSQL/MySQL**: Lock expires based on `expires_at` timestamp
 - **SQLite**: Lock expires based on in-memory timestamp
 
 After TTL expires, any node can acquire the lock.
+
+> **Note:** `LockHandle` does not implement `Disposable`, so you cannot use the `using` keyword with locks. Always rely on the TTL for automatic cleanup, or call `release()` manually if you need to release the lock early.
 
 
 ### Circuit Breaker State
