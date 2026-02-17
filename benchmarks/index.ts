@@ -4,7 +4,7 @@
  */
 
 import { performance } from "perf_hooks";
-import { scope, parallel, race, exponentialBackoff } from "../dist/index.mjs";
+import { scope, race, exponentialBackoff } from "../dist/index.mjs";
 
 interface BenchmarkResult {
   name: string;

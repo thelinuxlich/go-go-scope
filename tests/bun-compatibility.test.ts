@@ -107,17 +107,6 @@ describe("bun compatibility", () => {
       expect(lock).not.toBeNull();
       await lock!.release();
 
-      // Test rate limiting
-      const config = { max: 2, windowMs: 1000 };
-      const r1 = await adapter.checkAndIncrement("bun-rl", config);
-      expect(r1.allowed).toBe(true);
-
-      const r2 = await adapter.checkAndIncrement("bun-rl", config);
-      expect(r2.allowed).toBe(true);
-
-      const r3 = await adapter.checkAndIncrement("bun-rl", config);
-      expect(r3.allowed).toBe(false);
-
       // Test circuit breaker
       await adapter.recordFailure("bun-cb", 3);
       await adapter.recordFailure("bun-cb", 3);

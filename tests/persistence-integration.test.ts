@@ -1,7 +1,7 @@
 /**
  * Persistence Integration Tests
  * 
- * Tests all persistence features (distributed locks, rate limiting, circuit breaker state)
+ * Tests all persistence features (distributed locks and circuit breaker state)
  * against all supported databases: Redis, PostgreSQL, MySQL, and SQLite.
  * 
  * Run these tests with:
@@ -14,7 +14,7 @@
  */
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { scope } from "../src/factory.js";
-import type { LockProvider, RateLimitProvider, CircuitBreakerStateProvider } from "../src/persistence/types.js";
+import type { LockProvider, CircuitBreakerStateProvider } from "../src/persistence/types.js";
 
 // Import adapters - these will fail if peer dependencies not installed
 let RedisAdapter: typeof import("../src/persistence/redis.js").RedisAdapter;
@@ -266,143 +266,6 @@ describe("persistence integration", () => {
       lockTests("SQLite", () => {
         const adapter = new SQLiteAdapter(sqliteDb);
         // Tables already created in beforeAll
-        return adapter;
-      });
-    }
-  });
-
-  describe("rate limiting", () => {
-    // Placeholder test to avoid empty suite when no databases available
-    test.skipIf(!Object.values(availability).some(v => v))("requires at least one database", () => {});
-    
-    const rateLimitTests = (name: string, createProvider: () => RateLimitProvider) => {
-      describe(name, () => {
-        let provider: RateLimitProvider;
-
-        beforeEach(async () => {
-          provider = createProvider();
-          await provider.reset("test-key");
-        });
-
-        test("allows requests within limit", async () => {
-          const result = await provider.checkAndIncrement("test-key", { max: 5, windowMs: 10000 });
-          expect(result.allowed).toBe(true);
-          expect(result.remaining).toBe(4);
-        });
-
-        test("blocks requests over limit", async () => {
-          const config = { max: 2, windowMs: 10000 };
-
-          // First 2 requests allowed
-          const r1 = await provider.checkAndIncrement("test-key", config);
-          expect(r1.allowed).toBe(true);
-
-          const r2 = await provider.checkAndIncrement("test-key", config);
-          expect(r2.allowed).toBe(true);
-
-          // 3rd request blocked
-          const r3 = await provider.checkAndIncrement("test-key", config);
-          expect(r3.allowed).toBe(false);
-          expect(r3.remaining).toBe(0);
-        });
-
-        test("resets after window expires", async () => {
-          const config = { max: 1, windowMs: 100 }; // 100ms window
-
-          // Use up the quota
-          await provider.checkAndIncrement("test-key", config);
-
-          // Wait for window to expire
-          await new Promise((r) => setTimeout(r, 150));
-
-          // Should be allowed again
-          const result = await provider.checkAndIncrement("test-key", config);
-          expect(result.allowed).toBe(true);
-        });
-
-        test("reset clears counter", async () => {
-          const config = { max: 1, windowMs: 10000 };
-
-          await provider.checkAndIncrement("test-key", config);
-          await provider.reset("test-key");
-
-          const result = await provider.checkAndIncrement("test-key", config);
-          expect(result.allowed).toBe(true);
-        });
-
-        test("getCount returns current count", async () => {
-          await provider.checkAndIncrement("test-key", { max: 10, windowMs: 10000 });
-          await provider.checkAndIncrement("test-key", { max: 10, windowMs: 10000 });
-
-          const count = await provider.getCount("test-key", 10000);
-          expect(count).toBe(2);
-        });
-
-        test("different keys have separate counters", async () => {
-          const config = { max: 1, windowMs: 10000 };
-
-          const r1 = await provider.checkAndIncrement("key-a", config);
-          expect(r1.allowed).toBe(true);
-
-          const r2 = await provider.checkAndIncrement("key-b", config);
-          expect(r2.allowed).toBe(true);
-
-          // key-a should be blocked now
-          const r3 = await provider.checkAndIncrement("key-a", config);
-          expect(r3.allowed).toBe(false);
-        });
-
-        test("concurrent requests within limit", async () => {
-          const config = { max: 10, windowMs: 10000 };
-
-          const results = await Promise.all([
-            provider.checkAndIncrement("concurrent-rl", config),
-            provider.checkAndIncrement("concurrent-rl", config),
-            provider.checkAndIncrement("concurrent-rl", config),
-            provider.checkAndIncrement("concurrent-rl", config),
-            provider.checkAndIncrement("concurrent-rl", config),
-          ]);
-
-          // All should be allowed
-          expect(results.every(r => r.allowed)).toBe(true);
-          
-          // Sum of remaining should be 5+4+3+2+1 = 15 (order may vary)
-          const totalRemaining = results.reduce((sum, r) => sum + r.remaining, 0);
-          expect(totalRemaining).toBe(15);
-        });
-
-        test("rate limit result has correct limit", async () => {
-          const config = { max: 5, windowMs: 10000 };
-
-          const result = await provider.checkAndIncrement("limit-test", config);
-          expect(result.limit).toBe(5);
-        });
-
-        test("resetTimeMs is positive for new window", async () => {
-          const config = { max: 5, windowMs: 10000 };
-
-          const result = await provider.checkAndIncrement("reset-test", config);
-          expect(result.resetTimeMs).toBeGreaterThan(0);
-          expect(result.resetTimeMs).toBeLessThanOrEqual(10000);
-        });
-      });
-    };
-
-    if (availability.redis) {
-      rateLimitTests("Redis", () => new RedisAdapter(redisClient));
-    }
-
-    if (availability.postgres) {
-      rateLimitTests("PostgreSQL", () => new PostgresAdapter(pgPool));
-    }
-
-    if (availability.mysql) {
-      rateLimitTests("MySQL", () => new MySQLAdapter(mysqlPool, { createTables: true }));
-    }
-
-    if (availability.sqlite) {
-      rateLimitTests("SQLite", () => {
-        const adapter = new SQLiteAdapter(sqliteDb);
         return adapter;
       });
     }
@@ -759,37 +622,6 @@ describe("persistence integration", () => {
       expect(acquiredBy.length).toBe(1);
       expect(attempts.filter(a => a !== null).length).toBe(1);
     });
-
-    test("rate limiting shared across instances", async () => {
-      if (!availability.redis) {
-        console.log("Skipping - Redis not available");
-        return;
-      }
-
-      const rateLimitProvider = new RedisAdapter(redisClient);
-      const config = { max: 3, windowMs: 10000 };
-      const key = "shared-endpoint";
-
-      // Simulate requests from different instances
-      const results = await Promise.all(
-        Array.from({ length: 5 }, async (_, i) => {
-          await using s = scope({
-            name: `api-instance-${i}`,
-            persistence: { rateLimit: rateLimitProvider },
-          });
-
-          // Direct provider access for rate limiting
-          return rateLimitProvider.checkAndIncrement(key, config);
-        })
-      );
-
-      // Only 3 should be allowed (max limit)
-      const allowed = results.filter(r => r.allowed);
-      expect(allowed.length).toBe(3);
-
-      // Reset for cleanup
-      await rateLimitProvider.reset(key);
-    });
   });
 
   describe("adapter lifecycle", () => {
@@ -896,21 +728,6 @@ describe("persistence integration", () => {
       await lock1!.release();
       await lock2!.release();
 
-      // Test rate limiting isolation
-      const rl1 = await adapter1.checkAndIncrement("user:123", { max: 1, windowMs: 10000 });
-      expect(rl1.allowed).toBe(true);
-
-      // Different prefix should have separate quota
-      const rl2 = await adapter2.checkAndIncrement("user:123", { max: 1, windowMs: 10000 });
-      expect(rl2.allowed).toBe(true);
-
-      // Same prefix should be blocked
-      const rl3 = await adapter1.checkAndIncrement("user:123", { max: 1, windowMs: 10000 });
-      expect(rl3.allowed).toBe(false);
-
-      // Cleanup
-      await adapter1.reset("user:123");
-      await adapter2.reset("user:123");
     });
   });
 
@@ -980,30 +797,5 @@ describe("persistence integration", () => {
       expect(results.filter(r => r).length).toBeGreaterThanOrEqual(1);
     });
 
-    test("rapid rate limit checks", async () => {
-      if (!availability.redis) {
-        console.log("Skipping - Redis not available");
-        return;
-      }
-
-      const adapter = new RedisAdapter(redisClient);
-      const config = { max: 100, windowMs: 10000 };
-
-      const start = Date.now();
-      const results = await Promise.all(
-        Array.from({ length: 50 }, () => 
-          adapter.checkAndIncrement("rapid-rl", config)
-        )
-      );
-      const duration = Date.now() - start;
-
-      // All should complete quickly
-      expect(duration).toBeLessThan(2000);
-      
-      // All should be allowed (under limit)
-      expect(results.every(r => r.allowed)).toBe(true);
-
-      await adapter.reset("rapid-rl");
-    });
   });
 });

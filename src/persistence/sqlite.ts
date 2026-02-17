@@ -1,7 +1,7 @@
 /**
  * SQLite persistence adapter for go-go-scope
  *
- * Provides distributed locks, rate limiting, and circuit breaker state
+ * Provides distributed locks and circuit breaker state
  * using SQLite as the backend. Ideal for single-node deployments or testing.
  *
  * @example
@@ -24,9 +24,6 @@ import type {
 	LockProvider,
 	PersistenceAdapter,
 	PersistenceAdapterOptions,
-	RateLimitConfig,
-	RateLimitProvider,
-	RateLimitResult,
 } from "./types.js";
 
 /**
@@ -55,11 +52,7 @@ interface Database {
  * SQLite persistence adapter
  */
 export class SQLiteAdapter
-	implements
-		LockProvider,
-		RateLimitProvider,
-		CircuitBreakerStateProvider,
-		PersistenceAdapter
+	implements LockProvider, CircuitBreakerStateProvider, PersistenceAdapter
 {
 	private readonly db: Database;
 	private readonly keyPrefix: string;
@@ -100,6 +93,7 @@ export class SQLiteAdapter
 		});
 	}
 
+	// @ts-expect-error all method is defined but not fully used yet
 	private async all<T>(sql: string, params: unknown[] = []): Promise<T[]> {
 		return new Promise((resolve, reject) => {
 			this.db.all(sql, params, (err, rows) => {
@@ -114,15 +108,7 @@ export class SQLiteAdapter
 	// ============================================================================
 
 	async connect(): Promise<void> {
-		// Create tables for rate limiting and circuit breaker state
-		await this.run(`
-			CREATE TABLE IF NOT EXISTS go_goscope_ratelimit (
-				key TEXT PRIMARY KEY,
-				requests TEXT NOT NULL,
-				updated_at INTEGER NOT NULL
-			)
-		`);
-
+		// Create table for circuit breaker state
 		await this.run(`
 			CREATE TABLE IF NOT EXISTS go_goscope_circuit (
 				key TEXT PRIMARY KEY,
@@ -132,10 +118,6 @@ export class SQLiteAdapter
 				last_success_time INTEGER,
 				updated_at INTEGER NOT NULL
 			)
-		`);
-
-		await this.run(`
-			CREATE INDEX IF NOT EXISTS idx_ratelimit_updated ON go_goscope_ratelimit(updated_at)
 		`);
 
 		this.connected = true;
@@ -212,80 +194,6 @@ export class SQLiteAdapter
 	async forceRelease(key: string): Promise<void> {
 		const fullKey = this.prefix(`lock:${key}`);
 		this.locks.delete(fullKey);
-	}
-
-	// ============================================================================
-	// Rate Limit Provider (Sliding Window)
-	// ============================================================================
-
-	async checkAndIncrement(
-		key: string,
-		config: RateLimitConfig,
-	): Promise<RateLimitResult> {
-		const fullKey = this.prefix(`ratelimit:${key}`);
-		const now = Date.now();
-		const windowStart = now - config.windowMs;
-
-		// Get current requests
-		const row = await this.get<{ requests: string }>(
-			"SELECT requests FROM go_goscope_ratelimit WHERE key = ?",
-			[fullKey],
-		);
-
-		let requests: number[] = [];
-		if (row) {
-			requests = JSON.parse(row.requests) as number[];
-			// Filter to current window
-			requests = requests.filter((t) => t > windowStart);
-		}
-
-		const currentCount = requests.length;
-		const allowed = currentCount < config.max;
-
-		if (allowed) {
-			requests.push(now);
-			await this.run(
-				`
-					INSERT INTO go_goscope_ratelimit (key, requests, updated_at)
-					VALUES (?, ?, ?)
-					ON CONFLICT(key) DO UPDATE SET
-						requests = excluded.requests,
-						updated_at = excluded.updated_at
-				`,
-				[fullKey, JSON.stringify(requests), now],
-			);
-		}
-
-		// Calculate reset time
-		const oldestRequest = requests[0] ?? now;
-		const resetTimeMs = oldestRequest + config.windowMs - now;
-
-		return {
-			allowed,
-			remaining: Math.max(0, config.max - currentCount - (allowed ? 1 : 0)),
-			limit: config.max,
-			resetTimeMs: Math.max(0, resetTimeMs),
-		};
-	}
-
-	async reset(key: string): Promise<void> {
-		const fullKey = this.prefix(`ratelimit:${key}`);
-		await this.run("DELETE FROM go_goscope_ratelimit WHERE key = ?", [fullKey]);
-	}
-
-	async getCount(key: string, windowMs: number): Promise<number> {
-		const fullKey = this.prefix(`ratelimit:${key}`);
-		const windowStart = Date.now() - windowMs;
-
-		const row = await this.get<{ requests: string }>(
-			"SELECT requests FROM go_goscope_ratelimit WHERE key = ?",
-			[fullKey],
-		);
-
-		if (!row) return 0;
-
-		const requests = JSON.parse(row.requests) as number[];
-		return requests.filter((t) => t > windowStart).length;
 	}
 
 	// ============================================================================

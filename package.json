@@ -1,6 +1,6 @@
 {
 	"name": "go-go-scope",
-	"version": "1.5.0",
+	"version": "1.5.1",
 	"description": "Structured concurrency for TypeScript using Explicit Resource Management",
 	"type": "module",
 	"main": "./dist/index.mjs",

@@ -1,7 +1,7 @@
 /**
  * Redis persistence adapter for go-go-scope
  *
- * Provides distributed locks, rate limiting, and circuit breaker state
+ * Provides distributed locks and circuit breaker state
  * using Redis as the backend.
  *
  * @example
@@ -25,29 +25,20 @@ import type {
 	LockProvider,
 	PersistenceAdapter,
 	PersistenceAdapterOptions,
-	RateLimitConfig,
-	RateLimitProvider,
-	RateLimitResult,
 } from "./types.js";
 
 /**
  * Redis persistence adapter
  */
 export class RedisAdapter
-	implements
-		LockProvider,
-		RateLimitProvider,
-		CircuitBreakerStateProvider,
-		PersistenceAdapter
+	implements LockProvider, CircuitBreakerStateProvider, PersistenceAdapter
 {
 	private readonly redis: Redis;
 	private readonly keyPrefix: string;
-	private readonly defaultLockTTL: number;
 
 	constructor(redis: Redis, options: PersistenceAdapterOptions = {}) {
 		this.redis = redis;
 		this.keyPrefix = options.keyPrefix ?? "";
-		this.defaultLockTTL = options.defaultLockTTL ?? 30000;
 	}
 
 	private prefix(key: string): string {
@@ -113,69 +104,6 @@ export class RedisAdapter
 	}
 
 	// ============================================================================
-	// Rate Limit Provider
-	// ============================================================================
-
-	async checkAndIncrement(
-		key: string,
-		config: RateLimitConfig,
-	): Promise<RateLimitResult> {
-		const fullKey = this.prefix(`ratelimit:${key}`);
-		const now = Date.now();
-		const windowStart = now - config.windowMs;
-
-		// Use Redis sorted set for sliding window
-		const multi = this.redis.multi();
-
-		// Remove old entries outside the window
-		multi.zremrangebyscore(fullKey, 0, windowStart);
-
-		// Count current entries in window
-		multi.zcard(fullKey);
-
-		// Add current request
-		multi.zadd(fullKey, now, `${now}-${Math.random()}`);
-
-		// Set expiry on the key
-		multi.pexpire(fullKey, config.windowMs);
-
-		const results = await multi.exec();
-		if (!results) {
-			throw new Error("Redis transaction failed");
-		}
-
-		const currentCount = results[1][1] as number;
-		const allowed = currentCount < config.max;
-		const remaining = Math.max(0, config.max - currentCount - 1);
-
-		// Calculate reset time (oldest entry in window + window size)
-		const oldestEntry = await this.redis.zrange(fullKey, 0, 0, "WITHSCORES");
-		const resetTimeMs =
-			oldestEntry.length > 0
-				? Number(oldestEntry[1]) + config.windowMs - now
-				: config.windowMs;
-
-		return {
-			allowed,
-			remaining,
-			limit: config.max,
-			resetTimeMs: Math.max(0, resetTimeMs),
-		};
-	}
-
-	async reset(key: string): Promise<void> {
-		const fullKey = this.prefix(`ratelimit:${key}`);
-		await this.redis.del(fullKey);
-	}
-
-	async getCount(key: string, windowMs: number): Promise<number> {
-		const fullKey = this.prefix(`ratelimit:${key}`);
-		const windowStart = Date.now() - windowMs;
-		await this.redis.zremrangebyscore(fullKey, 0, windowStart);
-		return await this.redis.zcard(fullKey);
-	}
-
-	// ============================================================================
 	// Circuit Breaker State Provider
 	// ============================================================================
 
@@ -203,8 +131,6 @@ export class RedisAdapter
 	}
 
 	async recordFailure(key: string, maxFailures: number): Promise<number> {
-		const fullKey = this.prefix(`circuit:${key}`);
-
 		// Get current state
 		const state = await this.getState(key);
 
@@ -224,11 +150,6 @@ export class RedisAdapter
 	}
 
 	async recordSuccess(key: string): Promise<void> {
-		const fullKey = this.prefix(`circuit:${key}`);
-
-		// Get current state
-		const state = await this.getState(key);
-
 		// Reset to closed on success
 		const newState: CircuitBreakerPersistedState = {
 			state: "closed",

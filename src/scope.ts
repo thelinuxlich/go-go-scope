@@ -217,7 +217,7 @@ export class Scope<
 	private readonly deadlockDetector?: DeadlockDetector;
 	private readonly profiler: Profiler;
 	private childScopes: Scope<Record<string, unknown>>[] = [];
-	private readonly parent?: Scope<Record<string, unknown>>;
+
 	/**
 	 * Registry for deduplicating tasks. Maps dedupe keys to their executing promises.
 	 * @internal
@@ -275,7 +275,10 @@ export class Scope<
 
 		// Inherit from parent scope if provided
 		const parent = options?.parent;
-		this.parent = parent;
+		// Store parent reference
+		if (parent) {
+			(this as unknown as { parent?: typeof parent }).parent = parent;
+		}
 		const parentSignal = parent?.signal ?? options?.signal;
 		const parentServices = parent?.services;
 		if (parentServices) {
@@ -2053,7 +2056,10 @@ export class Scope<
 				const promises = factories.map((factory, idx) =>
 					childScope
 						.task(({ signal }) => factory(signal))
-						.then((result): [number, Result<unknown, T>] => [idx, result]),
+						.then((result): [number, Result<unknown, T>] => [
+							idx,
+							result as Result<unknown, T>,
+						]),
 				);
 
 				// If not continuing on error, use Promise.all to fail fast
@@ -2095,7 +2101,9 @@ export class Scope<
 
 				const promise = (async () => {
 					try {
-						const result = await this.task((ctx) => factory(ctx.signal));
+						const result = (await this.task((ctx) =>
+							factory(ctx.signal),
+						)) as Result<unknown, T>;
 						results[currentIndex] = result;
 						if (onProgress) {
 							onProgress(
@@ -2586,6 +2594,10 @@ export class Scope<
 	 *
 	 * Requires a LockProvider to be configured via `persistence` option.
 	 *
+	 * The lock will expire automatically after the TTL. The lock is NOT released
+	 * when the scope disposes - it respects the TTL to prevent race conditions
+	 * in distributed scenarios.
+	 *
 	 * @param key - Unique lock identifier
 	 * @param ttl - Time-to-live in milliseconds (default: 30000)
 	 * @returns Lock handle if acquired, null if already locked
@@ -2606,8 +2618,8 @@ export class Scope<
 	 *   return
 	 * }
 	 *
-	 * // Lock automatically released when scope disposes
-	 * // Or release manually:
+	 * // Lock will expire automatically after 5 seconds (TTL)
+	 * // Release manually when done (optional but recommended):
 	 * await lock.release()
 	 * ```
 	 */

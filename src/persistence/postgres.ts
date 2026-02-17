@@ -1,7 +1,7 @@
 /**
  * PostgreSQL persistence adapter for go-go-scope
  *
- * Provides distributed locks, rate limiting, and circuit breaker state
+ * Provides distributed locks and circuit breaker state
  * using PostgreSQL as the backend.
  *
  * @example
@@ -17,6 +17,7 @@
  * ```
  */
 
+// @ts-expect-error pg types may not be installed
 import type { Pool } from "pg";
 import type {
 	CircuitBreakerPersistedState,
@@ -25,20 +26,13 @@ import type {
 	LockProvider,
 	PersistenceAdapter,
 	PersistenceAdapterOptions,
-	RateLimitConfig,
-	RateLimitProvider,
-	RateLimitResult,
 } from "./types.js";
 
 /**
  * PostgreSQL persistence adapter
  */
 export class PostgresAdapter
-	implements
-		LockProvider,
-		RateLimitProvider,
-		CircuitBreakerStateProvider,
-		PersistenceAdapter
+	implements LockProvider, CircuitBreakerStateProvider, PersistenceAdapter
 {
 	private readonly pool: Pool;
 	private readonly keyPrefix: string;
@@ -172,87 +166,6 @@ export class PostgresAdapter
 	}
 
 	// ============================================================================
-	// Rate Limit Provider
-	// ============================================================================
-
-	async checkAndIncrement(
-		key: string,
-		config: RateLimitConfig,
-	): Promise<RateLimitResult> {
-		const fullKey = this.prefix(`ratelimit:${key}`);
-
-		const client = await this.pool.connect();
-		try {
-			await client.query("BEGIN");
-
-			// Clean old entries and get current count
-			const windowStart = new Date(Date.now() - config.windowMs).toISOString();
-			await client.query(
-				"DELETE FROM go_goscope_ratelimit WHERE key = $1 AND request_time < $2",
-				[fullKey, windowStart],
-			);
-
-			const countResult = await client.query(
-				"SELECT COUNT(*) as count FROM go_goscope_ratelimit WHERE key = $1",
-				[fullKey],
-			);
-			const currentCount = parseInt(countResult.rows[0].count, 10);
-
-			const allowed = currentCount < config.max;
-
-			if (allowed) {
-				await client.query(
-					"INSERT INTO go_goscope_ratelimit (key, request_time) VALUES ($1, NOW())",
-					[fullKey],
-				);
-			}
-
-			await client.query("COMMIT");
-
-			// Get oldest entry for reset time calculation
-			const oldestResult = await this.pool.query(
-				"SELECT MIN(request_time) as oldest FROM go_goscope_ratelimit WHERE key = $1",
-				[fullKey],
-			);
-			const oldestTime = oldestResult.rows[0]?.oldest
-				? new Date(oldestResult.rows[0].oldest).getTime()
-				: Date.now();
-			const resetTimeMs = oldestTime + config.windowMs - Date.now();
-
-			return {
-				allowed,
-				remaining: Math.max(0, config.max - currentCount - (allowed ? 1 : 0)),
-				limit: config.max,
-				resetTimeMs: Math.max(0, resetTimeMs),
-			};
-		} catch (error) {
-			await client.query("ROLLBACK");
-			throw error;
-		} finally {
-			client.release();
-		}
-	}
-
-	async reset(key: string): Promise<void> {
-		const fullKey = this.prefix(`ratelimit:${key}`);
-		await this.pool.query("DELETE FROM go_goscope_ratelimit WHERE key = $1", [
-			fullKey,
-		]);
-	}
-
-	async getCount(key: string, windowMs: number): Promise<number> {
-		const fullKey = this.prefix(`ratelimit:${key}`);
-		const windowStart = new Date(Date.now() - windowMs).toISOString();
-
-		const result = await this.pool.query(
-			"SELECT COUNT(*) as count FROM go_goscope_ratelimit WHERE key = $1 AND request_time > $2",
-			[fullKey, windowStart],
-		);
-
-		return parseInt(result.rows[0].count, 10);
-	}
-
-	// ============================================================================
 	// Circuit Breaker State Provider
 	// ============================================================================
 
@@ -354,14 +267,6 @@ export class PostgresAdapter
         );
         
         CREATE INDEX IF NOT EXISTS idx_locks_expires ON go_goscope_locks(expires_at);
-        
-        CREATE TABLE IF NOT EXISTS go_goscope_ratelimit (
-          id SERIAL PRIMARY KEY,
-          key TEXT NOT NULL,
-          request_time TIMESTAMP NOT NULL DEFAULT NOW()
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_ratelimit_key_time ON go_goscope_ratelimit(key, request_time);
         
         CREATE TABLE IF NOT EXISTS go_goscope_circuit (
           key TEXT PRIMARY KEY,

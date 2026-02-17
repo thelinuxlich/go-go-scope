@@ -1,7 +1,7 @@
 /**
  * Persistence adapters for go-go-scope
  *
- * Provides distributed locks, rate limiting, and circuit breaker state
+ * Provides distributed locks and circuit breaker state
  * persistence across multiple database backends.
  *
  * @example
@@ -26,9 +26,6 @@ export type {
 	PersistenceAdapter,
 	PersistenceAdapterOptions,
 	PersistenceProviders,
-	RateLimitConfig,
-	RateLimitProvider,
-	RateLimitResult,
 } from "./types.js";
 
 // Note: Adapters are exported from their respective modules to avoid

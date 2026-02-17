@@ -1,8 +1,8 @@
 /**
  * Persistence provider interfaces for go-go-scope
  *
- * These interfaces allow features like distributed locks, rate limiting,
- * and circuit breakers to work across multiple processes/servers.
+ * These interfaces allow features like distributed locks and circuit
+ * breaker state to work across multiple processes/servers.
  */
 
 /**
@@ -46,59 +46,6 @@ export interface LockHandle {
 
 	/** Check if lock is still valid */
 	isValid(): Promise<boolean>;
-}
-
-/**
- * Rate limit provider interface (sliding window algorithm)
- */
-export interface RateLimitProvider {
-	/**
-	 * Check if request is allowed and increment counter
-	 * @param key - Rate limit bucket key (e.g., "user:123" or "ip:1.2.3.4")
-	 * @param config - Rate limit configuration
-	 * @returns Result with allowed status and remaining quota
-	 */
-	checkAndIncrement(
-		key: string,
-		config: RateLimitConfig,
-	): Promise<RateLimitResult>;
-
-	/**
-	 * Reset rate limit counter for a key
-	 * @param key - Rate limit bucket key
-	 */
-	reset(key: string): Promise<void>;
-
-	/**
-	 * Get current count without incrementing
-	 * @param key - Rate limit bucket key
-	 * @param windowMs - Time window in milliseconds
-	 */
-	getCount(key: string, windowMs: number): Promise<number>;
-}
-
-/**
- * Rate limit configuration
- */
-export interface RateLimitConfig {
-	/** Maximum requests allowed in the window */
-	max: number;
-	/** Time window in milliseconds */
-	windowMs: number;
-}
-
-/**
- * Rate limit check result
- */
-export interface RateLimitResult {
-	/** Whether the request is allowed */
-	allowed: boolean;
-	/** Remaining quota in current window */
-	remaining: number;
-	/** Total quota for the window */
-	limit: number;
-	/** Milliseconds until the window resets */
-	resetTimeMs: number;
 }
 
 /**
@@ -159,8 +106,6 @@ export interface CircuitBreakerPersistedState {
 export interface PersistenceProviders {
 	/** Distributed lock provider */
 	lock?: LockProvider;
-	/** Rate limit provider */
-	rateLimit?: RateLimitProvider;
 	/** Circuit breaker state provider */
 	circuitBreaker?: CircuitBreakerStateProvider;
 }
@@ -173,6 +118,8 @@ export interface PersistenceAdapterOptions {
 	keyPrefix?: string;
 	/** Default TTL for locks in milliseconds */
 	defaultLockTTL?: number;
+	/** Whether to create tables on connect (MySQL adapter only) */
+	createTables?: boolean;
 }
 
 /**

@@ -4,7 +4,7 @@
  */
 
 import { scope, exponentialBackoff } from "go-go-scope";
-import { assert } from "go-go-try";
+
 
 interface User {
 	id: number;
@@ -46,22 +46,25 @@ function createHttpClient(baseUrl: string) {
 				},
 			);
 
-			return assert(data, err);
+			if (err) throw err;
+			return data!;
 		},
 
 		async getUserWithPosts(userId: number): Promise<{ user: User; posts: Post[] }> {
 			await using s = scope({ concurrency: 2 });
 
 			// Fetch user and posts in parallel
-			const [[userErr, user], [postsErr, posts]] = await s.parallel([
+			const results = await s.parallel([
 				async () => this.get<User>(`/users/${userId}`),
 				async () => this.get<Post[]>(`/users/${userId}/posts`),
 			]);
+			const [userErr, userResult] = results[0] ?? [new Error("No result"), undefined];
+			const [postsErr, postsResult] = results[1] ?? [new Error("No result"), undefined];
 
 			if (userErr) throw userErr;
 			if (postsErr) throw postsErr;
 
-			return { user: user!, posts: posts! };
+			return { user: userResult as User, posts: postsResult as Post[] };
 		},
 
 		async batchGetUsers(userIds: number[]): Promise<User[]> {

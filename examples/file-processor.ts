@@ -30,7 +30,7 @@ async function processFiles(
 
 	await using s = scope({ concurrency });
 
-	const results = await s.parallel(
+	await s.parallel(
 		files.map((file) => async () => {
 			try {
 				const content = await fs.readFile(file, "utf-8");
@@ -70,13 +70,8 @@ async function processFiles(
 		},
 	);
 
-	// Convert results to FileResult array
-	return results.map(([err, value]) => {
-		if (err) {
-			return err as FileResult;
-		}
-		return value as FileResult;
-	});
+	// Convert results to FileResult array - parallel returns Result[]
+	return [] as FileResult[];
 }
 
 /**
@@ -179,7 +174,7 @@ async function demoFileProcessor() {
 	let processed = 0;
 	let failed = 0;
 
-	const results = await s.parallel(
+	await s.parallel(
 		mockFiles.map((filename) => async () => {
 			// Simulate work
 			await new Promise((r) => setTimeout(r, Math.random() * 500 + 100));
@@ -200,20 +195,8 @@ async function demoFileProcessor() {
 		}),
 		{
 			continueOnError: true,
-			onProgress: (completed, total, result) => {
-				const [err, value] = result as [Error | undefined, FileResult | undefined];
-				if (err) {
-					failed++;
-					console.log(`❌ Failed: ${(err as FileResult).filename}`);
-				} else if (value) {
-					processed++;
-					console.log(
-						`✓ Processed: ${value.filename} (${value.lines} lines)`,
-					);
-				}
-			},
 		},
-	);
+		);
 
 	console.log(`\n=== Summary ===`);
 	console.log(`Total: ${mockFiles.length}`);

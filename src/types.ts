@@ -518,7 +518,4 @@ export type {
 	LockHandle,
 	LockProvider,
 	PersistenceProviders,
-	RateLimitConfig,
-	RateLimitProvider,
-	RateLimitResult,
 } from "./persistence/types.js";

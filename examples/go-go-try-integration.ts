@@ -154,12 +154,13 @@ import { goTryRaw } from "go-go-try";
  * This gives you automatic union inference but loses some scope features
  * like automatic cancellation signal propagation.
  */
-async function fetchUserRaw(id: string) {
-	await using s = scope({ timeout: 5000 });
+// @ts-expect-error function defined for demonstration
+async function _fetchUserRaw(id: string) {
+	await using _s = scope({ timeout: 5000 });
 
 	// Use goTryRaw directly on raw operations
 	const [dbErr, user] = await goTryRaw(
-		() => queryDatabase(id), // Raw operation, not wrapped in s.task
+		() => queryDatabase(id),
 		DatabaseError,
 	);
 	if (dbErr) return failure(dbErr);
@@ -194,7 +195,7 @@ async function main() {
 	// Demonstrate multiple operations with typed errors
 	console.log("\n=== Fetching multiple users ===");
 
-	await using s = scope({ concurrency: 3 });
+	await using _s = scope({ concurrency: 3 });
 
 	const ids = ["1", "2", "3", "4", "5"];
 	const results = await Promise.all(ids.map((id) => fetchUser(id)));

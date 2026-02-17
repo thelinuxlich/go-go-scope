@@ -309,7 +309,6 @@ task<T>(fn: (ctx: { services: Services; signal: AbortSignal }) => Promise<T>): T
 - **tests/persistence-integration.test.ts**: Persistence adapter integration tests
   - Tests all persistence providers (Redis, PostgreSQL, MySQL, SQLite)
   - Distributed lock tests (acquire, release, extend, expiration, force release)
-  - Rate limiting tests (windowing, quotas, reset)
   - Circuit breaker state tests (persistence, failure counting, subscriptions)
   - Scope integration tests (acquireLock with different providers)
   - Gracefully skips tests for unavailable databases

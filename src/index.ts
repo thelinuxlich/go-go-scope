@@ -33,9 +33,6 @@ export type {
 	LockProvider,
 	PersistenceAdapter,
 	PersistenceAdapterOptions,
-	RateLimitConfig,
-	RateLimitProvider,
-	RateLimitResult,
 } from "./persistence/types.js";
 export { poll } from "./poll.js";
 export { Profiler } from "./profiler.js";

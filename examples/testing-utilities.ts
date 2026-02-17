@@ -112,7 +112,7 @@ async function testMockServices() {
 
 	// Example 1: Using overrides option
 	const mockDb = {
-		query: (sql: string) => Promise.resolve([{ id: 1, name: "Mock User" }]),
+		query: (_sql: string) => Promise.resolve([{ id: 1, name: "Mock User" }]),
 	};
 
 	const s1 = createMockScope({
@@ -139,7 +139,7 @@ async function testMockServices() {
 	// Replace the API service
 	s2.mockService("api", {
 		baseUrl: "https://mock-api.example.com",
-		fetch: (path: string) => Promise.resolve({ data: "mocked" }),
+		fetch: (_path: string) => Promise.resolve({ data: "mocked" }),
 	});
 
 	const api2 = (s2 as unknown as { api: { baseUrl: string } }).api;

@@ -19,11 +19,11 @@ const fetchUser = async (id: number) => {
 	await delay(5);
 	return { id, name: `User ${id}` };
 };
-const fetchPosts = async (userId: number) => {
+const fetchPosts = async (_userId: number) => {
 	await delay(5);
 	return [{ id: 1, title: "Post 1" }];
 };
-const fetchWithRetry = async (url: string) => {
+const fetchWithRetry = async (_url: string) => {
 	await delay(5);
 	return { data: "result" };
 };
@@ -49,9 +49,9 @@ console.log("\n🟨 Vanilla JS:");
 		const user = await fetchUser(1);
 		clearTimeout(timeoutId);
 		console.log("  User:", user);
-	} catch (err) {
+	} catch {
 		clearTimeout(timeoutId);
-		console.log("  Error:", err);
+		console.log("  Error: timeout");
 	}
 }
 
@@ -152,7 +152,6 @@ console.log("=".repeat(60));
 // --- Vanilla JS ---
 console.log("\n🟨 Vanilla JS:");
 {
-	const controller = new AbortController();
 	const signals: AbortController[] = [];
 
 	const createRacer = (name: string, delayMs: number) => {
@@ -289,7 +288,7 @@ console.log("EXAMPLE 5: Resource Management");
 console.log("=".repeat(60));
 
 class Database {
-	async query(sql: string) {
+	async query(_sql: string) {
 		return [{ id: 1 }];
 	}
 	close() {
@@ -298,7 +297,7 @@ class Database {
 }
 
 class Cache {
-	async get(key: string) {
+	async get(_key: string) {
 		return "cached-value";
 	}
 	close() {
@@ -335,11 +334,11 @@ console.log("\n🟦 Effect:");
 	>() {}
 
 	const DatabaseLive = Layer.succeed(DatabaseService, {
-		query: (sql) => Effect.succeed([{ id: 1 }]),
+		query: () => Effect.succeed([{ id: 1 }]),
 	});
 
 	const CacheLive = Layer.succeed(CacheService, {
-		get: (key) => Effect.succeed("cached-value"),
+		get: () => Effect.succeed("cached-value"),
 	});
 
 	const program = Effect.gen(function* () {
@@ -363,7 +362,7 @@ console.log("\n🟩 go-go-scope:");
 		.provide("db", () => new Database(), (db) => db.close())
 		.provide("cache", () => new Cache(), (cache) => cache.close());
 
-	const [err, user] = await s.task(async ({ services }) => {
+	const [, user] = await s.task(async ({ services }) => {
 		return services.db.query("SELECT * FROM users");
 	});
 
@@ -440,17 +439,17 @@ await benchmark("Effect (race)", async () => {
 // go-go-scope
 await benchmark("go-go-scope (simple task)", async () => {
 	await using s = scope();
-	const [err, result] = await s.task(() => Promise.resolve(42));
+	await s.task(() => Promise.resolve(42));
 });
 
 await benchmark("go-go-scope (with timeout)", async () => {
 	await using s = scope({ timeout: 5000 });
-	const [err, result] = await s.task(() => Promise.resolve(42));
+	await s.task(() => Promise.resolve(42));
 });
 
 await benchmark("go-go-scope (with retry)", async () => {
 	await using s = scope();
-	const [err, result] = await s.task(() => Promise.resolve(42), {
+	await s.task(() => Promise.resolve(42), {
 		retry: { maxRetries: 1, delay: 0 },
 	});
 });
@@ -495,7 +494,7 @@ await benchmark("go-go-scope (throttle)", async () => {
 await benchmark("go-go-scope (with metrics)", async () => {
 	await using s = scope({ metrics: true });
 	await s.task(() => Promise.resolve(42));
-	const _m = s.metrics();
+	s.metrics();
 });
 
 // Note: Effect has no built-in metrics collection

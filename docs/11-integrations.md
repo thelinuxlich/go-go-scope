@@ -640,7 +640,7 @@ npm run monitoring:down
 
 ## Persistence Adapters
 
-Distributed locks, rate limiting, and circuit breaker state persistence across multiple database backends.
+Distributed locks and circuit breaker state persistence across multiple database backends.
 
 ### Supported Databases
 
@@ -687,7 +687,6 @@ const redisAdapter = new RedisAdapter(redis)
 await using s = scope({
   persistence: {
     lock: redisAdapter,
-    rateLimit: redisAdapter,
     circuitBreaker: redisAdapter
   }
 })
@@ -699,8 +698,8 @@ if (!lock) {
   return
 }
 
-// Lock automatically released when scope exits
-// Or release manually:
+// Lock will expire automatically after 30 seconds (TTL)
+// Release manually when done (optional but recommended):
 await lock.release()
 ```
 
@@ -749,34 +748,6 @@ If a node acquires a lock and then crashes:
 
 After TTL expires, any node can acquire the lock.
 
-### Rate Limiting
-
-Distributed rate limiting with sliding window algorithm:
-
-```typescript
-import { scope } from 'go-go-scope'
-import { PostgresAdapter } from 'go-go-scope/persistence/postgres'
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL })
-const adapter = new PostgresAdapter(pool)
-
-await using s = scope({
-  persistence: { rateLimit: adapter }
-})
-
-// Check rate limit
-const result = await adapter.checkAndIncrement('user:123', {
-  max: 100,        // 100 requests
-  windowMs: 60000  // per minute
-})
-
-if (!result.allowed) {
-  console.log(`Rate limited. Retry after ${result.resetTimeMs}ms`)
-  return
-}
-
-console.log(`Requests remaining: ${result.remaining}`)
-```
 
 ### Circuit Breaker State
 

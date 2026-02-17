@@ -29,7 +29,9 @@ interface Order {
 
 // Mock database implementation
 class MockDatabase implements DatabaseConnection {
+	// @ts-expect-error properties defined for interface compliance
 	private inTransaction = false;
+	// @ts-expect-error properties defined for interface compliance
 	private data = new Map<string, unknown[]>();
 
 	async query(sql: string, params?: unknown[]): Promise<unknown[]> {
@@ -89,29 +91,28 @@ function createDatabaseService() {
 			await using s = scope();
 
 			// Acquire connection
-			const db = await s
-				.provide("db", () => this.connect(), (db) => db.close())
-				.acquire();
+			const dbConn = await this.connect();
+			s.onDispose(async () => dbConn.close());
 
 			// Begin transaction
-			await db.beginTransaction();
+			await dbConn.beginTransaction();
 
 			// Rollback on scope disposal if not committed
 			let committed = false;
 			s.onDispose(async () => {
 				if (!committed) {
 					console.log("  [DB] Auto-rollback on scope exit");
-					await db.rollback();
+					await dbConn.rollback();
 				}
 			});
 
 			try {
-				const result = await callback(db);
-				await db.commit();
+				const result = await callback(dbConn);
+				await dbConn.commit();
 				committed = true;
 				return result;
 			} catch (error) {
-				await db.rollback();
+				await dbConn.rollback();
 				throw error;
 			}
 		},
@@ -185,7 +186,7 @@ async function transferWithTransaction(
 		await using s = scope();
 
 		// Verify sender has sufficient balance
-		const [[senderErr, senderBalance], [receiverErr, receiverBalance]] = await s.parallel([
+		const parallelResults = await s.parallel([
 			async () => {
 				const rows = await db.query("SELECT balance FROM accounts WHERE user_id = ?", [
 					fromUserId,
@@ -199,7 +200,8 @@ async function transferWithTransaction(
 				return (rows[0] as { balance: number })?.balance ?? 0;
 			},
 		]);
-
+		const [senderErr, senderBalance] = parallelResults[0] ?? [new Error("No result"), undefined];
+		const [receiverErr] = parallelResults[1] ?? [new Error("No result"), undefined];
 		if (senderErr) throw senderErr;
 		if (receiverErr) throw receiverErr;
 
@@ -245,7 +247,8 @@ async function demoDatabaseOperations() {
 	// Example 1: Simple query with caching
 	console.log("1. Querying users (first time - hits DB):");
 	await using s1 = scope();
-	const db1 = await s1.provide("db", () => dbService.connect(), (db) => db.close()).acquire();
+	const db1 = await dbService.connect();
+		s1.onDispose(async () => db1.close());
 	const userRepo1 = createUserRepository(db1);
 
 	const user1 = await userRepo1.findById(1);

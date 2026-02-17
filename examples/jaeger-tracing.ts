@@ -106,10 +106,13 @@ console.log("2️⃣  Running parallel tasks with concurrency=2...");
 		},
 	]);
 
-	parallelResult.completed.forEach(({ index, value }) => {
+	parallelResult.forEach((result, index) => {
+		const [, value] = result;
 		console.log(`   Task ${index + 1}: ${value}`);
 	});
-	parallelResult.errors.forEach(({ index, error }) => {
+	parallelResult.forEach((result, index) => {
+		const [error] = result;
+		if (!error) return;
 		console.log(`   Task ${index + 1}: Error - ${error}`);
 	});
 }

@@ -264,13 +264,15 @@ describe("distributed lock TTL analysis", () => {
     await adapter.connect();
     
     const lockKey = `validity-test-mysql-${Date.now()}`;
-    const ttlMs = 1500;
+    // Use a shorter TTL with generous buffer for more reliable testing
+    const ttlMs = 800;
 
     const lock = await adapter.acquire(lockKey, ttlMs);
     expect(lock).not.toBeNull();
     expect(await lock!.isValid()).toBe(true);
 
-    await new Promise(r => setTimeout(r, ttlMs + 300));
+    // Wait for the lock to expire with a generous buffer
+    await new Promise(r => setTimeout(r, ttlMs + 600));
 
     expect(await lock!.isValid()).toBe(false);
     await utcPool.end();

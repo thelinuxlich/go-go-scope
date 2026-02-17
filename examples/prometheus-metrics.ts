@@ -21,7 +21,7 @@
  */
 
 import { createServer } from "http";
-import { exportMetrics, MetricsReporter, scope } from "../dist/index.mjs";
+import { exportMetrics, scope } from "../dist/index.mjs";
 
 // Configuration
 const METRICS_PORT = 9095; // Local port to expose metrics for Prometheus scraping
@@ -34,7 +34,8 @@ async function fetchUser(id: number): Promise<{ id: number; name: string }> {
 	return { id, name: `User ${id}` };
 }
 
-async function fetchOrders(userId: number): Promise<{ orderId: number }[]> {
+// @ts-expect-error function defined for demonstration
+async function _fetchOrders(_userId: number): Promise<{ orderId: number }[]> {
 	await new Promise((r) => setTimeout(r, 30 + Math.random() * 70));
 	return [{ orderId: 1 }, { orderId: 2 }];
 }
@@ -132,7 +133,7 @@ async function simulateWorkload() {
 
 	console.log("4️⃣ Running tasks with timeout...");
 	await s.task(
-		async ({ signal }) => {
+		async ({ signal: _signal }) => {
 			await new Promise((r) => setTimeout(r, 500));
 			return "completed";
 		},

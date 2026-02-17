@@ -10,7 +10,7 @@ import {
 
 describe("Task", () => {
 	test("resolves with the function result", async () => {
-		await using s = scope();
+		await using s = scope()
 		const t = s.task(() => Promise.resolve("value"));
 
 		const [err, result] = await t;

@@ -51,7 +51,6 @@ Complete guide to structured concurrency in TypeScript.
 - ✅ **Retry Logic** - Built-in exponential backoff, jitter strategies
 - ✅ **Timeout Handling** - Built-in timeout with automatic cleanup
 - ✅ **Distributed Locks** - Cross-process locking with automatic TTL expiration
-- ✅ **Rate Limiting** - Distributed rate limiting across instances
 
 ### Concurrency
 - ✅ **Channels** - Go-style buffered channels with `map`, `filter`, `reduce`
@@ -64,7 +63,6 @@ Complete guide to structured concurrency in TypeScript.
 - ✅ **Debug Tools** - `debugTree()` for visualizing scope hierarchies
 - ✅ **OpenTelemetry** - Distributed tracing support
 - ✅ **Distributed Locks** - Redis, PostgreSQL, MySQL, SQLite adapters
-- ✅ **Rate Limiting** - Sliding window rate limiting across instances
 - ✅ **Circuit Breaker State** - Shared state across multiple instances
 
 ### Testing
