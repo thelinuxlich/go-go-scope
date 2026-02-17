@@ -17,12 +17,12 @@ Common patterns and solutions using go-go-scope.
 
 ## Using `parallel()` for Batch Operations
 
-The `parallel()` method supports progress tracking, concurrency control, and error handling:
+The `parallel()` method supports progress tracking, concurrency control, and error handling. It returns a tuple of Results with individual type preservation:
 
 ```typescript
-// Process URLs with progress tracking
-const result = await s.parallel(
-  urls.map(url => () => fetch(url)),
+// Process URLs with progress tracking - each result is typed individually
+const results = await s.parallel(
+  urls.map(url => ({ signal }) => fetch(url, { signal })),
   {
     concurrency: 5,
     onProgress: (done, total) => console.log(`${done}/${total}`),
@@ -30,8 +30,19 @@ const result = await s.parallel(
   }
 )
 
-console.log(`✓ ${result.completed.length} succeeded`)
-console.log(`✗ ${result.errors.length} failed`)
+// Check each result with full type safety
+let succeeded = 0
+let failed = 0
+for (const [err, response] of results) {
+  if (err) {
+    failed++
+    console.log('Failed:', err)
+  } else {
+    succeeded++
+    // response is fully typed as Response
+    console.log('Success:', response.status)
+  }
+}
 ```
 
 ---
@@ -298,7 +309,7 @@ async function processFiles(
 ) {
   await using s = scope({ concurrency: 3 })
 
-  const result = await s.parallel(
+  const results = await s.parallel(
     files.map((file, i) => async () => {
       console.log(`Processing ${file.name} (${i + 1}/${files.length})`)
       return processor(file)
@@ -313,10 +324,14 @@ async function processFiles(
     }
   )
 
-  console.log(`Completed: ${result.completed.length}/${files.length}`)
-  console.log(`Failed: ${result.errors.length}`)
+  // Count successes and failures
+  const completed = results.filter(([err]) => !err).length
+  const failed = results.filter(([err]) => err).length
 
-  return result
+  console.log(`Completed: ${completed}/${files.length}`)
+  console.log(`Failed: ${failed}`)
+
+  return results
 }
 
 // Usage with UI progress bar

@@ -4,32 +4,37 @@
 
 import createDebug from "debug";
 import { Scope } from "./scope.js";
-import type { ParallelAggregateResult, Result, Tracer } from "./types.js";
+import type { ParallelResults, Result, Tracer } from "./types.js";
 
 const debugScope = createDebug("go-go-scope:parallel");
 
 /**
  * Run multiple tasks in parallel with optional concurrency limit and progress tracking.
  * All tasks run within a scope and are cancelled together on failure.
- * Returns a structured result with both successes and failures separated.
+ *
+ * Returns a tuple of Results where each position corresponds to the factory
+ * at the same index. This preserves individual return types for type-safe destructuring.
  *
  * @param factories - Array of factory functions that receive AbortSignal and create promises
  * @param options - Optional configuration including concurrency limit, progress callback, and error handling
- * @returns A Promise that resolves to a structured result with completed and failed tasks
+ * @returns A Promise that resolves to a tuple of Results (one per factory)
  *
  * @example
  * ```typescript
- * const result = await parallel(
- *   urls.map(url => ({ signal }) => fetch(url, { signal })),
- *   { concurrency: 3, continueOnError: true }
- * )
+ * // With type inference - each result is typed individually
+ * const [userResult, ordersResult] = await parallel([
+ *   (signal) => fetchUser(1, { signal }),      // Result<Error, User>
+ *   (signal) => fetchOrders({ signal }),       // Result<Error, Order[]>
+ * ])
  *
- * console.log(result.completed.length) // Successfully fetched
- * console.log(result.errors.length)    // Failed
+ * const [userErr, user] = userResult
+ * const [ordersErr, orders] = ordersResult
  * ```
  */
-export async function parallel<T>(
-	factories: readonly ((signal: AbortSignal) => Promise<T>)[],
+export async function parallel<
+	T extends readonly ((signal: AbortSignal) => Promise<unknown>)[],
+>(
+	factories: T,
 	options?: {
 		concurrency?: number;
 		signal?: AbortSignal;
@@ -37,11 +42,11 @@ export async function parallel<T>(
 		onProgress?: (
 			completed: number,
 			total: number,
-			result: Result<unknown, T>,
+			result: Result<unknown, unknown>,
 		) => void;
 		continueOnError?: boolean;
 	},
-): Promise<ParallelAggregateResult<T>> {
+): Promise<ParallelResults<T>> {
 	const {
 		concurrency = 0,
 		onProgress,
@@ -52,7 +57,7 @@ export async function parallel<T>(
 		if (debugScope.enabled) {
 			debugScope("no factories, returning empty result");
 		}
-		return { completed: [], errors: [], allCompleted: true };
+		return [] as unknown as ParallelResults<T>;
 	}
 
 	const total = factories.length;
@@ -76,8 +81,9 @@ export async function parallel<T>(
 	}
 
 	const s = new Scope({ signal: options?.signal, tracer: options?.tracer });
-	const completed: { index: number; value: T }[] = [];
-	const errors: { index: number; error: unknown }[] = [];
+
+	// Use a fixed-size array to preserve order and types
+	const results: Result<unknown, unknown>[] = new Array(factories.length);
 
 	try {
 		if (concurrency <= 0 || concurrency >= factories.length) {
@@ -89,31 +95,30 @@ export async function parallel<T>(
 			const promises = factories.map((factory, idx) =>
 				s
 					.task(({ signal }) => factory(signal))
-					.then((result): [number, Result<unknown, T>] => [idx, result]),
+					.then((result): [number, Result<unknown, unknown>] => [idx, result]),
 			);
 
 			// If not continuing on error, use Promise.all to fail fast
-			const results = continueOnError
+			const settledResults = continueOnError
 				? await Promise.all(promises)
 				: await Promise.all(promises).catch((error) => {
-						return [[-1, [error, undefined]] as [number, Result<unknown, T>]];
+						return [
+							[-1, [error, undefined]] as [number, Result<unknown, unknown>],
+						];
 					});
 
-			for (const [idx, result] of results) {
+			for (const [idx, result] of settledResults) {
 				if (idx === -1) continue;
-
-				const [err, value] = result;
-				if (err) {
-					errors.push({ index: idx, error: err });
-					if (onProgress) {
-						onProgress(completed.length + errors.length, total, result);
-					}
-					if (!continueOnError) break;
-				} else {
-					completed.push({ index: idx, value: value as T });
-					if (onProgress) {
-						onProgress(completed.length + errors.length, total, result);
-					}
+				results[idx] = result;
+				if (onProgress) {
+					onProgress(
+						results.filter((r) => r !== undefined).length,
+						total,
+						result,
+					);
+				}
+				if (!continueOnError && result[0]) {
+					break;
 				}
 			}
 		} else {
@@ -136,30 +141,21 @@ export async function parallel<T>(
 				const promise = (async () => {
 					try {
 						const result = await s.task(({ signal }) => factory(signal));
-						const [err, value] = result;
-
-						if (err) {
-							errors.push({ index: currentIndex, error: err });
-							if (onProgress) {
-								onProgress(completed.length + errors.length, total, result);
-							}
-							if (!continueOnError) {
-								throw new Error("parallel stopped on first error");
-							}
-						} else {
-							completed.push({
-								index: currentIndex,
-								value: value as T,
-							});
-							if (onProgress) {
-								onProgress(completed.length + errors.length, total, result);
-							}
+						results[currentIndex] = result;
+						if (onProgress) {
+							onProgress(
+								results.filter((r) => r !== undefined).length,
+								total,
+								result,
+							);
+						}
+						if (!continueOnError && result[0]) {
+							throw result[0];
 						}
 					} catch (error) {
-						// Handle unexpected errors
-						errors.push({ index: currentIndex, error });
+						results[currentIndex] = [error, undefined];
 						if (onProgress) {
-							onProgress(completed.length + errors.length, total, [
+							onProgress(results.filter((r) => r !== undefined).length, total, [
 								error,
 								undefined,
 							]);
@@ -182,23 +178,26 @@ export async function parallel<T>(
 			}
 
 			// Wait for remaining
-			if (continueOnError || errors.length === 0) {
+			if (continueOnError || results.every((r) => r !== undefined)) {
 				await Promise.all(executing).catch(() => {});
+			}
+		}
+
+		// Fill in any missing results (if we broke early due to !continueOnError)
+		for (let i = 0; i < results.length; i++) {
+			if (results[i] === undefined) {
+				results[i] = [new Error("Task did not complete"), undefined];
 			}
 		}
 
 		debugScope(
 			"all tasks completed: %d/%d, errors: %d",
-			completed.length,
+			results.filter((r) => !r[0]).length,
 			total,
-			errors.length,
+			results.filter((r) => r[0]).length,
 		);
 
-		return {
-			completed,
-			errors,
-			allCompleted: errors.length === 0,
-		};
+		return results as ParallelResults<T>;
 	} finally {
 		await s[Symbol.asyncDispose]();
 	}

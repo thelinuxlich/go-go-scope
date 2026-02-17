@@ -8,6 +8,7 @@ How to integrate `go-go-scope` with other libraries and monitoring systems.
 - [OpenTelemetry](#opentelemetry)
 - [Prometheus](#prometheus)
 - [Grafana](#grafana)
+- [Persistence Adapters](#persistence-adapters)
 
 ---
 
@@ -633,6 +634,211 @@ annotations:
 
 ```bash
 npm run monitoring:down
+```
+
+---
+
+## Persistence Adapters
+
+Distributed locks, rate limiting, and circuit breaker state persistence across multiple database backends.
+
+### Supported Databases
+
+| Database | Adapter | Lock TTL | Notes |
+|----------|---------|----------|-------|
+| **Redis** | `RedisAdapter` | ✅ Native | Best for distributed locks |
+| **PostgreSQL** | `PostgresAdapter` | ✅ App-level | Uses advisory locks + TTL table |
+| **MySQL** | `MySQLAdapter` | ✅ App-level | Uses named locks + TTL table |
+| **SQLite** | `SQLiteAdapter` | ✅ App-level | Single-node, file-based |
+
+### Installation
+
+Install the peer dependencies for your database:
+
+```bash
+# Redis
+npm install ioredis
+
+# PostgreSQL
+npm install pg
+
+# MySQL
+npm install mysql2
+
+# SQLite (Node.js)
+npm install sqlite3
+
+# SQLite (Bun native - built-in)
+# No install needed, use bun:sqlite
+```
+
+### Quick Start
+
+```typescript
+import { scope } from 'go-go-scope'
+import { RedisAdapter } from 'go-go-scope/persistence/redis'
+import { Pool } from 'pg'
+
+// Redis example
+import Redis from 'ioredis'
+const redis = new Redis(process.env.REDIS_URL)
+const redisAdapter = new RedisAdapter(redis)
+
+await using s = scope({
+  persistence: {
+    lock: redisAdapter,
+    rateLimit: redisAdapter,
+    circuitBreaker: redisAdapter
+  }
+})
+
+// Acquire distributed lock
+const lock = await s.acquireLock('critical-section', 30000)
+if (!lock) {
+  console.log('Could not acquire lock')
+  return
+}
+
+// Lock automatically released when scope exits
+// Or release manually:
+await lock.release()
+```
+
+### Distributed Locks
+
+All adapters provide TTL-based distributed locks that expire automatically:
+
+```typescript
+import { scope } from 'go-go-scope'
+import { RedisAdapter } from 'go-go-scope/persistence/redis'
+
+const redis = new Redis()
+const adapter = new RedisAdapter(redis)
+
+await using s = scope({
+  persistence: { lock: adapter }
+})
+
+// Try to acquire lock with 5 second TTL
+const lock = await s.acquireLock('resource:123', 5000)
+
+if (lock) {
+  console.log('Lock acquired!')
+  
+  // Check if still valid
+  if (await lock.isValid()) {
+    console.log('Lock is still valid')
+  }
+  
+  // Extend lock TTL
+  await lock.extend(10000) // Extend to 10 more seconds
+  
+  // Release when done
+  await lock.release()
+} else {
+  console.log('Resource is locked by another process')
+}
+```
+
+**Lock TTL Behavior:**
+
+If a node acquires a lock and then crashes:
+- **Redis**: Lock expires via native TTL after specified time
+- **PostgreSQL/MySQL**: Lock expires based on `expires_at` timestamp
+- **SQLite**: Lock expires based on in-memory timestamp
+
+After TTL expires, any node can acquire the lock.
+
+### Rate Limiting
+
+Distributed rate limiting with sliding window algorithm:
+
+```typescript
+import { scope } from 'go-go-scope'
+import { PostgresAdapter } from 'go-go-scope/persistence/postgres'
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+const adapter = new PostgresAdapter(pool)
+
+await using s = scope({
+  persistence: { rateLimit: adapter }
+})
+
+// Check rate limit
+const result = await adapter.checkAndIncrement('user:123', {
+  max: 100,        // 100 requests
+  windowMs: 60000  // per minute
+})
+
+if (!result.allowed) {
+  console.log(`Rate limited. Retry after ${result.resetTimeMs}ms`)
+  return
+}
+
+console.log(`Requests remaining: ${result.remaining}`)
+```
+
+### Circuit Breaker State
+
+Share circuit breaker state across instances:
+
+```typescript
+import { scope } from 'go-go-scope'
+import { MySQLAdapter } from 'go-go-scope/persistence/mysql'
+
+const pool = createPool(process.env.DATABASE_URL)
+const adapter = new MySQLAdapter(pool)
+
+await using s = scope({
+  persistence: { circuitBreaker: adapter },
+  circuitBreaker: {
+    failureThreshold: 5,
+    resetTimeout: 30000
+  }
+})
+
+// Circuit breaker state is now shared across all instances
+// If one instance opens the circuit, all instances see it
+```
+
+### Database-Specific Notes
+
+#### Redis
+- Best performance for distributed locks
+- Native TTL support via `PX` option
+- Supports pub/sub for real-time notifications
+
+#### PostgreSQL
+- Uses application-level locks (not advisory locks) for TTL support
+- Lock state stored in `go_goscope_locks` table
+- Requires `connect()` to create tables
+
+#### MySQL
+- Uses application-level locks for TTL support
+- Requires UTC timezone configuration for accurate TTL
+- Lock state stored in `go_goscope_locks` table
+
+#### SQLite
+- Single-node only (file-based or in-memory)
+- Uses in-memory Map for locks
+- Great for development/testing
+
+### Bun Compatibility
+
+All persistence adapters work with Bun:
+
+```typescript
+// Bun with SQLite
+import { SQLiteAdapter } from 'go-go-scope/persistence/sqlite'
+import sqlite3 from 'sqlite3'
+
+const db = new sqlite3.Database(':memory:')
+const adapter = new SQLiteAdapter(db)
+await adapter.connect()
+
+await using s = scope({
+  persistence: { lock: adapter }
+})
 ```
 
 ---

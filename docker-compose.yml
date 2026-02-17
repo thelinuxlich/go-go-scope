@@ -1,4 +1,57 @@
 services:
+  # === Persistence Services for Integration Tests ===
+  redis:
+    image: redis:7-alpine
+    container_name: go-go-scope-redis
+    ports:
+      - "6380:6379" # Redis (mapped to 6380 to avoid conflicts)
+    restart: unless-stopped
+    networks:
+      - go-go-scope
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: go-go-scope-postgres
+    ports:
+      - "5433:5432" # PostgreSQL (mapped to 5433 to avoid conflicts)
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: test
+    restart: unless-stopped
+    networks:
+      - go-go-scope
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d test"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mysql:
+    image: mysql:8
+    container_name: go-go-scope-mysql
+    ports:
+      - "3307:3306" # MySQL (mapped to 3307 to avoid conflicts)
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: test
+      MYSQL_USER: test
+      MYSQL_PASSWORD: test
+    restart: unless-stopped
+    networks:
+      - go-go-scope
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # === Observability Services ===
   jaeger:
     image: jaegertracing/all-in-one:1.76.0
     container_name: go-go-scope-jaeger

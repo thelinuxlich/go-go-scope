@@ -25,6 +25,18 @@ export { ConsoleLogger, createLogger, NoOpLogger } from "./logger.js";
 // Re-export metrics exporter
 export { exportMetrics, MetricsReporter } from "./metrics-exporter.js";
 export { parallel } from "./parallel.js";
+// Persistence types (re-exported from persistence module)
+export type {
+	CircuitBreakerPersistedState,
+	CircuitBreakerStateProvider,
+	LockHandle,
+	LockProvider,
+	PersistenceAdapter,
+	PersistenceAdapterOptions,
+	RateLimitConfig,
+	RateLimitProvider,
+	RateLimitResult,
+} from "./persistence/types.js";
 export { poll } from "./poll.js";
 export { Profiler } from "./profiler.js";
 export { race } from "./race.js";
@@ -55,10 +67,12 @@ export type {
 	Context,
 	DeadlockDetectionOptions,
 	DebounceOptions,
+	FactoryResult,
 	Failure,
 	Logger,
 	MetricsExportOptions,
-	ParallelAggregateResult,
+	ParallelResults,
+	PersistenceProviders,
 	PollController,
 	PollOptions,
 	RaceOptions,

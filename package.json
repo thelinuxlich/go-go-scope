@@ -1,39 +1,53 @@
 {
 	"name": "go-go-scope",
-	"version": "1.4.3",
+	"version": "1.5.0",
 	"description": "Structured concurrency for TypeScript using Explicit Resource Management",
-	"main": "./dist/index.cjs",
-	"module": "./dist/index.mjs",
+	"type": "module",
+	"main": "./dist/index.mjs",
 	"types": "./dist/index.d.mts",
 	"exports": {
 		".": {
-			"require": {
-				"types": "./dist/index.d.cts",
-				"default": "./dist/index.cjs"
-			},
-			"import": {
-				"types": "./dist/index.d.mts",
-				"default": "./dist/index.mjs"
-			}
+			"types": "./dist/index.d.mts",
+			"default": "./dist/index.mjs"
 		},
 		"./testing": {
-			"require": {
-				"types": "./dist/testing/index.d.cts",
-				"default": "./dist/testing/index.cjs"
-			},
-			"import": {
-				"types": "./dist/testing/index.d.mts",
-				"default": "./dist/testing/index.mjs"
-			}
+			"types": "./dist/testing/index.d.mts",
+			"default": "./dist/testing/index.mjs"
+		},
+		"./persistence": {
+			"types": "./dist/persistence/index.d.mts",
+			"default": "./dist/persistence/index.mjs"
+		},
+		"./persistence/redis": {
+			"types": "./dist/persistence/redis.d.mts",
+			"default": "./dist/persistence/redis.mjs"
+		},
+		"./persistence/sqlite": {
+			"types": "./dist/persistence/sqlite.d.mts",
+			"default": "./dist/persistence/sqlite.mjs"
+		},
+		"./persistence/postgres": {
+			"types": "./dist/persistence/postgres.d.mts",
+			"default": "./dist/persistence/postgres.mjs"
+		},
+		"./persistence/mysql": {
+			"types": "./dist/persistence/mysql.d.mts",
+			"default": "./dist/persistence/mysql.mjs"
 		}
 	},
-	"type": "module",
 	"scripts": {
 		"build": "pkgroll",
 		"lint": "biome check --write src/",
 		"test": "npm run build && npm run lint && vitest run",
 		"test:watch": "vitest",
+		"test:integration": "vitest run tests/persistence-integration.test.ts",
+		"test:integration:watch": "vitest tests/persistence-integration.test.ts",
+		"test:bun": "bun test tests/bun-compatibility.test.ts",
+		"test:bun:all": "bun test",
 		"benchmark": "npm run build && node --experimental-strip-types benchmarks/index.ts",
+		"services:up": "docker compose up -d redis postgres mysql",
+		"services:down": "docker compose down redis postgres mysql",
+		"services:logs": "docker compose logs -f redis postgres mysql",
 		"jaeger:up": "docker compose up -d jaeger",
 		"jaeger:down": "docker compose down jaeger",
 		"example:jaeger": "npm run build && node examples/jaeger-tracing.ts",
@@ -53,8 +67,13 @@
 		"async",
 		"disposable",
 		"using",
-		"typescript"
+		"typescript",
+		"esm",
+		"es2022"
 	],
+	"engines": {
+		"node": ">=18.0.0"
+	},
 	"author": "thelinuxlich",
 	"license": "MIT",
 	"repository": {
@@ -71,7 +90,7 @@
 		"LICENSE"
 	],
 	"devDependencies": {
-		"@biomejs/biome": "^2.4.0",
+		"@biomejs/biome": "^2.4.2",
 		"@opentelemetry/exporter-trace-otlp-http": "^0.212.0",
 		"@opentelemetry/resources": "^2.5.1",
 		"@opentelemetry/sdk-node": "^0.212.0",
@@ -80,12 +99,21 @@
 		"@types/node": "^24",
 		"effect": "^3.19.17",
 		"go-go-try": "^7.3.0",
-		"pkgroll": "^2.25.2",
+		"ioredis": "^5.9.3",
+		"mysql2": "^3.17.2",
+		"pg": "^8.18.0",
+		"pkgroll": "^2.26.0",
+		"sqlite3": "^5.1.7",
 		"typescript": "^5.9.3",
 		"vitest": "^4.0.18"
 	},
 	"dependencies": {
 		"@opentelemetry/api": "^1.9.0",
 		"debug": "^4.4.3"
+	},
+	"peerDependencies": {
+		"ioredis": "^5.0.0",
+		"mysql2": "^3.6.0",
+		"pg": "^8.11.0"
 	}
 }

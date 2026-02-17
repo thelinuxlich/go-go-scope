@@ -47,6 +47,12 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
   - Type definitions for Node.js and debug
   - `effect` ^3.19.17 for comparison examples
   - `go-go-try` ^7.3.0 for typed error handling examples
+- **Persistence Adapters** (optional peer dependencies):
+  - `ioredis` ^5.0.0 for Redis adapter
+  - `pg` ^8.11.0 for PostgreSQL adapter  
+  - `mysql2` ^3.6.0 for MySQL adapter
+  - `sqlite3` ^5.1.7 for SQLite adapter (Node.js and Bun)
+  - `bun:sqlite` for SQLite adapter (Bun native - different API)
 
 ## Project Structure
 
@@ -86,7 +92,8 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 │   ├── prometheus.test.ts     # Prometheus metrics export formats
 │   ├── testing.test.ts        # Test utilities validation
 │   ├── type-check.test.ts     # TypeScript type-level tests
-│   └── performance.test.ts    # Performance benchmarks
+│   ├── performance.test.ts    # Performance benchmarks
+│   └── persistence-integration.test.ts  # Persistence adapter tests (Redis, PG, MySQL, SQLite)
 ├── dist/                      # Compiled output (generated, NOT committed)
 │   ├── index.mjs              # ESM build
 │   ├── index.cjs              # CommonJS build
@@ -138,6 +145,14 @@ npm test
 
 # Run tests in watch mode (for development)
 npm run test:watch
+
+# Run persistence integration tests (requires services)
+npm run test:integration
+
+# Start/stop persistence services for integration tests
+npm run services:up      # Start Redis, PostgreSQL, MySQL
+npm run services:down    # Stop persistence services
+npm run services:logs    # View service logs
 
 # Run benchmarks
 npm run benchmark
@@ -291,6 +306,14 @@ task<T>(fn: (ctx: { services: Services; signal: AbortSignal }) => Promise<T>): T
 
 - **tests/performance.test.ts**: Performance benchmarks
 
+- **tests/persistence-integration.test.ts**: Persistence adapter integration tests
+  - Tests all persistence providers (Redis, PostgreSQL, MySQL, SQLite)
+  - Distributed lock tests (acquire, release, extend, expiration, force release)
+  - Rate limiting tests (windowing, quotas, reset)
+  - Circuit breaker state tests (persistence, failure counting, subscriptions)
+  - Scope integration tests (acquireLock with different providers)
+  - Gracefully skips tests for unavailable databases
+
 ### Test Patterns
 - Uses Vitest with globals enabled (no need to import `describe`, `test`, `expect`)
 - Tests use `await using` and `using` syntax extensively
@@ -316,6 +339,15 @@ npx vitest run tests/prometheus.test.ts
 npx vitest run tests/testing.test.ts
 npx vitest run tests/type-check.test.ts
 npx vitest run tests/performance.test.ts
+
+# Run persistence integration tests (requires services)
+npm run services:up && npm run test:integration
+
+# Run Bun compatibility tests
+npm run test:bun
+
+# Run all tests under Bun
+npm run test:bun:all
 ```
 
 ### Writing New Tests
@@ -514,40 +546,34 @@ Enable with: `DEBUG=go-go-scope:* node your-app.js`
 
 ## Package Exports
 
-The package supports both ESM and CommonJS with subpath exports:
+The package is **ESM-only** (Node.js 18+):
 
 ```json
 {
   "type": "module",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.mjs",
+  "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "exports": {
     ".": {
-      "require": {
-        "types": "./dist/index.d.cts",
-        "default": "./dist/index.cjs"
-      },
-      "import": {
-        "types": "./dist/index.d.mts",
-        "default": "./dist/index.mjs"
-      }
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
     },
     "./testing": {
-      "require": {
-        "types": "./dist/testing/index.d.cts",
-        "default": "./dist/testing/index.cjs"
-      },
-      "import": {
-        "types": "./dist/testing/index.d.mts",
-        "default": "./dist/testing/index.mjs"
-      }
+      "types": "./dist/testing/index.d.mts",
+      "default": "./dist/testing/index.mjs"
     }
   }
 }
 ```
 
-Usage:
+### Requirements
+
+- **Node.js**: 18.0.0 or higher (for native `fetch`, `AbortSignal` improvements)
+- **TypeScript**: 5.2 or higher
+- **Module**: ESM only (`"type": "module"` required)
+
+### Usage
+
 ```typescript
 // Main imports
 import { scope, Task, Scope } from 'go-go-scope';
@@ -555,6 +581,25 @@ import { scope, Task, Scope } from 'go-go-scope';
 // Testing utilities (separate import)
 import { createMockScope, createSpy, createControlledTimer, flushPromises, assertScopeDisposed } from 'go-go-scope/testing';
 ```
+
+### Why ESM-only?
+
+- **Smaller bundle size** - No dual CJS/ESM builds
+- **Better tree-shaking** - ESM enables more aggressive optimizations
+- **Native features** - Top-level await, `using`/`await using` syntax
+- **Future-proof** - The ecosystem is moving toward ESM
+- **Simpler maintenance** - Single output format
+
+### Migrating from CommonJS
+
+If your project uses CommonJS, migrate to ESM:
+
+1. Add `"type": "module"` to your `package.json`
+2. Rename `.js` files to `.mjs` or use `.ts` with `"module": "NodeNext"`
+3. Use `import`/`export` syntax instead of `require`/`module.exports`
+4. Update any dynamic `require()` to `await import()`
+
+See [Node.js ESM documentation](https://nodejs.org/api/esm.html) for more details.
 
 ## Typed Error Handling with go-go-try
 
@@ -615,6 +660,41 @@ See [Resilience Patterns](./docs/05-resilience-patterns.md#typed-error-handling)
 2. **Run tests**: `npm test` (this builds, lints, and tests)
 3. **Check types**: TypeScript compilation happens during build
 4. **Commit**: The dist/ folder should NOT be committed (it's in .gitignore)
+
+## Bun Compatibility
+
+The library is fully tested and works with Bun runtime (v1.2.0+). All 220 tests pass under Bun.
+
+### Features that work with Bun:
+- ✅ Core scope/task functionality
+- ✅ Parallel execution
+- ✅ Channels and broadcast channels
+- ✅ Semaphores
+- ✅ Circuit breakers
+- ✅ Rate limiting (debounce/throttle)
+- ✅ Polling
+- ✅ Stream processing
+- ✅ SQLite persistence (via `sqlite3` package)
+- ✅ Timer APIs (`setTimeout`, `setInterval`)
+- ✅ Native `fetch`
+
+### Bun-specific notes:
+- **SQLite**: Bun's native `bun:sqlite` has a different API than `sqlite3`. The library uses `sqlite3` which works under both Node.js and Bun.
+- **Timer precision**: Timer APIs work correctly but may have slightly different precision characteristics.
+- **Fetch**: Native `fetch` is available and preferred over Node's `undici`.
+
+### Running tests under Bun:
+```bash
+# Run Bun compatibility tests only
+bun test tests/bun-compatibility.test.ts
+
+# Run all tests under Bun
+bun test
+
+# Or via npm script
+npm run test:bun      # Bun compatibility tests
+npm run test:bun:all  # All tests under Bun
+```
 
 ## Security Considerations
 

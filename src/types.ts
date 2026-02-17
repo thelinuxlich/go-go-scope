@@ -156,6 +156,53 @@ export interface TaskOptions<E extends Error = Error> {
 	 * ```
 	 */
 	errorClass?: ErrorConstructor<E>;
+	/**
+	 * Optional deduplication key. When multiple tasks are spawned with the same
+	 * dedupe key while one is still in-flight, they will share the same result.
+	 * The first task to start executes, subsequent tasks with the same key
+	 * receive the same result (success or error).
+	 *
+	 * Useful for preventing duplicate API calls or database queries.
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * // These two tasks will share the same result
+	 * const t1 = s.task(() => fetchUser(1), { dedupe: 'user:1' })
+	 * const t2 = s.task(() => fetchUser(1), { dedupe: 'user:1' })
+	 *
+	 * const [r1, r2] = await Promise.all([t1, t2])
+	 * // Only one API call was made, both got the same result
+	 * ```
+	 */
+	dedupe?: string | symbol;
+	/**
+	 * Optional memoization configuration. Caches successful task results for the
+	 * specified TTL (time-to-live). Subsequent tasks with the same memo key
+	 * return the cached result without re-executing.
+	 *
+	 * Unlike deduplication, memoization persists results across multiple calls
+	 * and only caches successful results (errors are not cached).
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * // First call executes and caches
+	 * const r1 = await s.task(() => fetchUser(1), { memo: { key: 'user:1', ttl: 60000 } })
+	 *
+	 * // Within 60 seconds, this returns cached result
+	 * const r2 = await s.task(() => fetchUser(1), { memo: { key: 'user:1', ttl: 60000 } })
+	 * // No API call made, returns cached value
+	 * ```
+	 */
+	memo?: {
+		/** Cache key for the memoized result */
+		key: string | symbol;
+		/** Time-to-live in milliseconds */
+		ttl: number;
+	};
 }
 
 /**
@@ -405,16 +452,23 @@ export interface MetricsExportOptions {
 }
 
 /**
- * Parallel execution with error aggregation
+ * Helper type to extract the promise resolve type from a factory function
  */
-export interface ParallelAggregateResult<T> {
-	/** Results that completed successfully */
-	completed: { index: number; value: T }[];
-	/** Errors that occurred */
-	errors: { index: number; error: unknown }[];
-	/** Whether all tasks completed */
-	allCompleted: boolean;
-}
+export type FactoryResult<T> = T extends (
+	signal: AbortSignal,
+) => Promise<infer R>
+	? R
+	: never;
+
+/**
+ * Converts a tuple of factory functions to a tuple of Result types
+ * This preserves the individual types of each factory's return value
+ */
+export type ParallelResults<
+	T extends readonly ((signal: AbortSignal) => Promise<unknown>)[],
+> = {
+	[K in keyof T]: Result<unknown, FactoryResult<T[K]>>;
+};
 
 /**
  * Task profiling information
@@ -456,3 +510,15 @@ export interface ScopeProfileReport {
 		totalRetryAttempts: number;
 	};
 }
+
+// Re-export persistence types
+export type {
+	CircuitBreakerPersistedState,
+	CircuitBreakerStateProvider,
+	LockHandle,
+	LockProvider,
+	PersistenceProviders,
+	RateLimitConfig,
+	RateLimitProvider,
+	RateLimitResult,
+} from "./persistence/types.js";

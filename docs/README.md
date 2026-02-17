@@ -30,12 +30,13 @@ Complete guide to structured concurrency in TypeScript.
 |-----|-------------------|
 | [📊 Observability](./06-observability.md) | Metrics, logging, profiling, tracing |
 | [🧪 Testing](./08-testing.md) | Mock scopes, spies, time travel testing |
-| [🔌 Integrations](./11-integrations.md) | OpenTelemetry, Prometheus, Grafana |
+| [🔌 Integrations](./11-integrations.md) | OpenTelemetry, Prometheus, Grafana, Persistence |
 
-### Comparisons
+### Comparisons & Migration
 | Doc | What You'll Learn |
 |-----|-------------------|
 | [⚖️ Comparisons](./10-comparisons.md) | vs Vanilla JS, vs Effect, feature matrix |
+| [🚀 Migration Guides](./14-migration-guides.md) | From Promises, p-queue, Effect, RxJS, Async.js |
 
 ## Feature Highlights
 
@@ -43,26 +44,34 @@ Complete guide to structured concurrency in TypeScript.
 - ✅ **Structured Concurrency** - Tasks bound to scopes, auto-cancelled on exit
 - ✅ **Resource Management** - Automatic cleanup via `using`/`await using`
 - ✅ **Type-Safe DI** - Dependency injection with `provide`/`use`
+- ✅ **Bun Compatible** - Full support for Bun runtime
 
 ### Reliability
-- ✅ **Circuit Breaker** - Prevent cascading failures
+- ✅ **Circuit Breaker** - Prevent cascading failures with shared state
 - ✅ **Retry Logic** - Built-in exponential backoff, jitter strategies
 - ✅ **Timeout Handling** - Built-in timeout with automatic cleanup
+- ✅ **Distributed Locks** - Cross-process locking with automatic TTL expiration
+- ✅ **Rate Limiting** - Distributed rate limiting across instances
 
 ### Concurrency
 - ✅ **Channels** - Go-style buffered channels with `map`, `filter`, `reduce`
 - ✅ **Batch Processing** - Process arrays with progress tracking
 - ✅ **Concurrency Limits** - Semaphore-based rate limiting
+- ✅ **Persistence Adapters** - Redis, PostgreSQL, MySQL, SQLite support
 
-### Observability
+### Observability & Persistence
 - ✅ **Metrics** - Prometheus/JSON export, cross-scope aggregation
 - ✅ **Debug Tools** - `debugTree()` for visualizing scope hierarchies
 - ✅ **OpenTelemetry** - Distributed tracing support
+- ✅ **Distributed Locks** - Redis, PostgreSQL, MySQL, SQLite adapters
+- ✅ **Rate Limiting** - Sliding window rate limiting across instances
+- ✅ **Circuit Breaker State** - Shared state across multiple instances
 
 ### Testing
 - ✅ **Mock Scopes** - `createMockScope` for isolated testing
 - ✅ **Time Travel** - `createTimeController` for testing timeouts
 - ✅ **Spies** - Built-in spy functions
+- ✅ **Bun Compatible** - Full test suite passes under Bun runtime
 
 ## Common Tasks
 

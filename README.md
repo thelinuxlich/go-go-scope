@@ -44,7 +44,26 @@ async function fetchData() {
 npm install go-go-scope
 ```
 
-Requires TypeScript 5.2+ and `ESNext.Disposable` lib.
+### Requirements
+
+- **Node.js**: 18.0.0 or higher
+- **Bun**: 1.2.0 or higher (fully supported)
+- **TypeScript**: 5.2 or higher
+- **Module**: ESM only (`"type": "module"`)
+- **Lib**: `ESNext.Disposable` for `using`/`await using` syntax
+
+### tsconfig.json
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "ESNext.Disposable"]
+  }
+}
+```
 
 ## Documentation
 
@@ -63,6 +82,7 @@ Requires TypeScript 5.2+ and `ESNext.Disposable` lib.
 | [🔌 Integrations](./docs/11-integrations.md) | OpenTelemetry, Prometheus, Grafana |
 | [🚦 Cancellation](./docs/12-cancellation.md) | Cancellation utilities and helpers |
 | [🍳 Recipes](./docs/13-recipes.md) | Common patterns and solutions |
+| [🚀 Migration Guides](./docs/14-migration-guides.md) | From Promises, p-queue, Effect, RxJS |
 
 ## Features
 
@@ -75,12 +95,14 @@ Requires TypeScript 5.2+ and `ESNext.Disposable` lib.
 - ✅ **Broadcast** - Pub/sub pattern for multi-consumer scenarios
 - ✅ **Circuit Breaker** - Prevent cascading failures with hooks
 - ✅ **Retry Logic** - Built-in strategies: exponential backoff, jitter, linear
-- ✅ **parallelAggregate()** - Process arrays with progress tracking, concurrency control, and error handling
 - ✅ **Concurrency Limits** - Semaphore-based rate limiting
 - ✅ **Resource Pools** - Managed connection/worker pools
 - ✅ **Debouncing & Throttling** - Rate-limit function execution
 - ✅ **Polling** - Auto-refresh with start/stop control
 - ✅ **Stream Processing** - Async iterable wrapper with cancellation
+- ✅ **Distributed Locks** - Cross-process locking with Redis/PostgreSQL/MySQL/SQLite
+- ✅ **Rate Limiting** - Distributed rate limiting with sliding window
+- ✅ **Circuit Breaker State** - Shared circuit breaker state across instances
 - ✅ **Metrics** - Performance monitoring with Prometheus/JSON export
 - ✅ **Metrics Aggregation** - Cross-scope metrics collection
 - ✅ **Task Profiling** - Detailed execution time breakdown
@@ -90,6 +112,7 @@ Requires TypeScript 5.2+ and `ESNext.Disposable` lib.
 - ✅ **OpenTelemetry** - Distributed tracing support
 - ✅ **Test Utilities** - Mock scopes, spies, timers, time travel
 - ✅ **Type-Safe DI** - Dependency injection with `provide`/`use`
+- ✅ **Bun Compatible** - Full support for Bun runtime
 
 ## Typed Error Handling
 

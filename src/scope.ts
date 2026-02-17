@@ -18,7 +18,8 @@ import type {
 	CircuitBreakerOptions,
 	Failure,
 	Logger,
-	ParallelAggregateResult,
+	ParallelResults,
+	PersistenceProviders,
 	PollController,
 	PollOptions,
 	ResourcePoolOptions,
@@ -148,6 +149,22 @@ export interface ScopeOptions<
 	 * Enable task profiling.
 	 */
 	profiler?: boolean;
+	/**
+	 * Optional persistence providers for distributed features.
+	 * Enables distributed locks, rate limiting, and shared circuit breaker state.
+	 *
+	 * @example
+	 * ```typescript
+	 * import { RedisAdapter } from 'go-go-scope/persistence/redis'
+	 *
+	 * const redis = new Redis(process.env.REDIS_URL)
+	 * const persistence = new RedisAdapter(redis)
+	 *
+	 * await using s = scope({ persistence })
+	 * using lock = await s.acquireLock('resource:123')
+	 * ```
+	 */
+	persistence?: PersistenceProviders;
 }
 
 /**
@@ -201,6 +218,27 @@ export class Scope<
 	private readonly profiler: Profiler;
 	private childScopes: Scope<Record<string, unknown>>[] = [];
 	private readonly parent?: Scope<Record<string, unknown>>;
+	/**
+	 * Registry for deduplicating tasks. Maps dedupe keys to their executing promises.
+	 * @internal
+	 */
+	private readonly dedupeRegistry = new Map<
+		string | symbol,
+		Promise<unknown>
+	>();
+	/**
+	 * Registry for memoized task results. Maps memo keys to cached results with expiry.
+	 * @internal
+	 */
+	private readonly memoRegistry = new Map<
+		string | symbol,
+		{ result: unknown; expiry: number }
+	>();
+	/**
+	 * Persistence providers for distributed features.
+	 * @internal
+	 */
+	private readonly persistence?: PersistenceProviders;
 
 	constructor(options?: ScopeOptions<Record<string, unknown>>) {
 		this.id = ++scopeIdCounter;
@@ -231,6 +269,9 @@ export class Scope<
 
 		// Initialize profiler
 		this.profiler = new Profiler(options?.profiler ?? false, this);
+
+		// Set persistence providers
+		this.persistence = options?.persistence;
 
 		// Inherit from parent scope if provided
 		const parent = options?.parent;
@@ -495,6 +536,69 @@ export class Scope<
 		}
 		if (this.abortController.signal.aborted) {
 			throw new Error("Cannot spawn task on aborted scope");
+		}
+
+		// Check for memoized result
+		const memoConfig = options?.memo;
+		if (memoConfig !== undefined) {
+			const cached = this.memoRegistry.get(memoConfig.key);
+			if (cached && cached.expiry > Date.now()) {
+				if (debugScope.enabled) {
+					debugScope(
+						"[%s] task memoized result returned for key '%s'",
+						this.name,
+						memoConfig.key,
+					);
+				}
+				// Return a task that resolves to the cached result
+				const memoFactory = (): Promise<Result<E, T>> => {
+					return Promise.resolve(cached.result as Result<E, T>);
+				};
+				const memoTask = new Task<Result<E, T>>(
+					memoFactory,
+					this.abortController.signal,
+				);
+				// Track as active task briefly for consistency
+				this.activeTasks.add(memoTask as Task<unknown>);
+				Promise.resolve().then(() => {
+					this.activeTasks.delete(memoTask as Task<unknown>);
+				});
+				return memoTask;
+			}
+			// Expired or not found - will compute and cache below
+		}
+
+		// Check for deduplication
+		const dedupeKey = options?.dedupe;
+		if (dedupeKey !== undefined) {
+			const existing = this.dedupeRegistry.get(dedupeKey);
+			if (existing) {
+				if (debugScope.enabled) {
+					debugScope(
+						"[%s] task deduplicated with key '%s'",
+						this.name,
+						dedupeKey,
+					);
+				}
+				// Return a task that wraps the existing promise
+				// Create a factory that returns the existing promise
+				const dedupeFactory = (): Promise<Result<E, T>> => {
+					return existing as Promise<Result<E, T>>;
+				};
+				const dedupeTask = new Task<Result<E, T>>(
+					dedupeFactory,
+					this.abortController.signal,
+				);
+				this.activeTasks.add(dedupeTask as Task<unknown>);
+				// Use Promise.resolve().then() to avoid triggering the task start immediately
+				Promise.resolve().then(() => {
+					dedupeTask.then(
+						() => this.activeTasks.delete(dedupeTask as Task<unknown>),
+						() => this.activeTasks.delete(dedupeTask as Task<unknown>),
+					);
+				});
+				return dedupeTask;
+			}
 		}
 
 		this.taskCount++;
@@ -867,12 +971,37 @@ export class Scope<
 		// Track active task
 		this.activeTasks.add(task as Task<unknown>);
 
+		// Register in dedupe registry if needed
+		// Store Promise.resolve(task) to convert Task (PromiseLike) to a real Promise
+		if (dedupeKey !== undefined) {
+			this.dedupeRegistry.set(dedupeKey, Promise.resolve(task));
+		}
+
 		// Record span status on completion and remove from active tasks
 		task.then(
-			([err]) => {
+			([err, value]) => {
 				// End profiling
 				this.profiler.endTask(taskIndex, !err);
 				this.activeTasks.delete(task as Task<unknown>);
+				// Clean up dedupe registry
+				if (dedupeKey !== undefined) {
+					this.dedupeRegistry.delete(dedupeKey);
+				}
+				// Store successful result in memo registry
+				if (memoConfig !== undefined && !err) {
+					this.memoRegistry.set(memoConfig.key, {
+						result: [undefined, value] as Result<E, T>,
+						expiry: Date.now() + memoConfig.ttl,
+					});
+					if (debugScope.enabled) {
+						debugScope(
+							"[%s] task result memoized for key '%s' (ttl: %dms)",
+							this.name,
+							memoConfig.key,
+							memoConfig.ttl,
+						);
+					}
+				}
 				taskSpan?.setStatus?.({ code: SpanStatusCodeEnum.OK });
 				taskSpan?.end?.();
 
@@ -891,6 +1020,10 @@ export class Scope<
 			},
 			() => {
 				this.activeTasks.delete(task as Task<unknown>);
+				// Clean up dedupe registry
+				if (dedupeKey !== undefined) {
+					this.dedupeRegistry.delete(dedupeKey);
+				}
 				taskSpan?.setStatus?.({
 					code: SpanStatusCodeEnum.ERROR,
 					message: "task failed",
@@ -1839,44 +1972,29 @@ export class Scope<
 	 * Run multiple tasks in parallel with optional progress tracking,
 	 * concurrency control, and error handling.
 	 *
-	 * Returns a structured result with both successes and failures separated,
-	 * making it easy to handle partial failures.
+	 * Returns a tuple of Results where each position corresponds to the factory
+	 * at the same index. This preserves individual return types for each task.
 	 *
 	 * @param factories - Array of factory functions that create promises
 	 * @param options - Optional configuration for concurrency, progress, and error handling
-	 * @returns A Promise that resolves to a structured result with completed and failed tasks
+	 * @returns A Promise that resolves to a tuple of Results (one per factory)
 	 *
 	 * @example
 	 * ```typescript
-	 * // Basic usage
-	 * const result = await s.parallel([
-	 *   () => fetchUser(1),
-	 *   () => fetchUser(2),
-	 *   () => fetchUser(999), // This might fail
+	 * // With type inference - each result is typed individually
+	 * const [userResult, ordersResult] = await s.parallel([
+	 *   (signal) => fetchUser(1, { signal }),      // Result<Error, User>
+	 *   (signal) => fetchOrders({ signal }),       // Result<Error, Order[]>
 	 * ])
 	 *
-	 * console.log(result.completed) // Successfully fetched users
-	 * console.log(result.errors)    // Failed fetches
-	 * console.log(result.allCompleted) // false if any failed
-	 * ```
-	 *
-	 * @example
-	 * ```typescript
-	 * // With progress tracking and concurrency limit
-	 * const result = await s.parallel(
-	 *   urls.map(url => () => fetch(url)),
-	 *   {
-	 *     concurrency: 5,
-	 *     onProgress: (completed, total) => {
-	 *       console.log(`${completed}/${total} done`)
-	 *     },
-	 *     continueOnError: true
-	 *   }
-	 * )
+	 * const [userErr, user] = userResult
+	 * const [ordersErr, orders] = ordersResult
 	 * ```
 	 */
-	async parallel<T>(
-		factories: readonly ((signal: AbortSignal) => Promise<T>)[],
+	async parallel<
+		T extends readonly ((signal: AbortSignal) => Promise<unknown>)[],
+	>(
+		factories: T,
 		options?: {
 			/** Maximum concurrent operations (default: unlimited, or scope's concurrency limit) */
 			concurrency?: number;
@@ -1884,12 +2002,12 @@ export class Scope<
 			onProgress?: (
 				completed: number,
 				total: number,
-				result: Result<unknown, T>,
+				result: Result<unknown, unknown>,
 			) => void;
 			/** Continue processing on error (default: false) */
 			continueOnError?: boolean;
 		},
-	): Promise<ParallelAggregateResult<T>> {
+	): Promise<ParallelResults<T>> {
 		const {
 			concurrency: optionConcurrency,
 			onProgress,
@@ -1921,8 +2039,8 @@ export class Scope<
 			throw this.abortController.signal.reason;
 		}
 
-		const completed: { index: number; value: T }[] = [];
-		const errors: { index: number; error: unknown }[] = [];
+		// Use a fixed-size array to preserve order and types
+		const results: Result<unknown, T>[] = new Array(factories.length);
 
 		if (concurrency <= 0 || concurrency >= factories.length) {
 			// No concurrency limit - run all in parallel
@@ -1939,28 +2057,24 @@ export class Scope<
 				);
 
 				// If not continuing on error, use Promise.all to fail fast
-				const results = continueOnError
+				const settledResults = continueOnError
 					? await Promise.all(promises)
 					: await Promise.all(promises).catch((error) => {
-							// First error - stop processing
 							return [[-1, [error, undefined]] as [number, Result<unknown, T>]];
 						});
 
-				for (const [idx, result] of results) {
-					if (idx === -1) continue; // Skip error marker
-
-					const [err, value] = result;
-					if (err) {
-						errors.push({ index: idx, error: err });
-						if (onProgress) {
-							onProgress(completed.length + errors.length, total, result);
-						}
-						if (!continueOnError) break;
-					} else {
-						completed.push({ index: idx, value: value as T });
-						if (onProgress) {
-							onProgress(completed.length + errors.length, total, result);
-						}
+				for (const [idx, result] of settledResults) {
+					if (idx === -1) continue;
+					results[idx] = result;
+					if (onProgress) {
+						onProgress(
+							results.filter((r) => r !== undefined).length,
+							total,
+							result,
+						);
+					}
+					if (!continueOnError && result[0]) {
+						break;
 					}
 				}
 			} finally {
@@ -1982,30 +2096,21 @@ export class Scope<
 				const promise = (async () => {
 					try {
 						const result = await this.task((ctx) => factory(ctx.signal));
-						const [err, value] = result;
-
-						if (err) {
-							errors.push({ index: currentIndex, error: err });
-							if (onProgress) {
-								onProgress(completed.length + errors.length, total, result);
-							}
-							if (!continueOnError) {
-								throw new Error("parallel stopped on first error");
-							}
-						} else {
-							completed.push({
-								index: currentIndex,
-								value: value as T,
-							});
-							if (onProgress) {
-								onProgress(completed.length + errors.length, total, result);
-							}
+						results[currentIndex] = result;
+						if (onProgress) {
+							onProgress(
+								results.filter((r) => r !== undefined).length,
+								total,
+								result,
+							);
+						}
+						if (!continueOnError && result[0]) {
+							throw result[0];
 						}
 					} catch (error) {
-						// Handle unexpected errors
-						errors.push({ index: currentIndex, error });
+						results[currentIndex] = [error, undefined] as Result<unknown, T>;
 						if (onProgress) {
-							onProgress(completed.length + errors.length, total, [
+							onProgress(results.filter((r) => r !== undefined).length, total, [
 								error,
 								undefined,
 							]);
@@ -2028,16 +2133,28 @@ export class Scope<
 			}
 
 			// Wait for remaining
-			if (continueOnError || errors.length === 0) {
+			if (continueOnError || results.every((r) => r !== undefined)) {
 				await Promise.all(executing).catch(() => {});
 			}
 		}
 
-		return {
-			completed,
-			errors,
-			allCompleted: errors.length === 0,
-		};
+		// Fill in any missing results (if we broke early due to !continueOnError)
+		for (let i = 0; i < results.length; i++) {
+			if (results[i] === undefined) {
+				results[i] = [new Error("Task did not complete"), undefined];
+			}
+		}
+
+		if (debugScope.enabled) {
+			debugScope(
+				"[parallel] completed: %d/%d, errors: %d",
+				results.filter((r) => !r[0]).length,
+				total,
+				results.filter((r) => r[0]).length,
+			);
+		}
+
+		return results as ParallelResults<typeof factories>;
 	}
 
 	/**
@@ -2462,6 +2579,63 @@ export class Scope<
 	 */
 	registerChild(child: Scope<Record<string, unknown>>): void {
 		this.childScopes.push(child);
+	}
+
+	/**
+	 * Acquire a distributed lock using the configured persistence provider.
+	 *
+	 * Requires a LockProvider to be configured via `persistence` option.
+	 *
+	 * @param key - Unique lock identifier
+	 * @param ttl - Time-to-live in milliseconds (default: 30000)
+	 * @returns Lock handle if acquired, null if already locked
+	 *
+	 * @example
+	 * ```typescript
+	 * import { RedisAdapter } from 'go-go-scope/persistence/redis'
+	 *
+	 * const redis = new Redis(process.env.REDIS_URL)
+	 * const persistence = new RedisAdapter(redis)
+	 *
+	 * await using s = scope({ persistence })
+	 *
+	 * // Try to acquire lock
+	 * const lock = await s.acquireLock('resource:123', 5000)
+	 * if (!lock) {
+	 *   console.log('Resource busy')
+	 *   return
+	 * }
+	 *
+	 * // Lock automatically released when scope disposes
+	 * // Or release manually:
+	 * await lock.release()
+	 * ```
+	 */
+	async acquireLock(
+		key: string,
+		ttl = 30000,
+	): Promise<import("./persistence/types.js").LockHandle | null> {
+		if (!this.persistence?.lock) {
+			throw new Error(
+				"No LockProvider configured. Pass persistence.lock to scope options.",
+			);
+		}
+
+		if (debugScope.enabled) {
+			debugScope('[%s] acquiring lock "%s" (ttl: %dms)', this.name, key, ttl);
+		}
+
+		const lock = await this.persistence.lock.acquire(key, ttl);
+
+		if (debugScope.enabled) {
+			if (lock) {
+				debugScope('[%s] lock "%s" acquired', this.name, key);
+			} else {
+				debugScope('[%s] lock "%s" unavailable', this.name, key);
+			}
+		}
+
+		return lock;
 	}
 
 	/**

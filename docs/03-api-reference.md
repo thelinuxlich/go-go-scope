@@ -628,15 +628,17 @@ if (err) {
 
 Run multiple tasks in parallel with optional progress tracking, concurrency control, and error handling.
 
+Returns a **tuple of Results** where each position corresponds to the factory at the same index. This preserves individual return types for type-safe destructuring.
+
 ```typescript
-parallel<T>(
-  factories: readonly ((signal: AbortSignal) => Promise<T>)[]),
+parallel<T extends readonly ((signal: AbortSignal) => Promise<unknown>)[]>(
+  factories: T,
   options?: {
     concurrency?: number
-    onProgress?: (completed: number, total: number, result: Result<unknown, T>) => void
+    onProgress?: (completed: number, total: number, result: Result<unknown, unknown>) => void
     continueOnError?: boolean
   }
-): Promise<ParallelAggregateResult<T>>
+): Promise<ParallelResults<T>>
 ```
 
 **Parameters:**
@@ -648,52 +650,61 @@ parallel<T>(
 | `options.onProgress` | Function | Called after each task completes with `(completed, total, result)` |
 | `options.continueOnError` | `boolean` | Continue processing on error (default: false) |
 
-**Returns:** `Promise<ParallelAggregateResult<T>>` - Object with:
-- `completed`: Array of `{ index, value }` for successful tasks
-- `errors`: Array of `{ index, error }` for failed tasks
-- `allCompleted`: Boolean indicating if all tasks succeeded
+**Returns:** `Promise<[Result<E, T1>, Result<E, T2>, ...]>` - Tuple where each element is a `Result` corresponding to the factory at the same index. TypeScript preserves the individual return types of each factory.
 
 **Examples:**
 
 ```typescript
 await using s = scope({ concurrency: 3 })
 
-// Basic usage - stops on first error, returns collected results
-const result = await s.parallel([
-  () => fetchUser(1),  // might fail
-  () => fetchUser(2),  // might fail
-  () => fetchUser(3),  // might fail
+// Basic usage with type inference - each result is typed individually
+const [userResult, ordersResult, settingsResult] = await s.parallel([
+  (signal) => fetchUser(1, { signal }),      // Result<Error, User>
+  (signal) => fetchOrders({ signal }),       // Result<Error, Order[]>
+  (signal) => fetchSettings({ signal }),     // Result<Error, Settings>
 ])
 
-console.log(`Completed: ${result.completed.length}`)
-console.log(`Failed: ${result.errors.length}`)
+// Destructure individual results
+const [userErr, user] = userResult
+const [ordersErr, orders] = ordersResult
+const [settingsErr, settings] = settingsResult
+
+if (!userErr) {
+  // user is fully typed as User
+  console.log(user.name)
+}
 
 // continueOnError: process all tasks regardless of errors
-const result = await s.parallel(
-  urls.map(url => () => fetch(url)),
+const results = await s.parallel(
+  urls.map(url => ({ signal }) => fetch(url, { signal })),
   { continueOnError: true }
 )
 
+// Check each result individually
+for (const [err, value] of results) {
+  if (err) {
+    console.log('Failed:', err)
+  } else {
+    console.log('Success:', value)
+  }
+}
+
 // With progress tracking and per-call concurrency
-const result = await s.parallel(
-  urls.map(url => () => fetch(url)),
+const [r1, r2, r3] = await s.parallel(
+  [
+    () => fetchA(),
+    () => fetchB(),
+    () => fetchC(),
+  ],
   {
-    concurrency: 5,
+    concurrency: 2,
     onProgress: (done, total) => console.log(`${done}/${total}`),
     continueOnError: true
   }
 )
-
-// Access successful results
-for (const { index, value } of result.completed) {
-  console.log(`Task ${index} succeeded:`, value)
-}
-
-// Access errors
-for (const { index, error } of result.errors) {
-  console.log(`Task ${index} failed:`, error)
-}
 ```
+
+**Note:** The old aggregate result format (`{ completed, errors, allCompleted }`) is still available for backward compatibility but deprecated. The new tuple-based API provides better type inference and is recommended for new code.
 
 ---
 
@@ -1629,18 +1640,23 @@ const [err, winner] = await race([
 
 ### `parallel(factories, options?)`
 
-Run operations in parallel without a scope. Returns a structured result with both successes and failures.
+Run operations in parallel without a scope. Returns a tuple of Results with individual type preservation.
 
 ```typescript
 import { parallel } from 'go-go-scope'
 
-const result = await parallel([
-  () => fetchUser(1),
-  () => fetchUser(2),
+// Type-safe parallel execution - each result preserves its type
+const [userResult, ordersResult] = await parallel([
+  ({ signal }) => fetchUser(1, { signal }),    // Result<Error, User>
+  ({ signal }) => fetchOrders({ signal }),     // Result<Error, Order[]>
 ], { concurrency: 3 })
 
-console.log(result.completed.length) // Successfully fetched
-console.log(result.errors.length)    // Failed
+const [userErr, user] = userResult
+const [ordersErr, orders] = ordersResult
+
+if (!userErr) {
+  console.log(user.name) // user is fully typed
+}
 ```
 
 ### `poll(fn, onValue, options?)`

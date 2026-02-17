@@ -1,0 +1,60 @@
+{
+  "name": "go-go-scope Dev Container",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:20",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "biomejs.biome",
+        "bradlc.vscode-tailwindcss",
+        "davidanson.vscode-markdownlint",
+        "eamodio.gitlens",
+        "editorconfig.editorconfig",
+        "esbenp.prettier-vscode",
+        "github.copilot",
+        "github.copilot-chat",
+        "github.vscode-github-actions",
+        "github.vscode-pull-request-github",
+        "ms-vscode.vscode-typescript-next",
+        "vitest.explorer"
+      ],
+      "settings": {
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "typescript.enablePromptUseWorkspaceTsdk": true,
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "biomejs.biome",
+        "editor.codeActionsOnSave": {
+          "source.organizeImports.biome": "explicit"
+        }
+      }
+    }
+  },
+  "postCreateCommand": "npm install",
+  "postStartCommand": "git config --global --add safe.directory /workspaces/go-go-scope",
+  "forwardPorts": [
+    16686,
+    9090,
+    3000
+  ],
+  "portsAttributes": {
+    "16686": {
+      "label": "Jaeger UI",
+      "onAutoForward": "notify"
+    },
+    "9090": {
+      "label": "Prometheus",
+      "onAutoForward": "notify"
+    },
+    "3000": {
+      "label": "Example App",
+      "onAutoForward": "notify"
+    }
+  },
+  "remoteUser": "node",
+  "mounts": [
+    "source=${localWorkspaceFolder}/node_modules,target=/workspaces/go-go-scope/node_modules,type=bind,consistency=cached"
+  ]
+}
