@@ -256,7 +256,7 @@ const [err, user] = await s.task(
 ### TaskOptions (Type)
 
 ```typescript
-interface TaskOptions {
+interface TaskOptions<E extends Error = Error> {
   /** 
    * OpenTelemetry tracing options.
    */
@@ -293,6 +293,23 @@ interface TaskOptions {
    * Custom cleanup function - runs when parent scope exits.
    */
   onCleanup?: () => void | Promise<void>
+  
+  /**
+   * Error class to wrap ALL errors in.
+   * When provided, all errors are wrapped in this class.
+   * For preserving business errors (with _tag), use systemErrorClass instead.
+   */
+  errorClass?: ErrorConstructor<E>
+  
+  /**
+   * Error class to wrap SYSTEM errors only.
+   * Only wraps errors without a `_tag` property.
+   * Business errors (with _tag from taggedError) are preserved as-is.
+   * 
+   * Defaults to `UnknownError` - untagged errors are automatically
+   * wrapped in `UnknownError` if not specified.
+   */
+  systemErrorClass?: ErrorConstructor<E>
 }
 ```
 
@@ -331,6 +348,21 @@ const [err, result] = await s.task(
     onCleanup: () => {
       console.log('Task cleanup ran')
     }
+  }
+)
+
+// Wrap system errors while preserving business errors
+const DatabaseError = taggedError('DatabaseError')
+const NotFoundError = taggedError('NotFoundError')
+
+const [err, user] = await s.task(
+  async () => {
+    const record = await db.query('SELECT * FROM users WHERE id = ?', [id])
+    if (!record) throw new NotFoundError('User not found')  // Preserved!
+    return record
+  },
+  { 
+    systemErrorClass: DatabaseError  // Only wraps errors without _tag
   }
 )
 ```

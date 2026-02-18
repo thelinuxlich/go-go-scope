@@ -124,11 +124,25 @@ describe("persistence integration", () => {
   }, TEST_TIMEOUT);
 
   afterAll(async () => {
-    if (redisClient) await redisClient.quit();
-    if (pgPool) await pgPool.end();
-    if (mysqlPool) await mysqlPool.end();
-    if (sqliteDb) sqliteDb.close();
-  });
+    // Close connections with individual timeouts to prevent hanging
+    const closeRedis = redisClient 
+      ? Promise.race([redisClient.quit(), new Promise((_, reject) => setTimeout(() => reject(new Error('Redis timeout')), 5000))])
+      : Promise.resolve();
+    
+    const closePg = pgPool 
+      ? Promise.race([pgPool.end(), new Promise((_, reject) => setTimeout(() => reject(new Error('PG timeout')), 5000))])
+      : Promise.resolve();
+    
+    const closeMysql = mysqlPool 
+      ? Promise.race([mysqlPool.end(), new Promise((_, reject) => setTimeout(() => reject(new Error('MySQL timeout')), 5000))])
+      : Promise.resolve();
+    
+    const closeSqlite = sqliteDb 
+      ? Promise.resolve(sqliteDb.close())
+      : Promise.resolve();
+    
+    await Promise.allSettled([closeRedis, closePg, closeMysql, closeSqlite]);
+  }, 20000);
 
   describe("distributed locks", () => {
     // Placeholder test to avoid empty suite when no databases available

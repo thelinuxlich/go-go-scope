@@ -9,6 +9,7 @@ import { BroadcastChannel } from "./broadcast-channel.js";
 import { Channel } from "./channel.js";
 import { CircuitBreaker } from "./circuit-breaker.js";
 import { DeadlockDetector } from "./deadlock-detector.js";
+import { UnknownError } from "./errors.js";
 import { createLogger } from "./logger.js";
 import { Profiler } from "./profiler.js";
 import { ResourcePool } from "./resource-pool.js";
@@ -960,6 +961,8 @@ export class Scope<
 
 		// Get error class from options for typed error handling
 		const errorClass = options?.errorClass;
+		// Default to UnknownError for system errors if not specified
+		const systemErrorClass = options?.systemErrorClass ?? UnknownError;
 
 		// Create the task with the full pipeline
 		const task = new Task<Result<E, T>>(async (signal) => {
@@ -975,6 +978,19 @@ export class Scope<
 					);
 					return [wrappedError as E, undefined] as Failure<E>;
 				}
+
+				// Wrap system errors only (errors without _tag property)
+				// UnknownError is used as default, preserving tagged business errors
+				const hasTag =
+					error instanceof Error && "_tag" in error && error._tag !== undefined;
+				if (!hasTag) {
+					const wrappedError = new systemErrorClass(
+						error instanceof Error ? error.message : String(error),
+						{ cause: error },
+					);
+					return [wrappedError as E, undefined] as Failure<E>;
+				}
+
 				return [error as E, undefined] as Failure<E>;
 			}
 		}, parentSignal);

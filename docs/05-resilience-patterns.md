@@ -9,6 +9,7 @@ Patterns for building fault-tolerant applications with `go-go-scope`.
 - [Timeout](#timeout)
 - [Deadlock Detection](#deadlock-detection)
 - [Typed Error Handling](#typed-error-handling)
+- [Business Errors vs System Errors](#business-errors-vs-system-errors)
 
 ---
 
@@ -447,6 +448,260 @@ When `errorClass` is provided, errors are automatically wrapped in that class.
 ```bash
 npm install go-go-scope go-go-try
 ```
+
+---
+
+## Business Errors vs System Errors
+
+A critical aspect of error handling is distinguishing between **business errors** (expected domain exceptions) and **system errors** (unexpected infrastructure failures). This distinction affects how you respond to errors:
+
+| Aspect | Business Errors | System Errors |
+|--------|----------------|---------------|
+| **Cause** | Invalid input, business rule violation | Network failure, DB down, timeout |
+| **Retry?** | No (deterministic) | Yes (may succeed later) |
+| **HTTP Status** | 400, 404, 409, 422 | 500, 502, 503 |
+| **Logging** | Info/Warn level | Error level + alert |
+| **User Message** | Specific, actionable | Generic "Internal error" |
+| **Default Class** | Your custom errors (with `_tag`) | `UnknownError` (from `go-go-scope`)
+
+### Convention: Module-Based Error Classification
+
+Rather than adding complexity to the library, use a simple **convention**: organize errors by module to make their nature obvious:
+
+```
+src/
+├── errors/
+│   ├── business.ts    # Expected domain errors
+│   └── system.ts      # Infrastructure errors
+├── services/
+│   └── userService.ts
+```
+
+**`src/errors/business.ts`** - Expected business domain errors:
+
+```typescript
+import { taggedError } from 'go-go-try'
+
+export const ValidationError = taggedError('ValidationError')
+export const NotFoundError = taggedError('NotFoundError')
+export const InsufficientFundsError = taggedError('InsufficientFundsError')
+export const DuplicateEmailError = taggedError('DuplicateEmailError')
+```
+
+**`src/errors/system.ts`** - Infrastructure/system errors:
+
+```typescript
+import { taggedError } from 'go-go-try'
+
+export const DatabaseError = taggedError('DatabaseError')
+export const NetworkError = taggedError('NetworkError')
+export const CacheError = taggedError('CacheError')
+export const TimeoutError = taggedError('TimeoutError')
+```
+
+### Pattern: Using `systemErrorClass` (Defaults to `UnknownError`)
+
+By default, all untagged errors are automatically wrapped in `UnknownError`, while tagged business errors are preserved. Use `systemErrorClass` when you want to use a custom error class instead of `UnknownError`.
+
+```typescript
+import { scope, UnknownError } from 'go-go-scope'
+import { taggedError, success, failure, assert, assertNever } from 'go-go-try'
+import { DatabaseError } from '../errors/system.js'
+import { NotFoundError, InsufficientFundsError } from '../errors/business.js'
+
+async function getUser(userId: string) {
+  await using s = scope()
+  
+  // By default, untagged errors become UnknownError
+  const [err, user] = await s.task(
+    async () => {
+      const record = await db.query('SELECT * FROM users WHERE id = ?', [userId])
+      // Business condition: user doesn't exist
+      // NotFoundError has _tag, so it's preserved (not wrapped)
+      assert(record, NotFoundError, `User ${userId} not found`)
+      return record
+    }
+    // No systemErrorClass specified - uses UnknownError by default
+  )
+  
+  // Success case - early return
+  if (err === undefined) return { status: 200, body: { user }}
+  
+  // Exhaustive error handling by _tag
+  switch (err._tag) {
+    case 'UnknownError':
+      // System error (connection failure, timeout, etc.)
+      logger.error('Database failure', err.cause)
+      return { status: 500 }
+    case 'NotFoundError':
+      // Business error
+      return { status: 404, body: { error: err.message } }
+    default:
+      // Compile-time check: TypeScript errors if any case is missing
+      return assertNever(err)
+  }
+}
+
+// Or specify a custom systemErrorClass:
+async function getUserWithCustomError(userId: string) {
+  await using s = scope()
+  
+  const [err, user] = await s.task(
+    async () => {
+      const record = await db.query('SELECT * FROM users WHERE id = ?', [userId])
+      if (!record) throw new NotFoundError('User not found')
+      return record
+    },
+    { 
+      systemErrorClass: DatabaseError  // Use custom instead of UnknownError
+    }
+  )
+  
+  // err can be NotFoundError (business) or DatabaseError (system)
+  if (err) return failure(err)
+  return success(user)
+}
+
+async function transferMoney(fromId: string, toId: string, amount: number) {
+  await using s = scope()
+  
+  // Fetch users - returns NotFoundError or DatabaseError
+  const [fromErr, fromUser] = await getUser(fromId)
+  if (fromErr) return failure(fromErr)
+  
+  const [toErr, toUser] = await getUser(toId)
+  if (toErr) return failure(toErr)
+  
+  // Business validation - no system calls
+  if (fromUser.balance < amount) {
+    return failure(new InsufficientFundsError(fromUser.balance, amount))
+  }
+  
+  // Execute transfer - only system errors possible
+  const [txErr, tx] = await s.task(
+    () => db.transaction(async (trx) => {
+      await trx.query('UPDATE users SET balance = balance - ? WHERE id = ?', [amount, fromId])
+      await trx.query('UPDATE users SET balance = balance + ? WHERE id = ?', [amount, toId])
+      return { transactionId: generateId() }
+    }),
+    { systemErrorClass: DatabaseError }
+  )
+  
+  if (txErr) return failure(txErr)
+  
+  return success(tx)
+}
+```
+
+**How it works:**
+
+By default (when neither option is specified):
+- Errors with `_tag` property → preserved as-is (business errors)
+- Errors without `_tag` → wrapped in `UnknownError` (system errors)
+
+| Option | Behavior |
+|--------|----------|
+| No option (default) | Untagged errors → `UnknownError`; Tagged errors → preserved |
+| `systemErrorClass` | Untagged errors → custom class; Tagged errors → preserved |
+| `errorClass` | **All** errors → wrapped (overrides everything) |
+
+### Differentiating at the Call Site
+
+Import location tells you the error nature, but check the error type for business logic:
+
+```typescript
+import { DatabaseError, NetworkError } from './errors/system.js'
+import { NotFoundError, ValidationError } from './errors/business.js'
+
+const [err, result] = await transferMoney('user1', 'user2', 100)
+
+if (err) {
+  // Business errors: return appropriate HTTP status with details
+  if (err instanceof NotFoundError) {
+    return { status: 404, body: { error: err.message, code: 'USER_NOT_FOUND' } }
+  }
+  
+  if (err instanceof InsufficientFundsError) {
+    return { status: 422, body: { error: err.message, code: 'INSUFFICIENT_FUNDS' } }
+  }
+  
+  // System errors: log, alert, return generic message
+  if (err instanceof DatabaseError || err instanceof NetworkError) {
+    logger.error('System failure during transfer', { error: err, fromId, toId, amount })
+    alertOps(err)  // Page the on-call engineer
+    return { status: 500, body: { error: 'Internal server error' } }
+  }
+  
+  // Unknown error - treat as system error
+  logger.error('Unexpected error', err)
+  return { status: 500, body: { error: 'Internal server error' } }
+}
+```
+
+### Retry Configuration by Error Type
+
+Use `retryCondition` to avoid retrying business errors (they're deterministic). With the default `UnknownError` or a custom `systemErrorClass`, you get clean error handling:
+
+```typescript
+import { UnknownError } from 'go-go-scope'
+import { NotFoundError, ValidationError } from './errors/business.js'
+
+// Using default UnknownError
+const [err, data] = await s.task(
+  async () => {
+    const record = await fetchExternalData(id)
+    if (!record) throw new NotFoundError('Data not found')  // Preserved
+    return record
+  },
+  {
+    retry: {
+      maxRetries: 3,
+      delay: exponentialBackoff(),
+      retryCondition: (error) => {
+        // Don't retry business errors - they'll fail the same way
+        if (error instanceof NotFoundError) return false
+        if (error instanceof ValidationError) return false
+        
+        // Retry system errors (wrapped in UnknownError by default)
+        // They may be transient network failures
+        return error instanceof UnknownError
+      }
+    }
+  }
+)
+```
+
+Or with a custom `systemErrorClass`:
+
+```typescript
+import { DatabaseError } from './errors/system.js'
+import { NotFoundError } from './errors/business.js'
+
+const [err, data] = await s.task(
+  async () => {
+    const record = await db.query('SELECT * FROM data WHERE id = ?', [id])
+    if (!record) throw new NotFoundError('Not found')
+    return record
+  },
+  {
+    systemErrorClass: DatabaseError,  // Use instead of UnknownError
+    retry: {
+      maxRetries: 3,
+      delay: exponentialBackoff(),
+      retryCondition: (error) => error instanceof DatabaseError
+    }
+  }
+)
+
+### Key Takeaways
+
+1. **Organize by module**: Put system errors in `errors/system.ts`, business errors in `errors/business.ts`
+2. **Default behavior**: Untagged errors are automatically wrapped in `UnknownError`; tagged business errors are preserved
+3. **Use `systemErrorClass`**: Override the default `UnknownError` with a custom class (e.g., `DatabaseError`)
+4. **Different handling**: Business errors → specific HTTP status + message; System errors (`UnknownError`) → 500 + alert + generic message
+5. **Retry wisely**: Never retry business errors; retry system errors with backoff
+
+This convention keeps your error handling explicit, testable, and maintainable.
 
 ---
 

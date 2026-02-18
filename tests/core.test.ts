@@ -6,6 +6,7 @@ import {
 	type Success,
 	scope,
 	type Tracer,
+	UnknownError,
 } from "../src/index.js";
 
 describe("Task", () => {
@@ -23,8 +24,10 @@ describe("Task", () => {
 		const t = s.task(() => Promise.reject(new Error("fail")));
 
 		const [err] = await t;
-		expect(err).toBeInstanceOf(Error);
-		expect((err as Error).message).toBe("fail");
+		// By default, untagged errors are wrapped in UnknownError
+		expect(err).toBeInstanceOf(UnknownError);
+		expect((err as UnknownError).message).toBe("fail");
+		expect((err as UnknownError).cause).toBeInstanceOf(Error);
 	});
 
 	test("preserves custom error class in result tuple", async () => {
@@ -1047,6 +1050,271 @@ describe("errorClass option", () => {
 		expect(err).toBeInstanceOf(TimeoutError);
 		expect(err?.message).toContain("timeout");
 		expect(value).toBeUndefined();
+	});
+});
+
+describe("UnknownError", () => {
+	test("is exported from go-go-scope", () => {
+		expect(UnknownError).toBeDefined();
+		expect(new UnknownError("test")).toBeInstanceOf(Error);
+		expect(new UnknownError("test")._tag).toBe("UnknownError");
+	});
+
+	test("wraps untagged errors by default", async () => {
+		await using s = scope();
+
+		const [err, value] = await s.task(() =>
+			Promise.reject(new Error("plain error")),
+		);
+
+		expect(err).toBeInstanceOf(UnknownError);
+		expect(err?._tag).toBe("UnknownError");
+		expect(err?.message).toBe("plain error");
+		expect((err as UnknownError).cause).toBeInstanceOf(Error);
+		expect(value).toBeUndefined();
+	});
+
+	test("preserves tagged errors by default", async () => {
+		await using s = scope();
+
+		class BusinessError extends Error {
+			readonly _tag = "BusinessError" as const;
+			constructor(message: string) {
+				super(message);
+				this.name = "BusinessError";
+			}
+		}
+
+		const [err, value] = await s.task(() =>
+			Promise.reject(new BusinessError("business issue")),
+		);
+
+		// Business errors with _tag are preserved, not wrapped
+		expect(err).toBeInstanceOf(BusinessError);
+		expect(err).not.toBeInstanceOf(UnknownError);
+		expect((err as BusinessError)._tag).toBe("BusinessError");
+		expect(value).toBeUndefined();
+	});
+
+	test("non-Error values are wrapped in UnknownError", async () => {
+		await using s = scope();
+
+		const [err] = await s.task(() => {
+			throw "string error";
+		});
+
+		expect(err).toBeInstanceOf(UnknownError);
+		expect(err?.message).toBe("string error");
+	});
+
+	test("UnknownError includes cause", () => {
+		const cause = new Error("original");
+		const err = new UnknownError("wrapped", { cause });
+
+		expect(err.cause).toBe(cause);
+		expect(err._tag).toBe("UnknownError");
+		expect(err.name).toBe("UnknownError");
+	});
+});
+
+describe("systemErrorClass option", () => {
+	test("wraps untagged errors in systemErrorClass", async () => {
+		await using s = scope();
+
+		class SystemError extends Error {
+			constructor(message: string, options?: { cause?: unknown }) {
+				super(message, options);
+				this.name = "SystemError";
+			}
+		}
+
+		const [err, value] = await s.task(
+			() => Promise.reject(new Error("connection failed")),
+			{ systemErrorClass: SystemError },
+		);
+
+		expect(err).toBeInstanceOf(SystemError);
+		expect(err?.message).toBe("connection failed");
+		expect((err as SystemError).cause).toBeInstanceOf(Error);
+		expect(value).toBeUndefined();
+	});
+
+	test("preserves tagged errors when using systemErrorClass", async () => {
+		await using s = scope();
+
+		class SystemError extends Error {
+			constructor(message: string, options?: { cause?: unknown }) {
+				super(message, options);
+				this.name = "SystemError";
+			}
+		}
+
+		class BusinessError extends Error {
+			readonly _tag = "BusinessError" as const;
+			constructor(message: string) {
+				super(message);
+				this.name = "BusinessError";
+			}
+		}
+
+		const [err, value] = await s.task(
+			() => Promise.reject(new BusinessError("user not found")),
+			{ systemErrorClass: SystemError },
+		);
+
+		// BusinessError should be preserved, not wrapped
+		expect(err).toBeInstanceOf(BusinessError);
+		expect(err).not.toBeInstanceOf(SystemError);
+		expect((err as BusinessError)._tag).toBe("BusinessError");
+		expect(err?.message).toBe("user not found");
+		expect(value).toBeUndefined();
+	});
+
+	test("works with taggedError-style errors", async () => {
+		await using s = scope();
+
+		const SystemError = class extends Error {
+			readonly _tag = "SystemError" as const;
+			constructor(
+				message: string,
+				options?: { cause?: unknown },
+			) {
+				super(message, options);
+				this.name = "SystemError";
+			}
+		};
+
+		const BusinessError = class extends Error {
+			readonly _tag = "BusinessError" as const;
+			constructor(message: string) {
+				super(message);
+				this.name = "BusinessError";
+			}
+		};
+
+		// Test with system error (no _tag on the thrown error)
+		const [sysErr] = await s.task(
+			() => Promise.reject(new Error("timeout")),
+			{ systemErrorClass: SystemError },
+		);
+		expect(sysErr).toBeInstanceOf(SystemError);
+
+		// Test with business error (has _tag)
+		const [bizErr] = await s.task(
+			() => Promise.reject(new BusinessError("invalid input")),
+			{ systemErrorClass: SystemError },
+		);
+		expect(bizErr).toBeInstanceOf(BusinessError);
+		expect(bizErr).not.toBeInstanceOf(SystemError);
+	});
+
+	test("returns success value unchanged", async () => {
+		await using s = scope();
+
+		class SystemError extends Error {
+			constructor(message: string) {
+				super(message);
+				this.name = "SystemError";
+			}
+		}
+
+		const [err, value] = await s.task(() => Promise.resolve("success"), {
+			systemErrorClass: SystemError,
+		});
+
+		expect(err).toBeUndefined();
+		expect(value).toBe("success");
+	});
+
+	test("systemErrorClass takes precedence when errorClass is not set", async () => {
+		await using s = scope();
+
+		class SystemError extends Error {
+			constructor(message: string, options?: { cause?: unknown }) {
+				super(message, options);
+				this.name = "SystemError";
+			}
+		}
+
+		// Plain error gets wrapped
+		const [err] = await s.task(
+			() => Promise.reject(new Error("network down")),
+			{ systemErrorClass: SystemError },
+		);
+
+		expect(err).toBeInstanceOf(SystemError);
+	});
+
+	test("errorClass takes precedence over systemErrorClass", async () => {
+		await using s = scope();
+
+		class AllError extends Error {
+			constructor(message: string, options?: { cause?: unknown }) {
+				super(message, options);
+				this.name = "AllError";
+			}
+		}
+
+		class SystemError extends Error {
+			constructor(message: string, options?: { cause?: unknown }) {
+				super(message, options);
+				this.name = "SystemError";
+			}
+		}
+
+		class BusinessError extends Error {
+			readonly _tag = "BusinessError" as const;
+			constructor(message: string) {
+				super(message);
+				this.name = "BusinessError";
+			}
+		}
+
+		// When both are set, errorClass wraps everything
+		const [err] = await s.task(
+			() => Promise.reject(new BusinessError("business issue")),
+			{ errorClass: AllError, systemErrorClass: SystemError },
+		);
+
+		// errorClass takes precedence and wraps everything
+		expect(err).toBeInstanceOf(AllError);
+		expect(err).not.toBeInstanceOf(BusinessError);
+	});
+
+	test("systemErrorClass with retry option", async () => {
+		await using s = scope();
+
+		class SystemError extends Error {
+			constructor(message: string, options?: { cause?: unknown }) {
+				super(message, options);
+				this.name = "SystemError";
+			}
+		}
+
+		class BusinessError extends Error {
+			readonly _tag = "BusinessError" as const;
+			constructor(message: string) {
+				super(message);
+				this.name = "BusinessError";
+			}
+		}
+
+		let attempts = 0;
+		const [err] = await s.task(
+			() => {
+				attempts++;
+				if (attempts === 1) return Promise.reject(new Error("transient"));
+				return Promise.reject(new BusinessError("permanent"));
+			},
+			{
+				systemErrorClass: SystemError,
+				retry: { maxRetries: 2 },
+			},
+		);
+
+		// After retry, the BusinessError should not be wrapped
+		expect(err).toBeInstanceOf(BusinessError);
+		expect(err).not.toBeInstanceOf(SystemError);
 	});
 });
 

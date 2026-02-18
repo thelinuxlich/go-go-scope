@@ -157,6 +157,40 @@ export interface TaskOptions<E extends Error = Error> {
 	 */
 	errorClass?: ErrorConstructor<E>;
 	/**
+	 * Optional error class to wrap system/infrastructure errors only.
+	 * Unlike `errorClass`, this only wraps errors that don't already have
+	 * a `_tag` property (which indicates a business error from `taggedError`).
+	 *
+	 * Use this when your task may throw both business errors (with `_tag`)
+	 * and system errors (connection failures, timeouts), and you want to
+	 * distinguish between them.
+	 *
+	 * @example
+	 * ```typescript
+	 * import { taggedError, success, failure } from 'go-go-try'
+	 *
+	 * const DatabaseError = taggedError('DatabaseError')
+	 * const NotFoundError = taggedError('NotFoundError')  // Has _tag property
+	 *
+	 * async function getUser(id: string) {
+	 *   await using s = scope()
+	 *
+	 *   const [err, user] = await s.task(async () => {
+	 *     const record = await db.query('SELECT * FROM users WHERE id = ?', [id])
+	 *     if (!record) throw new NotFoundError('User not found')  // Preserved!
+	 *     return record
+	 *   }, {
+	 *     systemErrorClass: DatabaseError  // Only wraps connection errors, etc.
+	 *   })
+	 *
+	 *   if (err instanceof NotFoundError) return { status: 404 }  // Business error
+	 *   if (err) return { status: 500 }  // System error wrapped in DatabaseError
+	 *   return success(user!)
+	 * }
+	 * ```
+	 */
+	systemErrorClass?: ErrorConstructor<E>;
+	/**
 	 * Optional deduplication key. When multiple tasks are spawned with the same
 	 * dedupe key while one is still in-flight, they will share the same result.
 	 * The first task to start executes, subsequent tasks with the same key

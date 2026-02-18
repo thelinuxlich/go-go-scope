@@ -7,6 +7,7 @@
 
 // Re-export classes
 export { BroadcastChannel } from "./broadcast-channel.js";
+export { UnknownError } from "./errors.js";
 // Re-export cancellation utilities
 export {
 	abortPromise,
