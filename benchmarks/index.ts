@@ -677,6 +677,248 @@ async function benchRetryStrategies(): Promise<BenchmarkResult[]> {
   return results;
 }
 
+async function benchStreams(): Promise<BenchmarkResult[]> {
+  console.log("\n📊 Stream Benchmarks\n");
+
+  const results: BenchmarkResult[] = [];
+
+  // Create helper to generate async iterable
+  async function* genArray<T>(arr: T[]): AsyncGenerator<T> {
+    for (const item of arr) {
+      yield item;
+    }
+  }
+
+  // Base data
+  const data = Array.from({ length: 1000 }, (_, i) => i);
+
+  // Stream creation via scope.stream()
+  results.push(
+    await runBenchmark("Stream creation (1000 items)", async () => {
+      await using s = scope();
+      s.stream(genArray(data));
+    })
+  );
+
+  // Native async iterator baseline
+  results.push(
+    await runBenchmark("Native async iterator (map)", async () => {
+      const arr: number[] = [];
+      for await (const x of genArray(data)) {
+        arr.push(x * 2);
+      }
+    })
+  );
+
+  // Stream.map
+  results.push(
+    await runBenchmark("Stream.map (1000 items)", async () => {
+      await using s = scope();
+      const stream = s.stream(genArray(data)).map((x) => x * 2);
+      await stream.toArray();
+    })
+  );
+
+  // Stream.filter
+  results.push(
+    await runBenchmark("Stream.filter (1000 items)", async () => {
+      await using s = scope();
+      const stream = s.stream(genArray(data)).filter((x) => x % 2 === 0);
+      await stream.toArray();
+    })
+  );
+
+  // Stream.map + filter (chained)
+  results.push(
+    await runBenchmark("Stream.map + filter chained", async () => {
+      await using s = scope();
+      const stream = s.stream(genArray(data))
+        .map((x) => x * 2)
+        .filter((x) => x % 4 === 0);
+      await stream.toArray();
+    })
+  );
+
+  // Stream.take
+  results.push(
+    await runBenchmark("Stream.take (100 from 1000)", async () => {
+      await using s = scope();
+      const stream = s.stream(genArray(data)).take(100);
+      await stream.toArray();
+    })
+  );
+
+  // Stream.drop
+  results.push(
+    await runBenchmark("Stream.drop (900 from 1000)", async () => {
+      await using s = scope();
+      const stream = s.stream(genArray(data)).drop(900);
+      await stream.toArray();
+    })
+  );
+
+  // Stream.scan
+  results.push(
+    await runBenchmark("Stream.scan (1000 items)", async () => {
+      await using s = scope();
+      const stream = s.stream(genArray(data)).scan((acc, x) => acc + x, 0);
+      await stream.toArray();
+    })
+  );
+
+  // Stream.reduce
+  results.push(
+    await runBenchmark("Stream.reduce (1000 items)", async () => {
+      await using s = scope();
+      const stream = s.stream(genArray(data));
+      await stream.reduce((acc, x) => acc + x, 0);
+    })
+  );
+
+  // Stream.find
+  results.push(
+    await runBenchmark("Stream.find (find middle)", async () => {
+      await using s = scope();
+      const stream = s.stream(genArray(data));
+      await stream.find((x) => x === 500);
+    })
+  );
+
+  // Stream.some
+  results.push(
+    await runBenchmark("Stream.some (match at 500)", async () => {
+      await using s = scope();
+      const stream = s.stream(genArray(data));
+      await stream.some((x) => x === 500);
+    })
+  );
+
+  // Stream.every
+  results.push(
+    await runBenchmark("Stream.every (all match)", async () => {
+      await using s = scope();
+      const stream = s.stream(genArray(data));
+      await stream.every((x) => x < 1000);
+    })
+  );
+
+  // Stream.flatMap
+  results.push(
+    await runBenchmark("Stream.flatMap (nested arrays)", async () => {
+      await using s = scope();
+      const nested = [[1, 2], [3, 4], [5, 6], [7, 8], [9, 10]];
+      const stream = s.stream(genArray(nested)).flatMap((x) => x);
+      await stream.toArray();
+    })
+  );
+
+  // Stream.partition
+  results.push(
+    await runBenchmark("Stream.partition (1000 items)", async () => {
+      await using s = scope();
+      const [even, odd] = s.stream(genArray(data)).partition((x) => x % 2 === 0);
+      await Promise.all([even.toArray(), odd.toArray()]);
+    })
+  );
+
+  // Stream.zip
+  results.push(
+    await runBenchmark("Stream.zip (1000 items)", async () => {
+      await using s = scope();
+      const other = data.map((x) => x * 2);
+      const stream = s.stream(genArray(data)).zip(other);
+      await stream.toArray();
+    })
+  );
+
+  // Stream.merge
+  results.push(
+    await runBenchmark("Stream.merge (2x500 items)", async () => {
+      await using s = scope();
+      const s1 = s.stream(genArray(data.slice(0, 500)));
+      const s2 = s.stream(genArray(data.slice(500, 1000)));
+      const merged = s1.merge(s2);
+      await merged.toArray();
+    })
+  );
+
+  // Stream.buffer
+  results.push(
+    await runBenchmark("Stream.buffer (100 items)", async () => {
+      await using s = scope();
+      const stream = s.stream(genArray(data)).take(100).buffer(10);
+      await stream.toArray();
+    })
+  );
+
+  // Stream.distinct
+  results.push(
+    await runBenchmark("Stream.distinct (1000 items, 100 unique)", async () => {
+      await using s = scope();
+      const withDups = data.map((x) => x % 100);
+      const stream = s.stream(genArray(withDups)).distinct();
+      await stream.toArray();
+    })
+  );
+
+  // Stream.distinctUntilChanged
+  results.push(
+    await runBenchmark("Stream.distinctUntilChanged (runs)", async () => {
+      await using s = scope();
+      const withRuns = data.flatMap((x) => [x, x, x]);
+      const stream = s.stream(genArray(withRuns)).distinctUntilChanged();
+      await stream.toArray();
+    })
+  );
+
+  // Stream.ensuring
+  results.push(
+    await runBenchmark("Stream.ensuring cleanup", async () => {
+      await using s = scope();
+      let cleaned = false;
+      const stream = s.stream(genArray(data))
+        .take(10)
+        .ensuring(() => { cleaned = true; });
+      await stream.toArray();
+    })
+  );
+
+  // Stream.pipe
+  results.push(
+    await runBenchmark("Stream.pipe (3 operations)", async () => {
+      await using s = scope();
+      const stream = s.stream(genArray(data)).pipe(
+        (st) => st.map((x) => x * 2),
+        (st) => st.filter((x) => x % 4 === 0),
+        (st) => st.take(100)
+      );
+      await stream.toArray();
+    })
+  );
+
+  // Stream.switchMap
+  results.push(
+    await runBenchmark("Stream.switchMap", async () => {
+      await using s = scope();
+      const stream = s.stream(genArray([1, 2, 3])).switchMap((x) =>
+        s.stream(genArray([x * 1, x * 2, x * 3]))
+      );
+      await stream.toArray();
+    })
+  );
+
+  // Stream.runCollect (Effect equivalent)
+  results.push(
+    await runBenchmark("Stream.runCollect (toArray)", async () => {
+      await using s = scope();
+      const stream = s.stream(genArray(data)).map((x) => x * 2);
+      await stream.toArray();
+    })
+  );
+
+  return results;
+}
+
 function printResults(results: BenchmarkResult[]) {
   console.log("─".repeat(70));
   console.log(
@@ -694,7 +936,7 @@ function printResults(results: BenchmarkResult[]) {
 }
 
 async function main() {
-  console.log("🚀 go-go-scope Benchmark Suite v1.3.0\n");
+  console.log("🚀 go-go-scope Benchmark Suite v1.7.0\n");
   console.log("Comparing performance with native Promise patterns\n");
 
   const allResults: BenchmarkResult[] = [];
@@ -712,6 +954,7 @@ async function main() {
   allResults.push(...(await benchExternalComparisons()));
   allResults.push(...(await benchHistogramMetrics()));
   allResults.push(...(await benchRetryStrategies()));
+  allResults.push(...(await benchStreams()));
 
   console.log("\n\n📈 Overall Results\n");
   printResults(allResults);
@@ -759,6 +1002,30 @@ async function main() {
   );
   if (debugTreeResult) {
     console.log(`Debug tree generation: ${debugTreeResult.opsPerSecond.toFixed(0)} ops/sec`);
+  }
+
+  // New v1.7.0 Stream benchmarks summary
+  console.log("\n🆕 v1.7.0 Stream Features\n");
+
+  const streamMapResult = allResults.find(
+    (r) => r.name === "Stream.map (1000 items)"
+  );
+  if (streamMapResult) {
+    console.log(`Stream.map: ${streamMapResult.opsPerSecond.toFixed(0)} ops/sec`);
+  }
+
+  const streamFilterResult = allResults.find(
+    (r) => r.name === "Stream.filter (1000 items)"
+  );
+  if (streamFilterResult) {
+    console.log(`Stream.filter: ${streamFilterResult.opsPerSecond.toFixed(0)} ops/sec`);
+  }
+
+  const streamPartitionResult = allResults.find(
+    (r) => r.name === "Stream.partition (1000 items)"
+  );
+  if (streamPartitionResult) {
+    console.log(`Stream.partition: ${streamPartitionResult.opsPerSecond.toFixed(0)} ops/sec`);
   }
 
   console.log("\n✅ Benchmarks complete!");

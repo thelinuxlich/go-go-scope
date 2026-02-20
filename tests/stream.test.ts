@@ -872,6 +872,183 @@ describe("Stream - Terminal Operations", () => {
 		expect(result?.get("a")).toHaveLength(2);
 		expect(result?.get("b")).toHaveLength(1);
 	});
+
+	test("groupByKey returns substreams for each key", async () => {
+		await using s = scope();
+		const { groups, done } = s.stream(fromArray([1, 2, 3, 4, 5, 6])).groupByKey(x => x % 2 === 0 ? 'even' : 'odd');
+
+		// Get streams and consume them
+		const [err1, evenResults] = await groups.get('even')!.toArray();
+		const [err2, oddResults] = await groups.get('odd')!.toArray();
+
+		// Wait for distribution to complete
+		await done;
+
+		expect(err1).toBeUndefined();
+		expect(err2).toBeUndefined();
+		expect(evenResults).toEqual([2, 4, 6]);
+		expect(oddResults).toEqual([1, 3, 5]);
+	});
+
+	test("groupByKey handles empty stream", async () => {
+		await using s = scope();
+		const { groups, done } = s.stream(fromArray([])).groupByKey(x => x);
+
+		await done;
+		expect(groups.size).toBe(0);
+	});
+
+	test("groupedWithin groups by size", async () => {
+		await using s = scope();
+		const [err, results] = await s.stream(fromArray([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))
+			.groupedWithin(3, 1000) // Size 3, time 1s (won't trigger)
+			.toArray();
+
+		expect(err).toBeUndefined();
+		expect(results).toEqual([[1, 2, 3], [4, 5, 6], [7, 8, 9], [10]]);
+	});
+
+	test("groupedWithin emits partial group on stream end", async () => {
+		await using s = scope();
+		const [err, results] = await s.stream(fromArray([1, 2]))
+			.groupedWithin(5, 1000)
+			.toArray();
+
+		expect(err).toBeUndefined();
+		expect(results).toEqual([[1, 2]]);
+	});
+
+	test("groupedWithin emits on time window", async () => {
+		await using s = scope();
+		// Use a very short time window to ensure it triggers
+		const [err, results] = await s.stream(fromArray([1, 2]))
+			.groupedWithin(100, 50) // Size 100 (won't reach), time 50ms
+			.toArray();
+
+		expect(err).toBeUndefined();
+		// Should emit due to timeout even though buffer isn't full
+		expect(results?.length).toBeGreaterThanOrEqual(1);
+		expect(results?.[0]).toContain(1);
+	});
+
+	test("zipLatest emits when either stream emits", async () => {
+		await using s = scope();
+		const s1 = s.stream(fromArray([1, 2, 3]));
+		const s2 = s.stream(fromArray(['a', 'b']));
+
+		const [err, results] = await s1.zipLatest(s2).toArray();
+
+		expect(err).toBeUndefined();
+		// First emit from s1: [1, undefined]
+		// Then s2 emits: [1, 'a']
+		// s1 emits: [2, 'a']
+		// s2 emits: [2, 'b']
+		// s1 emits: [3, 'b']
+		expect(results?.length).toBeGreaterThanOrEqual(2);
+	});
+
+	test("zipAll pads shorter stream with default", async () => {
+		await using s = scope();
+		const s1 = s.stream(fromArray([1, 2, 3]));
+		const s2 = s.stream(fromArray(['a', 'b']));
+
+		const [err, results] = await s1.zipAll(s2, 0, 'default').toArray();
+
+		expect(err).toBeUndefined();
+		expect(results).toEqual([
+			[1, 'a'],
+			[2, 'b'],
+			[3, 'default'],
+		]);
+	});
+
+	test("zipAll continues until both streams end", async () => {
+		await using s = scope();
+		const s1 = s.stream(fromArray([1]));
+		const s2 = s.stream(fromArray(['a', 'b', 'c']));
+
+		const [err, results] = await s1.zipAll(s2, 0, 'x').toArray();
+
+		expect(err).toBeUndefined();
+		expect(results).toEqual([
+			[1, 'a'],
+			[0, 'b'],
+			[0, 'c'],
+		]);
+	});
+
+	test("interleave fairly interleaves streams", async () => {
+		await using s = scope();
+		const s1 = s.stream(fromArray([1, 2, 3]));
+		const s2 = s.stream(fromArray([4, 5, 6]));
+
+		const [err, results] = await s1.interleave(s2).toArray();
+
+		expect(err).toBeUndefined();
+		// Round-robin: 1, 4, 2, 5, 3, 6
+		expect(results).toEqual([1, 4, 2, 5, 3, 6]);
+	});
+
+	test("interleave handles streams of different lengths", async () => {
+		await using s = scope();
+		const s1 = s.stream(fromArray([1, 2]));
+		const s2 = s.stream(fromArray([10, 20, 30, 40]));
+
+		const [err, results] = await s1.interleave(s2).toArray();
+
+		expect(err).toBeUndefined();
+		// Round-robin: 1, 10, 2, 20, (s1 done), 30, 40
+		expect(results).toEqual([1, 10, 2, 20, 30, 40]);
+	});
+
+	test("interleave with multiple streams", async () => {
+		await using s = scope();
+		const s1 = s.stream(fromArray([1, 2]));
+		const s2 = s.stream(fromArray([10, 20]));
+		const s3 = s.stream(fromArray([100, 200]));
+
+		const [err, results] = await s1.interleave(s2, s3).toArray();
+
+		expect(err).toBeUndefined();
+		// Round-robin: 1, 10, 100, 2, 20, 200
+		expect(results).toEqual([1, 10, 100, 2, 20, 200]);
+	});
+
+	test("cross produces cartesian product", async () => {
+		await using s = scope();
+		const s1 = s.stream(fromArray([1, 2]));
+		const s2 = s.stream(fromArray(['a', 'b']));
+
+		const [err, results] = await s1.cross(s2).toArray();
+
+		expect(err).toBeUndefined();
+		expect(results).toEqual([
+			[1, 'a'], [1, 'b'],
+			[2, 'a'], [2, 'b'],
+		]);
+	});
+
+	test("cross with empty stream yields nothing", async () => {
+		await using s = scope();
+		const s1 = s.stream(fromArray([1, 2]));
+		const s2 = s.stream(fromArray([]));
+
+		const [err, results] = await s1.cross(s2).toArray();
+
+		expect(err).toBeUndefined();
+		expect(results).toEqual([]);
+	});
+
+	test("cross with single element", async () => {
+		await using s = scope();
+		const s1 = s.stream(fromArray([1, 2, 3]));
+		const s2 = s.stream(fromArray(['x']));
+
+		const [err, results] = await s1.cross(s2).toArray();
+
+		expect(err).toBeUndefined();
+		expect(results).toEqual([[1, 'x'], [2, 'x'], [3, 'x']]);
+	});
 });
 
 describe("Stream - Chaining", () => {

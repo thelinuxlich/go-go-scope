@@ -152,7 +152,7 @@ const uniqueById = s.stream(updates)
 Merge and combine multiple streams:
 
 ```typescript
-// Merge two streams (interleave values)
+// Merge two streams (interleave values as they arrive)
 const combined = s.stream(source1)
   .merge(s.stream(source2))
 
@@ -168,6 +168,22 @@ const withHeader = s.stream(data)
 // Zip two streams together (pair values)
 const paired = s.stream(users)
   .zip(s.stream(orders))  // [user, order] pairs
+
+// Zip with latest value from either stream
+const latest = s.stream(temperature)
+  .zipLatest(s.stream(humidity))  // emits when either updates
+
+// Zip with defaults for unequal lengths
+const padded = s.stream(short)
+  .zipAll(s.stream(long), 'default-for-short', 'default-for-long')
+
+// Fair interleave (round-robin)
+const interleaved = s.stream(a)
+  .interleave(s.stream(b), s.stream(c))  // a1, b1, c1, a2, b2, c2...
+
+// Cartesian product
+const combinations = s.stream(colors)
+  .cross(s.stream(sizes))  // [red, S], [red, M], [blue, S], [blue, M]...
 
 // Intersperse separator
 const csv = s.stream(values)
@@ -223,6 +239,27 @@ const batched = s.stream(events)
 // Buffer with time OR count
 const flexible = s.stream(events)
   .bufferTimeOrCount(1000, 100)  // every second OR 100 items
+```
+
+### Grouping
+
+Group elements by size, time, or key:
+
+```typescript
+// Group by size or time window
+const batched = s.stream(events)
+  .groupedWithin(100, 1000)  // 100 items OR 1 second
+
+// Group by key into substreams
+const { groups, done } = s.stream(users)
+  .groupByKey(user => user.department)
+
+// Consume each group's stream
+const [err, engineering] = await groups.get('Engineering').toArray()
+const [err2, sales] = await groups.get('Sales').toArray()
+
+// Wait for distribution to complete
+await done
 ```
 
 ### Advanced Error Handling

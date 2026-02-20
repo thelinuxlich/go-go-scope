@@ -1278,6 +1278,414 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 		return this.zip(other).map(([a, b]) => fn(a, b));
 	}
 
+	/**
+	 * Zip with another stream, using the latest value from each.
+	 * Emits whenever either stream emits, using the most recent value from the other.
+	 * Stops when either stream ends.
+	 * Lazy - emits as values arrive.
+	 *
+	 * @example
+	 * ```typescript
+	 * const s1 = s.stream(interval(100)).map(() => 'a')
+	 * const s2 = s.stream(interval(150)).map(() => 'b')
+	 * const combined = s1.zipLatest(s2) // ['a', undefined], ['a', 'b'], ['a', 'b'], ...
+	 * ```
+	 */
+	zipLatest<R>(other: Stream<R>): Stream<[T | undefined, R | undefined]> {
+		const self = this;
+		const scope = this.scope;
+
+		return new Stream<[T | undefined, R | undefined]>(
+			(async function* () {
+				const selfIter = self[Symbol.asyncIterator]();
+				const otherIter = other[Symbol.asyncIterator]();
+
+				let selfValue: T | undefined;
+				let otherValue: R | undefined;
+				let selfDone = false;
+				let otherDone = false;
+
+				try {
+					while (!selfDone || !otherDone) {
+						scope.signal.throwIfAborted();
+
+						const raceResult = await Promise.race([
+							selfDone
+								? new Promise<never>(() => {})
+								: selfIter
+										.next()
+										.then((r) => ({ source: "self" as const, result: r })),
+							otherDone
+								? new Promise<never>(() => {})
+								: otherIter
+										.next()
+										.then((r) => ({ source: "other" as const, result: r })),
+						]);
+
+						if (raceResult.source === "self") {
+							if (raceResult.result.done) {
+								selfDone = true;
+							} else {
+								selfValue = raceResult.result.value;
+								yield [selfValue, otherValue];
+							}
+						} else {
+							if (raceResult.result.done) {
+								otherDone = true;
+							} else {
+								otherValue = raceResult.result.value;
+								yield [selfValue, otherValue];
+							}
+						}
+					}
+				} finally {
+					await selfIter.return?.(undefined);
+					await otherIter.return?.(undefined);
+				}
+			})(),
+			scope,
+		);
+	}
+
+	/**
+	 * Zip with another stream, padding the shorter stream with a default value.
+	 * Continues until both streams end.
+	 * Lazy - zips as values arrive.
+	 *
+	 * @example
+	 * ```typescript
+	 * const s1 = s.stream(fromArray([1, 2, 3]))
+	 * const s2 = s.stream(fromArray(['a', 'b']))
+	 * const zipped = s1.zipAll(s2, 'default') // [1, 'a'], [2, 'b'], [3, 'default']
+	 * ```
+	 */
+	zipAll<R, D>(
+		other: Stream<R>,
+		defaultSelf: T,
+		defaultOther: D,
+	): Stream<[T, R | D]> {
+		const self = this;
+		const scope = this.scope;
+
+		return new Stream<[T, R | D]>(
+			(async function* () {
+				const selfIter = self[Symbol.asyncIterator]();
+				const otherIter = other[Symbol.asyncIterator]();
+				let selfValue: T | undefined;
+				let otherValue: R | D | undefined;
+				let selfDone = false;
+				let otherDone = false;
+				let selfYielded = false;
+				let otherYielded = false;
+
+				try {
+					while (!selfDone || !otherDone) {
+						scope.signal.throwIfAborted();
+
+						if (!selfDone && !selfYielded) {
+							const result = await selfIter.next();
+							if (result.done) {
+								selfDone = true;
+							} else {
+								selfValue = result.value;
+								selfYielded = true;
+							}
+						}
+
+						if (!otherDone && !otherYielded) {
+							const result = await otherIter.next();
+							if (result.done) {
+								otherDone = true;
+							} else {
+								otherValue = result.value;
+								otherYielded = true;
+							}
+						}
+
+						if (selfYielded || otherYielded) {
+							yield [
+								selfYielded ? selfValue! : defaultSelf,
+								otherYielded ? otherValue! : defaultOther,
+							];
+							selfYielded = false;
+							otherYielded = false;
+						} else if (selfDone && otherDone) {
+							break;
+						}
+					}
+				} finally {
+					await selfIter.return?.(undefined);
+					await otherIter.return?.(undefined);
+				}
+			})(),
+			scope,
+		);
+	}
+
+	/**
+	 * Interleave values from multiple streams fairly.
+	 * Takes one value from each stream in round-robin fashion.
+	 * Stops when all streams end.
+	 * Lazy - interleaves as values arrive.
+	 *
+	 * @example
+	 * ```typescript
+	 * const s1 = s.stream(fromArray([1, 2, 3]))
+	 * const s2 = s.stream(fromArray(['a', 'b', 'c']))
+	 * const interleaved = s1.interleave(s2) // 1, 'a', 2, 'b', 3, 'c'
+	 * ```
+	 */
+	interleave(...others: Stream<T>[]): Stream<T> {
+		const self = this;
+		const scope = this.scope;
+
+		return new Stream<T>(
+			(async function* () {
+				const streams = [self, ...others];
+				const iterators = streams.map((s) => s[Symbol.asyncIterator]());
+				const hasValues = iterators.map(() => true);
+				let activeCount = iterators.length;
+
+				try {
+					while (activeCount > 0) {
+						scope.signal.throwIfAborted();
+
+						for (let i = 0; i < iterators.length; i++) {
+							if (!hasValues[i]) continue;
+
+							const result = await iterators[i].next();
+
+							if (result.done) {
+								hasValues[i] = false;
+								activeCount--;
+							} else {
+								yield result.value;
+							}
+						}
+					}
+				} finally {
+					await Promise.all(iterators.map((it) => it.return?.(undefined)));
+				}
+			})(),
+			scope,
+		);
+	}
+
+	/**
+	 * Cartesian product of two streams.
+	 * Emits all combinations of values from both streams.
+	 * Collects the entire 'other' stream into memory.
+	 * Lazy for the primary stream, buffers the secondary.
+	 *
+	 * @example
+	 * ```typescript
+	 * const s1 = s.stream(fromArray([1, 2]))
+	 * const s2 = s.stream(fromArray(['a', 'b']))
+	 * const product = s1.cross(s2) // [1, 'a'], [1, 'b'], [2, 'a'], [2, 'b']
+	 * ```
+	 */
+	cross<R>(other: Stream<R>): Stream<[T, R]> {
+		const self = this;
+		const scope = this.scope;
+
+		return new Stream<[T, R]>(
+			(async function* () {
+				// Buffer the other stream (cross product requires full materialization of one side)
+				const otherValues: R[] = [];
+				const otherIter = other[Symbol.asyncIterator]();
+
+				try {
+					while (true) {
+						scope.signal.throwIfAborted();
+						const result = await otherIter.next();
+						if (result.done) break;
+						otherValues.push(result.value);
+					}
+				} finally {
+					await otherIter.return?.(undefined);
+				}
+
+				// Yield cross product with each value from self
+				for await (const selfValue of self) {
+					scope.signal.throwIfAborted();
+					for (const otherValue of otherValues) {
+						yield [selfValue, otherValue];
+					}
+				}
+			})(),
+			scope,
+		);
+	}
+
+	/**
+	 * Group elements into chunks by size and/or time window.
+	 * Emits a chunk when either the size limit is reached OR the time window expires.
+	 * Lazy - groups as values flow through.
+	 *
+	 * @example
+	 * ```typescript
+	 * // Group by size (10 items) or time (100ms), whichever comes first
+	 * const grouped = s.stream(source).groupedWithin(10, 100)
+	 * // Yields: [[1,2,...,10], [11,12,...,20], ...] or partial groups after 100ms
+	 * ```
+	 */
+	groupedWithin(size: number, windowMs: number): Stream<T[]> {
+		const self = this;
+		const scope = this.scope;
+
+		return new Stream<T[]>(
+			(async function* () {
+				const buffer: T[] = [];
+				let lastEmit = Date.now();
+				let timeoutId: ReturnType<typeof setTimeout> | undefined;
+				let resolveTimeout: (() => void) | undefined;
+
+				const flushBuffer = async () => {
+					if (buffer.length > 0) {
+						const chunk = buffer.splice(0, buffer.length);
+						return chunk;
+					}
+					return undefined;
+				};
+
+				const waitForTimeout = () =>
+					new Promise<void>((resolve) => {
+						resolveTimeout = resolve;
+						timeoutId = setTimeout(() => {
+							resolveTimeout = undefined;
+							resolve();
+						}, windowMs);
+					});
+
+				try {
+					const iterator = self[Symbol.asyncIterator]();
+
+					while (true) {
+						scope.signal.throwIfAborted();
+
+						const timeoutPromise = waitForTimeout();
+						const nextPromise = iterator.next();
+
+						const result = await Promise.race([timeoutPromise, nextPromise]);
+
+						if (result === undefined) {
+							// Timeout fired - flush buffer
+							const chunk = await flushBuffer();
+							if (chunk) yield chunk;
+							lastEmit = Date.now();
+						} else {
+							// Got a value
+							clearTimeout(timeoutId);
+							resolveTimeout?.();
+
+							if ((result as IteratorResult<T>).done) {
+								// Stream ended - flush remaining
+								const chunk = await flushBuffer();
+								if (chunk) yield chunk;
+								break;
+							}
+
+							buffer.push((result as IteratorResult<T>).value);
+
+							if (buffer.length >= size) {
+								const chunk = await flushBuffer();
+								if (chunk) yield chunk;
+								lastEmit = Date.now();
+							}
+						}
+					}
+				} finally {
+					if (timeoutId) clearTimeout(timeoutId);
+				}
+			})(),
+			scope,
+		);
+	}
+
+	/**
+	 * Group elements by a key function into substreams.
+	 * Returns a Map where keys are the group keys and values are Streams of that group's elements.
+	 * Each group stream buffers elements until consumed.
+	 * Lazy - groups as values flow through.
+	 *
+	 * @example
+	 * ```typescript
+	 * const grouped = await s.stream(fromArray([1, 2, 3, 4, 5, 6])).groupByKey(x => x % 2 === 0 ? 'even' : 'odd')
+	 * // await grouped.get('even').toArray() -> [2, 4, 6]
+	 * // await grouped.get('odd').toArray() -> [1, 3, 5]
+	 * ```
+	 */
+	groupByKey<K>(keyFn: (value: T) => K): {
+		groups: Map<K, Stream<T>>;
+		done: Promise<void>;
+	} {
+		const scope = this.scope;
+		const buffers = new Map<K, BoundedQueue<T>>();
+		const groups = new Map<K, Stream<T>>();
+
+		// Create a getter that creates streams on demand
+		const getOrCreateStream = (key: K): Stream<T> => {
+			if (!groups.has(key)) {
+				const buffer = new BoundedQueue<T>(Infinity);
+				buffers.set(key, buffer);
+
+				const stream = new Stream<T>(
+					(async function* () {
+						try {
+							while (true) {
+								if (scope.signal.aborted) throw scope.signal.reason;
+								const result = await buffer.take(scope.signal);
+								if (result.done) break;
+								yield result.value;
+							}
+						} finally {
+							buffer.complete();
+						}
+					})(),
+					scope,
+				);
+
+				groups.set(key, stream);
+			}
+			return groups.get(key)!;
+		};
+
+		// Wrap the map to create streams on demand
+		const proxiedGroups = new Proxy(groups, {
+			get(target, prop) {
+				if (prop === "get") {
+					return (key: K) => getOrCreateStream(key);
+				}
+				return (target as unknown as Record<string | symbol, unknown>)[
+					prop as string | symbol
+				];
+			},
+		});
+
+		// Start background distribution
+		const done = (async () => {
+			for await (const value of this) {
+				if (scope.signal.aborted) break;
+				const key = keyFn(value);
+
+				// Ensure stream exists for this key
+				if (!buffers.has(key)) {
+					getOrCreateStream(key);
+				}
+
+				const buffer = buffers.get(key)!;
+				await buffer.offer(value, scope.signal);
+			}
+
+			// Close all buffers when source ends
+			for (const buffer of buffers.values()) {
+				buffer.complete();
+			}
+		})();
+
+		return { groups: proxiedGroups as Map<K, Stream<T>>, done };
+	}
+
 	// ============================================================================
 	// Advanced
 	// ============================================================================

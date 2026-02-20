@@ -468,8 +468,16 @@ if (err) {
 ## Future Enhancements
 
 Potential additions for future versions:
-- `mapAsync(fn, { concurrency })` - Concurrent async mapping
-- `throttle(ms)` / `debounce(ms)` - Rate limiting
-- `slidingWindow(size)` - Sliding window
-- `share()` - Hot observable sharing
-- `catchError(fn)` - Error recovery
+- `mapAsync(fn, { concurrency })` - Concurrent async mapping with controlled concurrency
+- `slidingWindow(size)` / `sliding(size)` - Sliding window of recent elements
+- `share()` - Hot observable sharing (multicast to late subscribers)
+
+**Already implemented** (removed from future list):
+- ✅ `throttle(ms)` / `debounce(ms)` - Rate limiting
+- ✅ `catchError(fn)` / `catchAll(fn)` - Error recovery
+- ✅ `groupedWithin(size, duration)` - Group by size and/or time window
+- ✅ `groupByKey(fn)` - Key-based grouping with substreams
+- ✅ `zipLatest(stream)` - Combine latest values from two streams
+- ✅ `zipAll(stream, defaultA, defaultB)` - Zip with defaults for unequal lengths
+- ✅ `interleave(...streams)` - Fair interleaving of multiple streams
+- ✅ `cross(stream)` - Cartesian product of two streams
