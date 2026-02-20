@@ -451,6 +451,229 @@ async function benchDebugTree(): Promise<BenchmarkResult[]> {
     })
   );
 
+  // Mermaid format generation
+  results.push(
+    await runBenchmark("debugTree({ format: 'mermaid' })", async () => {
+      await using s = scope({ name: "parent" });
+
+      for (let i = 0; i < 10; i++) {
+        s.task(() => Promise.resolve(i));
+      }
+
+      s.debugTree({ format: "mermaid" });
+    })
+  );
+
+  return results;
+}
+
+async function benchExternalComparisons(): Promise<BenchmarkResult[]> {
+  console.log("\n📊 External Library Comparisons\n");
+
+  const results: BenchmarkResult[] = [];
+  const items = Array.from({ length: 50 }, (_, i) => i);
+
+  // Simulated p-queue pattern with scope concurrency
+  results.push(
+    await runBenchmark("scope concurrency (limit: 5)", async () => {
+      await using s = scope({ concurrency: 5 });
+      
+      await Promise.all(
+        items.map(async (i) => {
+          const [err, result] = await s.task(async () => {
+            return Promise.resolve(i * 2);
+          });
+          if (err) throw err;
+          return result;
+        })
+      );
+    })
+  );
+
+  // go-go-scope parallel equivalent
+  results.push(
+    await runBenchmark("go-go-scope parallel (concurrency: 5)", async () => {
+      await using s = scope();
+      await s.parallel(
+        items.map((item) => () => Promise.resolve(item * 2)),
+        { concurrency: 5 }
+      );
+    })
+  );
+
+  // Simulated RxJS pattern with channels
+  results.push(
+    await runBenchmark("RxJS-like pattern with channels", async () => {
+      await using s = scope();
+      const input = s.channel<number>(50);
+      const output = s.channel<number>(50);
+
+      // Producer
+      s.task(async () => {
+        for (const item of items) {
+          await input.send(item);
+        }
+        input.close();
+      });
+
+      // Transform pipeline (map + filter)
+      s.task(async () => {
+        const mapped = input.map((x) => x * 2).filter((x) => x > 20);
+        for await (const val of mapped) {
+          await output.send(val);
+        }
+        output.close();
+      });
+
+      // Consumer
+      const results: number[] = [];
+      for await (const val of output) {
+        results.push(val);
+      }
+    })
+  );
+
+  // Promise chain pattern
+  results.push(
+    await runBenchmark("Promise chain pattern", async () => {
+      const results: number[] = [];
+      for (const item of items) {
+        const result = await Promise.resolve(item)
+          .then((x) => x * 2)
+          .then((x) => (x > 20 ? x : null));
+        if (result !== null) {
+          results.push(result);
+        }
+      }
+    })
+  );
+
+  return results;
+}
+
+async function benchHistogramMetrics(): Promise<BenchmarkResult[]> {
+  console.log("\n📊 Histogram Metrics Benchmarks\n");
+
+  const results: BenchmarkResult[] = [];
+
+  // Histogram recording
+  results.push(
+    await runBenchmark("Histogram record (100 values)", async () => {
+      await using s = scope({ metrics: true });
+      const histogram = s.histogram("response_time")!;
+
+      for (let i = 0; i < 100; i++) {
+        histogram.record(Math.random() * 1000);
+      }
+    })
+  );
+
+  // Histogram snapshot
+  results.push(
+    await runBenchmark("Histogram snapshot (1000 values)", async () => {
+      await using s = scope({ metrics: true });
+      const histogram = s.histogram("response_time")!;
+
+      for (let i = 0; i < 1000; i++) {
+        histogram.record(Math.random() * 1000);
+      }
+
+      histogram.snapshot();
+    })
+  );
+
+  // Metrics with histograms
+  results.push(
+    await runBenchmark("scope.metrics() with histograms", async () => {
+      await using s = scope({ metrics: true });
+      const histogram = s.histogram("response_time")!;
+
+      for (let i = 0; i < 100; i++) {
+        histogram.record(Math.random() * 1000);
+      }
+
+      s.metrics();
+    })
+  );
+
+  return results;
+}
+
+async function benchRetryStrategies(): Promise<BenchmarkResult[]> {
+  console.log("\n📊 Retry Strategy Shorthand Benchmarks\n");
+
+  const results: BenchmarkResult[] = [];
+  let attemptCount = 0;
+
+  // Shorthand exponential
+  results.push(
+    await runBenchmark("Retry 'exponential' shorthand", async () => {
+      attemptCount = 0;
+      await using s = scope();
+      await s.task(
+        () => {
+          attemptCount++;
+          if (attemptCount < 3) throw new Error("fail");
+          return Promise.resolve("success");
+        },
+        { retry: "exponential" }
+      );
+    })
+  );
+
+  // Shorthand linear
+  results.push(
+    await runBenchmark("Retry 'linear' shorthand", async () => {
+      attemptCount = 0;
+      await using s = scope();
+      await s.task(
+        () => {
+          attemptCount++;
+          if (attemptCount < 3) throw new Error("fail");
+          return Promise.resolve("success");
+        },
+        { retry: "linear" }
+      );
+    })
+  );
+
+  // Shorthand fixed
+  results.push(
+    await runBenchmark("Retry 'fixed' shorthand", async () => {
+      attemptCount = 0;
+      await using s = scope();
+      await s.task(
+        () => {
+          attemptCount++;
+          if (attemptCount < 3) throw new Error("fail");
+          return Promise.resolve("success");
+        },
+        { retry: "fixed" }
+      );
+    })
+  );
+
+  // Full options (for comparison)
+  results.push(
+    await runBenchmark("Retry with full options", async () => {
+      attemptCount = 0;
+      await using s = scope();
+      await s.task(
+        () => {
+          attemptCount++;
+          if (attemptCount < 3) throw new Error("fail");
+          return Promise.resolve("success");
+        },
+        {
+          retry: {
+            maxRetries: 3,
+            delay: exponentialBackoff({ initial: 100, max: 1000 }),
+          },
+        }
+      );
+    })
+  );
+
   return results;
 }
 
@@ -486,6 +709,9 @@ async function main() {
   allResults.push(...(await benchRetry()));
   allResults.push(...(await benchChannelHelpers()));
   allResults.push(...(await benchDebugTree()));
+  allResults.push(...(await benchExternalComparisons()));
+  allResults.push(...(await benchHistogramMetrics()));
+  allResults.push(...(await benchRetryStrategies()));
 
   console.log("\n\n📈 Overall Results\n");
   printResults(allResults);

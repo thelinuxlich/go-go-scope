@@ -122,7 +122,7 @@ function exportAsPrometheus(
 		);
 	}
 
-	return lines.join("\n") + "\n";
+	return `${lines.join("\n")}\n`;
 }
 
 function exportAsOtel(metrics: ScopeMetrics, prefix = "go-go-scope"): string {

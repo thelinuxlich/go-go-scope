@@ -98,7 +98,7 @@ export async function race<T>(
 
 	const s = new Scope({ signal: options?.signal, tracer: options?.tracer });
 	let settledCount = 0;
-	let successCount = 0;
+	let _successCount = 0;
 	let winnerIndex = -1;
 	const errors: { index: number; error: unknown }[] = [];
 
@@ -156,7 +156,7 @@ export async function race<T>(
 			}
 
 			// Success case
-			successCount++;
+			_successCount++;
 			if (winnerIndex === -1) {
 				winnerIndex = idx;
 				if (debugEnabled) {

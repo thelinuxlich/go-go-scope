@@ -1245,7 +1245,7 @@ describe("systemErrorClass option", () => {
 		expect(err).toBeInstanceOf(SystemError);
 	});
 
-	test("errorClass takes precedence over systemErrorClass", async () => {
+	test("errorClass takes precedence over systemErrorClass at runtime", async () => {
 		await using s = scope();
 
 		class AllError extends Error {
@@ -1270,7 +1270,9 @@ describe("systemErrorClass option", () => {
 			}
 		}
 
-		// When both are set, errorClass wraps everything
+		// When both are set (type error, but testing runtime behavior),
+		// errorClass takes precedence and wraps everything
+		// @ts-expect-error - errorClass and systemErrorClass are mutually exclusive
 		const [err] = await s.task(
 			() => Promise.reject(new BusinessError("business issue")),
 			{ errorClass: AllError, systemErrorClass: SystemError },

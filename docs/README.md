@@ -30,7 +30,7 @@ Complete guide to structured concurrency in TypeScript.
 |-----|-------------------|
 | [📊 Observability](./06-observability.md) | Metrics, logging, profiling, tracing |
 | [🧪 Testing](./08-testing.md) | Mock scopes, spies, time travel testing |
-| [🔌 Integrations](./11-integrations.md) | OpenTelemetry, Prometheus, Grafana, Persistence |
+| [🔌 Integrations](./11-integrations.md) | OpenTelemetry, Prometheus, Grafana, Persistence, Framework Adapters |
 
 ### Comparisons & Migration
 | Doc | What You'll Learn |
@@ -52,6 +52,13 @@ Complete guide to structured concurrency in TypeScript.
 - ✅ **Timeout Handling** - Built-in timeout with automatic cleanup
 - ✅ **Distributed Locks** - Cross-process locking with automatic TTL expiration
 
+### Framework Adapters
+- ✅ **Fastify** - Request-scoped concurrency with plugin
+- ✅ **Express** - Middleware-based scope attachment
+- ✅ **NestJS** - Dependency injection integration
+- ✅ **Hono** - Lightweight edge runtime support
+- ✅ **Elysia** - Bun-first performance optimized
+
 ### Concurrency
 - ✅ **Channels** - Go-style buffered channels with `map`, `filter`, `reduce`
 - ✅ **Batch Processing** - Process arrays with progress tracking
@@ -64,6 +71,7 @@ Complete guide to structured concurrency in TypeScript.
 - ✅ **OpenTelemetry** - Distributed tracing support
 - ✅ **Distributed Locks** - Redis, PostgreSQL, MySQL, SQLite adapters
 - ✅ **Circuit Breaker State** - Shared state across multiple instances
+- ✅ **Framework Adapters** - Fastify, Express, NestJS, Hono, Elysia
 
 ### Testing
 - ✅ **Mock Scopes** - `createMockScope` for isolated testing

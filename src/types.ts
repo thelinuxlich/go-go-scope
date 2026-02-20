@@ -75,9 +75,9 @@ export interface RetryStrategies {
 }
 
 /**
- * Options for spawning a task with tracing.
+ * Base options for spawning a task with tracing (without error class options).
  */
-export interface TaskOptions<E extends Error = Error> {
+interface TaskOptionsBase {
 	/**
 	 * OpenTelemetry tracing options.
 	 */
@@ -93,33 +93,41 @@ export interface TaskOptions<E extends Error = Error> {
 	};
 	/**
 	 * Retry options for automatic retry logic.
+	 * Can be a configuration object or a shorthand string:
+	 * - `'exponential'` - Uses exponential backoff with jitter
+	 * - `'linear'` - Uses linear increasing delay
+	 * - `'fixed'` - Uses fixed delay between retries
 	 */
-	retry?: {
-		/**
-		 * Maximum number of retry attempts. Default: 3
-		 */
-		maxRetries?: number;
-		/**
-		 * Delay between retries in milliseconds.
-		 * Can be a fixed number, a function, or use built-in strategies:
-		 * - `exponentialBackoff({ initial, max, jitter })`
-		 * - `jitter(baseDelay, jitterFactor)`
-		 * - `linear(baseDelay, increment)`
-		 * Default: 0 (no delay)
-		 */
-		delay?: number | RetryDelayFn;
-		/**
-		 * Function to determine if an error should trigger a retry.
-		 * Return true to retry, false to throw immediately.
-		 * Default: retry all errors
-		 */
-		retryCondition?: (error: unknown) => boolean;
-		/**
-		 * Callback invoked when a retry is about to happen.
-		 * Receives the error and the attempt number (1-based).
-		 */
-		onRetry?: (error: unknown, attempt: number) => void;
-	};
+	retry?:
+		| {
+				/**
+				 * Maximum number of retry attempts. Default: 3
+				 */
+				maxRetries?: number;
+				/**
+				 * Delay between retries in milliseconds.
+				 * Can be a fixed number, a function, or use built-in strategies:
+				 * - `exponentialBackoff({ initial, max, jitter })`
+				 * - `jitter(baseDelay, jitterFactor)`
+				 * - `linear(baseDelay, increment)`
+				 * Default: 0 (no delay)
+				 */
+				delay?: number | RetryDelayFn;
+				/**
+				 * Function to determine if an error should trigger a retry.
+				 * Return true to retry, false to throw immediately.
+				 * Default: retry all errors
+				 */
+				retryCondition?: (error: unknown) => boolean;
+				/**
+				 * Callback invoked when a retry is about to happen.
+				 * Receives the error and the attempt number (1-based).
+				 */
+				onRetry?: (error: unknown, attempt: number) => void;
+		  }
+		| "exponential"
+		| "linear"
+		| "fixed";
 	/**
 	 * Timeout in milliseconds for this task.
 	 * If set, the task will be aborted after this duration.
@@ -130,66 +138,6 @@ export interface TaskOptions<E extends Error = Error> {
 	 * Runs alongside the default scope cleanup.
 	 */
 	onCleanup?: () => void | Promise<void>;
-	/**
-	 * Optional error class to wrap errors in for typed error handling.
-	 * When provided, errors will be wrapped in this class, enabling automatic
-	 * union inference when combined with go-go-try's success/failure helpers.
-	 *
-	 * @example
-	 * ```typescript
-	 * import { taggedError, success, failure } from 'go-go-try'
-	 *
-	 * const DatabaseError = taggedError('DatabaseError')
-	 *
-	 * async function fetchUser(id: string) {
-	 *   await using s = scope()
-	 *
-	 *   const [err, user] = await s.task(
-	 *     () => queryDatabase(id),
-	 *     { errorClass: DatabaseError }
-	 *   )
-	 *   if (err) return failure(err)
-	 *
-	 *   return success(user!)
-	 * }
-	 * // TypeScript infers: Result<DatabaseError, User>
-	 * ```
-	 */
-	errorClass?: ErrorConstructor<E>;
-	/**
-	 * Optional error class to wrap system/infrastructure errors only.
-	 * Unlike `errorClass`, this only wraps errors that don't already have
-	 * a `_tag` property (which indicates a business error from `taggedError`).
-	 *
-	 * Use this when your task may throw both business errors (with `_tag`)
-	 * and system errors (connection failures, timeouts), and you want to
-	 * distinguish between them.
-	 *
-	 * @example
-	 * ```typescript
-	 * import { taggedError, success, failure } from 'go-go-try'
-	 *
-	 * const DatabaseError = taggedError('DatabaseError')
-	 * const NotFoundError = taggedError('NotFoundError')  // Has _tag property
-	 *
-	 * async function getUser(id: string) {
-	 *   await using s = scope()
-	 *
-	 *   const [err, user] = await s.task(async () => {
-	 *     const record = await db.query('SELECT * FROM users WHERE id = ?', [id])
-	 *     if (!record) throw new NotFoundError('User not found')  // Preserved!
-	 *     return record
-	 *   }, {
-	 *     systemErrorClass: DatabaseError  // Only wraps connection errors, etc.
-	 *   })
-	 *
-	 *   if (err instanceof NotFoundError) return { status: 404 }  // Business error
-	 *   if (err) return { status: 500 }  // System error wrapped in DatabaseError
-	 *   return success(user!)
-	 * }
-	 * ```
-	 */
-	systemErrorClass?: ErrorConstructor<E>;
 	/**
 	 * Optional deduplication key. When multiple tasks are spawned with the same
 	 * dedupe key while one is still in-flight, they will share the same result.
@@ -238,6 +186,103 @@ export interface TaskOptions<E extends Error = Error> {
 		ttl: number;
 	};
 }
+
+/**
+ * Options with errorClass specified - wraps ALL errors in the provided class.
+ */
+interface TaskOptionsWithErrorClass<E extends Error = Error>
+	extends TaskOptionsBase {
+	/**
+	 * Optional error class to wrap errors in for typed error handling.
+	 * When provided, errors will be wrapped in this class, enabling automatic
+	 * union inference when combined with go-go-try's success/failure helpers.
+	 *
+	 * @example
+	 * ```typescript
+	 * import { taggedError, success, failure } from 'go-go-try'
+	 *
+	 * const DatabaseError = taggedError('DatabaseError')
+	 *
+	 * async function fetchUser(id: string) {
+	 *   await using s = scope()
+	 *
+	 *   const [err, user] = await s.task(
+	 *     () => queryDatabase(id),
+	 *     { errorClass: DatabaseError }
+	 *   )
+	 *   if (err) return failure(err)
+	 *
+	 *   return success(user!)
+	 * }
+	 * // TypeScript infers: Result<DatabaseError, User>
+	 * ```
+	 */
+	errorClass: ErrorConstructor<E>;
+	/**
+	 * systemErrorClass cannot be used together with errorClass.
+	 * Use errorClass to wrap all errors, or use systemErrorClass alone
+	 * to preserve tagged errors while wrapping only system errors.
+	 */
+	systemErrorClass?: never;
+}
+
+/**
+ * Options with systemErrorClass specified - only wraps untagged errors.
+ */
+interface TaskOptionsWithSystemErrorClass<E extends Error = Error>
+	extends TaskOptionsBase {
+	/**
+	 * errorClass cannot be used together with systemErrorClass.
+	 * Use errorClass to wrap all errors, or use systemErrorClass alone
+	 * to preserve tagged errors while wrapping only system errors.
+	 */
+	errorClass?: never;
+	/**
+	 * Optional error class to wrap system/infrastructure errors only.
+	 * Unlike `errorClass`, this only wraps errors that don't already have
+	 * a `_tag` property (which indicates a business error from `taggedError`).
+	 *
+	 * Use this when your task may throw both business errors (with `_tag`)
+	 * and system errors (connection failures, timeouts), and you want to
+	 * distinguish between them.
+	 *
+	 * @example
+	 * ```typescript
+	 * import { taggedError, success, failure } from 'go-go-try'
+	 *
+	 * const DatabaseError = taggedError('DatabaseError')
+	 * const NotFoundError = taggedError('NotFoundError')  // Has _tag property
+	 *
+	 * async function getUser(id: string) {
+	 *   await using s = scope()
+	 *
+	 *   const [err, user] = await s.task(async () => {
+	 *     const record = await db.query('SELECT * FROM users WHERE id = ?', [id])
+	 *     if (!record) throw new NotFoundError('User not found')  // Preserved!
+	 *     return record
+	 *   }, {
+	 *     systemErrorClass: DatabaseError  // Only wraps connection errors, etc.
+	 *   })
+	 *
+	 *   if (err instanceof NotFoundError) return { status: 404 }  // Business error
+	 *   if (err) return { status: 500 }  // System error wrapped in DatabaseError
+	 *   return success(user!)
+	 * }
+	 * ```
+	 */
+	systemErrorClass: ErrorConstructor<E>;
+}
+
+/**
+ * Options for spawning a task with tracing.
+ * errorClass and systemErrorClass are mutually exclusive - you can only specify one,
+ * not both at the same time. When neither is specified, UnknownError is used as
+ * the default systemErrorClass (preserving tagged errors, wrapping untagged).
+ */
+export type TaskOptions<E extends Error = Error> =
+	| TaskOptionsWithErrorClass<E>
+	| TaskOptionsWithSystemErrorClass<E>
+	| TaskOptionsBase;
 
 /**
  * Span status codes (from OpenTelemetry)
@@ -316,6 +361,44 @@ export interface ScopeMetrics {
 	resourcesDisposed: number;
 	/** Scope duration in milliseconds (only available after disposal) */
 	scopeDuration?: number;
+	/** Histogram metrics recorded during scope lifetime */
+	histograms?: Record<string, HistogramSnapshot>;
+}
+
+/**
+ * Histogram for tracking value distributions with percentile calculations.
+ */
+export interface Histogram {
+	/** Record a value in the histogram */
+	record(value: number): void;
+	/** Get current snapshot with percentile calculations */
+	snapshot(): HistogramSnapshot;
+}
+
+/**
+ * Snapshot of histogram data with percentile calculations.
+ */
+export interface HistogramSnapshot {
+	/** Name of the histogram */
+	name: string;
+	/** Total number of values recorded */
+	count: number;
+	/** Sum of all values */
+	sum: number;
+	/** Minimum value recorded */
+	min: number;
+	/** Maximum value recorded */
+	max: number;
+	/** Average value */
+	avg: number;
+	/** 50th percentile (median) */
+	p50: number;
+	/** 90th percentile */
+	p90: number;
+	/** 95th percentile */
+	p95: number;
+	/** 99th percentile */
+	p99: number;
 }
 
 /**
@@ -496,12 +579,26 @@ export type FactoryResult<T> = T extends (
 
 /**
  * Converts a tuple of factory functions to a tuple of Result types
- * This preserves the individual types of each factory's return value
+ * This preserves the individual types of each factory's return value.
+ *
+ * @param T - Tuple of factory function types
+ * @param E - Error type (defaults to unknown, can be specified for typed errors)
+ *
+ * @example
+ * ```typescript
+ * // With typed errors
+ * const results = await s.parallel([
+ *   () => fetchUser(),
+ *   () => fetchOrders()
+ * ], { errorClass: DatabaseError })
+ * // results is [Result<DatabaseError, User>, Result<DatabaseError, Order[]>]
+ * ```
  */
 export type ParallelResults<
 	T extends readonly ((signal: AbortSignal) => Promise<unknown>)[],
+	E = unknown,
 > = {
-	[K in keyof T]: Result<unknown, FactoryResult<T[K]>>;
+	[K in keyof T]: Result<E, FactoryResult<T[K]>>;
 };
 
 /**

@@ -7,7 +7,6 @@
 
 // Re-export classes
 export { BroadcastChannel } from "./broadcast-channel.js";
-export { UnknownError } from "./errors.js";
 // Re-export cancellation utilities
 export {
 	abortPromise,
@@ -19,6 +18,7 @@ export {
 export { Channel } from "./channel.js";
 export { CircuitBreaker } from "./circuit-breaker.js";
 export { DeadlockDetector } from "./deadlock-detector.js";
+export { AbortError, UnknownError } from "./errors.js";
 // Re-export standalone functions
 export { scope } from "./factory.js";
 // Re-export logger
@@ -55,7 +55,7 @@ export type {
 } from "./scope.js";
 // Re-export scope-related
 export { AsyncDisposableResource, Scope } from "./scope.js";
-export { Semaphore } from "./semaphore.js";
+// Semaphore is used internally for concurrency limiting, not exported as public API
 export { stream } from "./stream.js";
 export { Task } from "./task.js";
 // Re-export types
@@ -67,6 +67,8 @@ export type {
 	DebounceOptions,
 	FactoryResult,
 	Failure,
+	Histogram,
+	HistogramSnapshot,
 	Logger,
 	MetricsExportOptions,
 	ParallelResults,

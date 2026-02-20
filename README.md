@@ -79,7 +79,7 @@ npm install go-go-scope
 | [🧪 Testing](./docs/08-testing.md) | Mock scopes, spies, and timers |
 | [🔧 Advanced](./docs/09-advanced-patterns.md) | Resource pools, parent-child scopes |
 | [⚖️ Comparisons](./docs/10-comparisons.md) | vs Vanilla JS, vs Effect |
-| [🔌 Integrations](./docs/11-integrations.md) | OpenTelemetry, Prometheus, Grafana |
+| [🔌 Integrations](./docs/11-integrations.md) | OpenTelemetry, Prometheus, Grafana, Framework Adapters |
 | [🚦 Cancellation](./docs/12-cancellation.md) | Cancellation utilities and helpers |
 | [🍳 Recipes](./docs/13-recipes.md) | Common patterns and solutions |
 | [🚀 Migration Guides](./docs/14-migration-guides.md) | From Promises, p-queue, Effect, RxJS |
@@ -112,6 +112,7 @@ npm install go-go-scope
 - ✅ **OpenTelemetry** - Distributed tracing support
 - ✅ **Test Utilities** - Mock scopes, spies, timers, time travel
 - ✅ **Type-Safe DI** - Dependency injection with `provide`/`use`
+- ✅ **Framework Adapters** - Fastify, Express, NestJS, Hono, Elysia
 - ✅ **Bun Compatible** - Full support for Bun runtime
 
 ## Typed Error Handling

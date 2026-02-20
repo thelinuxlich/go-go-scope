@@ -9,15 +9,18 @@ import { BroadcastChannel } from "./broadcast-channel.js";
 import { Channel } from "./channel.js";
 import { CircuitBreaker } from "./circuit-breaker.js";
 import { DeadlockDetector } from "./deadlock-detector.js";
-import { UnknownError } from "./errors.js";
+import { AbortError, UnknownError } from "./errors.js";
 import { createLogger } from "./logger.js";
 import { Profiler } from "./profiler.js";
 import { ResourcePool } from "./resource-pool.js";
+import { exponentialBackoff, linear } from "./retry-strategies.js";
 import { Semaphore } from "./semaphore.js";
 import { Task } from "./task.js";
 import type {
 	CircuitBreakerOptions,
 	Failure,
+	Histogram,
+	HistogramSnapshot,
 	Logger,
 	ParallelResults,
 	PersistenceProviders,
@@ -25,6 +28,7 @@ import type {
 	PollOptions,
 	ResourcePoolOptions,
 	Result,
+	RetryDelayFn,
 	ScopeHooks,
 	ScopeMetrics,
 	SelectOptions,
@@ -38,6 +42,64 @@ const debugScope = createDebug("go-go-scope:scope");
 const debugTask = createDebug("go-go-scope:task");
 
 let scopeIdCounter = 0;
+
+/**
+ * Internal histogram implementation for tracking value distributions.
+ */
+class HistogramImpl implements Histogram {
+	private values: number[] = [];
+	private sum = 0;
+	private min = Infinity;
+	private max = -Infinity;
+
+	constructor(private readonly name: string) {}
+
+	record(value: number): void {
+		this.values.push(value);
+		this.sum += value;
+		this.min = Math.min(this.min, value);
+		this.max = Math.max(this.max, value);
+	}
+
+	snapshot(): HistogramSnapshot {
+		const count = this.values.length;
+		if (count === 0) {
+			return {
+				name: this.name,
+				count: 0,
+				sum: 0,
+				min: 0,
+				max: 0,
+				avg: 0,
+				p50: 0,
+				p90: 0,
+				p95: 0,
+				p99: 0,
+			};
+		}
+
+		const sorted = [...this.values].sort((a, b) => a - b);
+		const avg = this.sum / count;
+
+		return {
+			name: this.name,
+			count,
+			sum: this.sum,
+			min: this.min,
+			max: this.max,
+			avg,
+			p50: this.percentile(sorted, 0.5),
+			p90: this.percentile(sorted, 0.9),
+			p95: this.percentile(sorted, 0.95),
+			p99: this.percentile(sorted, 0.99),
+		};
+	}
+
+	private percentile(sorted: number[], p: number): number {
+		const index = Math.floor(sorted.length * p);
+		return sorted[index] ?? sorted[sorted.length - 1] ?? 0;
+	}
+}
 
 /**
  * An async disposable resource wrapper.
@@ -222,6 +284,7 @@ export class Scope<
 		resourcesDisposed: number;
 		scopeEndTime?: number;
 	};
+	private histograms = new Map<string, HistogramImpl>();
 	private readonly logger: Logger;
 	private readonly deadlockDetector?: DeadlockDetector;
 	private readonly profiler: Profiler;
@@ -510,6 +573,12 @@ export class Scope<
 			p95 = sorted[p95Index] ?? sorted[sorted.length - 1] ?? 0;
 		}
 
+		// Build histogram snapshots
+		const histogramSnapshots: Record<string, HistogramSnapshot> = {};
+		for (const [name, histogram] of this.histograms) {
+			histogramSnapshots[name] = histogram.snapshot();
+		}
+
 		return {
 			tasksSpawned: this.metricsData.tasksSpawned,
 			tasksCompleted: this.metricsData.tasksCompleted,
@@ -522,7 +591,41 @@ export class Scope<
 			scopeDuration: this.metricsData.scopeEndTime
 				? this.metricsData.scopeEndTime - this.startTime
 				: undefined,
+			histograms: histogramSnapshots,
 		};
+	}
+
+	/**
+	 * Create or get a histogram for tracking value distributions.
+	 * Only available if metrics were enabled in scope options.
+	 *
+	 * @param name - Unique name for the histogram
+	 * @returns Histogram instance or undefined if metrics not enabled
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope({ metrics: true })
+	 *
+	 * const responseTime = s.histogram('response_time')
+	 * if (responseTime) {
+	 *   responseTime.record(150)
+	 *   responseTime.record(230)
+	 * }
+	 *
+	 * // Later, get snapshot with percentiles
+	 * const snapshot = responseTime?.snapshot()
+	 * console.log(`p95: ${snapshot?.p95}ms`)
+	 * ```
+	 */
+	histogram(name: string): Histogram | undefined {
+		if (!this.enableMetrics) return undefined;
+
+		let histogram = this.histograms.get(name);
+		if (!histogram) {
+			histogram = new HistogramImpl(name);
+			this.histograms.set(name, histogram);
+		}
+		return histogram;
 	}
 
 	/**
@@ -683,7 +786,7 @@ export class Scope<
 						signal.reason,
 					);
 				}
-				throw signal.reason;
+				throw new AbortError(signal.reason);
 			}
 
 			// Helper to call fn with services injection
@@ -764,18 +867,43 @@ export class Scope<
 
 			// 3. Apply retry logic if specified
 			if (hasRetry && options?.retry) {
-				const retryOpts = options.retry;
+				const retryOpts =
+					typeof options.retry === "string"
+						? { strategy: options.retry }
+						: options.retry;
 				const innerFn = executeFn;
 				executeFn = async (sig) => {
-					const maxRetries = retryOpts.maxRetries ?? 3;
-					const delay = retryOpts.delay ?? 0;
-					const retryCondition = retryOpts.retryCondition ?? (() => true);
-					const onRetry = retryOpts.onRetry;
+					const maxRetries =
+						"maxRetries" in retryOpts ? (retryOpts.maxRetries ?? 3) : 3;
+					// Handle strategy shorthand
+					let delay: number | RetryDelayFn =
+						"delay" in retryOpts ? (retryOpts.delay ?? 0) : 0;
+					if ("strategy" in retryOpts && retryOpts.strategy) {
+						switch (retryOpts.strategy) {
+							case "exponential":
+								delay = exponentialBackoff({ initial: 100, max: 30000 });
+								break;
+							case "linear":
+								delay = linear(100, 100);
+								break;
+							case "fixed":
+								delay = 1000;
+								break;
+						}
+					}
+					const retryCondition =
+						"retryCondition" in retryOpts
+							? retryOpts.retryCondition
+							: () => true;
+					const onRetry =
+						"onRetry" in retryOpts ? retryOpts.onRetry : undefined;
 
 					taskSpan?.setAttributes?.({
 						"task.retry.max_retries": maxRetries,
 						"task.retry.has_delay": !!delay,
-						"task.retry.has_condition": !!retryOpts.retryCondition,
+						"task.retry.has_condition": !!(
+							"retryCondition" in retryOpts && retryOpts.retryCondition
+						),
 					});
 					if (hasTaskDebug) {
 						debugTask(
@@ -790,7 +918,7 @@ export class Scope<
 							if (hasTaskDebug) {
 								debugTask("[%s] task aborted during retry", taskName);
 							}
-							throw sig.reason;
+							throw new AbortError(sig.reason);
 						}
 
 						try {
@@ -818,7 +946,7 @@ export class Scope<
 							}
 							return result;
 						} catch (error) {
-							if (!retryCondition(error)) {
+							if (!retryCondition?.(error)) {
 								if (hasTaskDebug) {
 									debugTask(
 										"[%s] error rejected by retryCondition, throwing",
@@ -871,7 +999,7 @@ export class Scope<
 										"abort",
 										() => {
 											clearTimeout(timeoutId);
-											reject(sig.reason);
+											reject(new AbortError(sig.reason));
 										},
 										{ once: true },
 									);
@@ -960,9 +1088,14 @@ export class Scope<
 		};
 
 		// Get error class from options for typed error handling
-		const errorClass = options?.errorClass;
+		// TaskOptions is a discriminated union, so we need to check for properties
+		const errorClass =
+			options && "errorClass" in options ? options.errorClass : undefined;
 		// Default to UnknownError for system errors if not specified
-		const systemErrorClass = options?.systemErrorClass ?? UnknownError;
+		const systemErrorClass =
+			options && "systemErrorClass" in options && options.systemErrorClass
+				? options.systemErrorClass
+				: UnknownError;
 
 		// Create the task with the full pipeline
 		const task = new Task<Result<E, T>>(async (signal) => {
@@ -977,6 +1110,22 @@ export class Scope<
 						{ cause: error },
 					);
 					return [wrappedError as E, undefined] as Failure<E>;
+				}
+
+				// Unwrap AbortError to preserve original abort reason
+				// Must check before isCustomError since AbortError extends Error
+				if (error instanceof AbortError) {
+					return [error.reason as E, undefined] as Failure<E>;
+				}
+
+				// Preserve custom error classes that extend Error
+				// Only wrap plain objects or primitives in systemErrorClass
+				const isCustomError =
+					error instanceof Error &&
+					error.constructor !== Error &&
+					error.constructor !== systemErrorClass;
+				if (isCustomError) {
+					return [error as E, undefined] as Failure<E>;
 				}
 
 				// Wrap system errors only (errors without _tag property)
@@ -1751,7 +1900,7 @@ export class Scope<
 
 		const s = new Scope({ signal: this.signal, tracer: this.tracer });
 		let settledCount = 0;
-		let successCount = 0;
+		let _successCount = 0;
 		let winnerIndex = -1;
 		const errors: { index: number; error: unknown }[] = [];
 
@@ -1822,7 +1971,7 @@ export class Scope<
 				}
 
 				// Success case
-				successCount++;
+				_successCount++;
 				if (winnerIndex === -1) {
 					winnerIndex = idx;
 					if (debugEnabled) {
@@ -2016,10 +2165,18 @@ export class Scope<
 	 *
 	 * const [userErr, user] = userResult
 	 * const [ordersErr, orders] = ordersResult
+	 *
+	 * // With typed errors
+	 * const results = await s.parallel([
+	 *   () => fetchUser(),
+	 *   () => fetchOrders()
+	 * ], { errorClass: DatabaseError })
+	 * // Each result is Result<DatabaseError, T>
 	 * ```
 	 */
 	async parallel<
 		T extends readonly ((signal: AbortSignal) => Promise<unknown>)[],
+		E extends Error = Error,
 	>(
 		factories: T,
 		options?: {
@@ -2029,12 +2186,17 @@ export class Scope<
 			onProgress?: (
 				completed: number,
 				total: number,
-				result: Result<unknown, unknown>,
+				result: Result<E, unknown>,
 			) => void;
 			/** Continue processing on error (default: false) */
 			continueOnError?: boolean;
+			/** Error class to wrap errors in for typed error handling */
+			errorClass?: new (
+				message: string,
+				options?: { cause?: unknown },
+			) => E;
 		},
-	): Promise<ParallelResults<T>> {
+	): Promise<ParallelResults<T, E>> {
 		const {
 			concurrency: optionConcurrency,
 			onProgress,
@@ -2067,7 +2229,7 @@ export class Scope<
 		}
 
 		// Use a fixed-size array to preserve order and types
-		const results: Result<unknown, T>[] = new Array(factories.length);
+		const results = new Array(factories.length);
 
 		if (concurrency <= 0 || concurrency >= factories.length) {
 			// No concurrency limit - run all in parallel
@@ -2080,30 +2242,27 @@ export class Scope<
 				const promises = factories.map((factory, idx) =>
 					childScope
 						.task(({ signal }) => factory(signal))
-						.then((result): [number, Result<unknown, T>] => [
-							idx,
-							result as Result<unknown, T>,
-						]),
+						.then((result): [number, unknown] => [idx, result]),
 				);
 
 				// If not continuing on error, use Promise.all to fail fast
 				const settledResults = continueOnError
 					? await Promise.all(promises)
 					: await Promise.all(promises).catch((error) => {
-							return [[-1, [error, undefined]] as [number, Result<unknown, T>]];
+							return [[-1, [error, undefined]]];
 						});
 
-				for (const [idx, result] of settledResults) {
+				for (const [idx, result] of settledResults as [number, unknown][]) {
 					if (idx === -1) continue;
 					results[idx] = result;
 					if (onProgress) {
 						onProgress(
 							results.filter((r) => r !== undefined).length,
 							total,
-							result,
+							result as Result<E, unknown>,
 						);
 					}
-					if (!continueOnError && result[0]) {
+					if (!continueOnError && (result as Result<unknown, unknown>)[0]) {
 						break;
 					}
 				}
@@ -2125,27 +2284,25 @@ export class Scope<
 
 				const promise = (async () => {
 					try {
-						const result = (await this.task((ctx) =>
-							factory(ctx.signal),
-						)) as Result<unknown, T>;
+						const result = await this.task((ctx) => factory(ctx.signal));
 						results[currentIndex] = result;
 						if (onProgress) {
 							onProgress(
 								results.filter((r) => r !== undefined).length,
 								total,
-								result,
+								result as Result<E, unknown>,
 							);
 						}
-						if (!continueOnError && result[0]) {
+						if (!continueOnError && (result as Result<unknown, unknown>)[0]) {
 							throw result[0];
 						}
 					} catch (error) {
-						results[currentIndex] = [error, undefined] as Result<unknown, T>;
+						results[currentIndex] = [error, undefined] as unknown;
 						if (onProgress) {
 							onProgress(results.filter((r) => r !== undefined).length, total, [
 								error,
 								undefined,
-							]);
+							] as Result<E, unknown>);
 						}
 						if (!continueOnError) {
 							throw error;
@@ -2186,7 +2343,7 @@ export class Scope<
 			);
 		}
 
-		return results as ParallelResults<typeof factories>;
+		return results as unknown as ParallelResults<T, E>;
 	}
 
 	/**
@@ -2684,7 +2841,8 @@ export class Scope<
 	 * Get a debug visualization of the scope tree.
 	 * Useful for debugging scope hierarchies and active tasks.
 	 *
-	 * @returns String representation of the scope tree
+	 * @param options - Optional configuration for the output format
+	 * @returns String representation of the scope tree, or Mermaid diagram if format is 'mermaid'
 	 *
 	 * @example
 	 * ```typescript
@@ -2694,9 +2852,18 @@ export class Scope<
 	 * //   ├─ Task(fetchOrders) - completed 350ms
 	 * //   └─ ChildScope(cache-refresh)
 	 * //      └─ Task(updateCache) - pending
+	 *
+	 * // Generate Mermaid diagram
+	 * console.log(s.debugTree({ format: 'mermaid' }))
+	 * // graph TD
+	 * //   A[Scope: api-request] --> B[Task: fetchUser]
+	 * //   A --> C[Task: fetchOrders]
 	 * ```
 	 */
-	debugTree(): string {
+	debugTree(options?: { format?: "text" | "mermaid" }): string {
+		if (options?.format === "mermaid") {
+			return this.buildMermaidTree();
+		}
 		return this.buildDebugTree(0);
 	}
 
@@ -2720,6 +2887,48 @@ export class Scope<
 			lines.push(child.buildDebugTree(indent + 1));
 		}
 
+		return lines.join("\n");
+	}
+
+	private buildMermaidTree(): string {
+		const lines = ["graph TD"];
+		const nodeIds = new Map<string, string>();
+		let nodeCounter = 0;
+
+		const getNodeId = (name: string): string => {
+			if (!nodeIds.has(name)) {
+				nodeIds.set(name, String.fromCharCode(65 + nodeCounter++));
+			}
+			return nodeIds.get(name)!;
+		};
+
+		const buildNodes = (
+			scope: Scope<Record<string, unknown>>,
+			parentId?: string,
+		) => {
+			const scopeId = getNodeId(scope.name);
+			const status = scope.disposed ? "🛑" : "🟢";
+			lines.push(`  ${scopeId}["${status} Scope: ${scope.name}"]`);
+
+			if (parentId) {
+				lines.push(`  ${parentId} --> ${scopeId}`);
+			}
+
+			// Add tasks
+			for (const task of scope.activeTasks) {
+				const taskId = getNodeId(`${scope.name}-${task.id}`);
+				const taskStatus = task.isSettled ? "✅" : task.isStarted ? "🔄" : "⏳";
+				lines.push(`  ${taskId}["${taskStatus} Task: ${task.id}"]`);
+				lines.push(`  ${scopeId} --> ${taskId}`);
+			}
+
+			// Recurse into children
+			for (const child of scope.childScopes) {
+				buildNodes(child, scopeId);
+			}
+		};
+
+		buildNodes(this);
 		return lines.join("\n");
 	}
 

@@ -6,7 +6,32 @@ import { describe, test, expect } from "vitest";
 import { scope, parallel } from "../src/index.js";
 import type { Result } from "../src/index.js";
 
+class TestError extends Error {}
+class SystemError extends Error {}
+
 describe("type safety", () => {
+	test("errorClass and systemErrorClass are mutually exclusive", async () => {
+		await using s = scope();
+
+		// These should work - only errorClass
+		const t1 = s.task(async () => "ok", { errorClass: TestError });
+		await t1;
+
+		// These should work - only systemErrorClass
+		const t2 = s.task(async () => "ok", { systemErrorClass: SystemError });
+		await t2;
+
+		// These should work - neither specified
+		const t3 = s.task(async () => "ok");
+		await t3;
+
+		// @ts-expect-error - errorClass and systemErrorClass cannot be used together
+		const invalid = s.task(async () => "ok", {
+			errorClass: TestError,
+			systemErrorClass: SystemError,
+		});
+	});
+
 	test("use() is type-safe with provide()", () => {
 		const s = scope()
 			.provide("db", () => ({ query: () => "result" }))

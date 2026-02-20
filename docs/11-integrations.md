@@ -808,7 +808,279 @@ await using s = scope({
 
 ---
 
+## Framework Adapters
+
+`go-go-scope` provides first-class adapters for popular web frameworks, enabling request-scoped structured concurrency with automatic cleanup.
+
+### Supported Frameworks
+
+| Framework | Adapter | Request Scope | Root Scope |
+|-----------|---------|---------------|------------|
+| **Fastify** | `fastifyGoGoScope` | ✅ Per request | ✅ App lifecycle |
+| **Express** | `goGoScope` | ✅ Per request | ✅ App lifecycle |
+| **NestJS** | `GoGoScopeModule` | ✅ Per request (DI) | ✅ App lifecycle |
+| **Hono** | `goGoScope` | ✅ Per request | ✅ App lifecycle |
+| **Elysia** | `goGoScope` | ✅ Per request | ✅ App lifecycle |
+
+### Fastify
+
+```typescript
+import fastify from 'fastify'
+import { fastifyGoGoScope } from 'go-go-scope/adapters/fastify'
+
+const app = fastify()
+
+// Register the plugin
+await app.register(fastifyGoGoScope, { 
+  name: 'my-api',
+  metrics: true 
+})
+
+// Access root scope on app
+app.get('/health', async () => {
+  const metrics = app.scope.metrics()
+  return { status: 'ok', metrics }
+})
+
+// Access request scope in routes
+app.get('/users/:id', async (request, reply) => {
+  // request.scope is automatically created for each request
+  const [err, user] = await request.scope.task(
+    () => fetchUser(request.params.id),
+    { retry: 'exponential' }
+  )
+  
+  if (err) {
+    reply.status(500)
+    return { error: err.message }
+  }
+  
+  return user
+})
+```
+
+**Exports:**
+- `fastifyGoGoScope` - Plugin for Fastify
+- `app.scope` - Root application scope
+- `request.scope` - Request-scoped child
+
+### Express
+
+```typescript
+import express from 'express'
+import { goGoScope } from 'go-go-scope/adapters/express'
+
+const app = express()
+
+// Initialize middleware (attaches root scope to app)
+const scopeMiddleware = goGoScope(app, { 
+  name: 'my-express-app',
+  metrics: true 
+})
+
+// Use middleware for all routes
+app.use(scopeMiddleware)
+
+// Access root scope anywhere
+app.get('/health', (req, res) => {
+  const metrics = app.scope.metrics()
+  res.json({ status: 'ok', metrics })
+})
+
+// Request scope is automatically attached
+app.get('/users/:id', async (req, res) => {
+  const [err, user] = await req.scope.task(
+    () => fetchUser(req.params.id),
+    { timeout: 5000 }
+  )
+  
+  if (err) {
+    res.status(500).json({ error: err.message })
+    return
+  }
+  
+  res.json(user)
+})
+```
+
+**Exports:**
+- `goGoScope(app, options?)` - Returns middleware, attaches root scope to app
+- `closeScope(app)` - Cleanup helper for graceful shutdown
+- `app.scope` - Root application scope
+- `req.scope` - Request-scoped child
+
+### NestJS
+
+```typescript
+import { Module, Controller, Get, Param } from '@nestjs/common'
+import { GoGoScopeModule, GoGoScopeService, GoGoRequestScopeService } from 'go-go-scope/adapters/nestjs'
+
+// Import the module
+@Module({
+  imports: [GoGoScopeModule.forRoot({ name: 'nestjs-app', metrics: true })],
+  controllers: [UserController],
+})
+export class AppModule {}
+
+// Inject services
+@Controller('/users')
+class UserController {
+  constructor(
+    private readonly scopeService: GoGoScopeService,
+    private readonly requestScopeService: GoGoRequestScopeService,
+  ) {}
+
+  @Get(':id')
+  async getUser(@Param('id') id: string) {
+    // Use request-scoped scope
+    const [err, user] = await this.requestScopeService
+      .getScope()
+      .task(() => fetchUser(id))
+    
+    if (err) throw new Error(err.message)
+    return user
+  }
+
+  @Get('/health')
+  async health() {
+    // Use root scope for app-level operations
+    const metrics = this.scopeService.getMetrics()
+    return { status: 'ok', metrics }
+  }
+}
+```
+
+**Exports:**
+- `GoGoScopeModule` - NestJS module with `forRoot()` static method
+- `GoGoScopeService` - Singleton service with root scope
+- `GoGoRequestScopeService` - Request-scoped service
+- `Task` - Method decorator for task execution
+
+### Hono
+
+```typescript
+import { Hono } from 'hono'
+import { goGoScope, getScope } from 'go-go-scope/adapters/hono'
+
+const app = new Hono()
+
+// Use middleware
+app.use(goGoScope({ name: 'hono-app' }))
+
+// Access scope in handlers
+app.get('/users/:id', async (c) => {
+  const scope = getScope(c)
+  
+  const [err, user] = await scope.task(
+    () => fetchUser(c.req.param('id')),
+    { retry: 'exponential' }
+  )
+  
+  if (err) {
+    return c.json({ error: err.message }, 500)
+  }
+  
+  return c.json(user)
+})
+```
+
+**Exports:**
+- `goGoScope(options?)` - Hono middleware
+- `getScope(context)` - Get request scope from context
+- `getRootScope(context)` - Get root scope from context
+
+### Elysia
+
+```typescript
+import { Elysia } from 'elysia'
+import { goGoScope } from 'go-go-scope/adapters/elysia'
+
+const app = new Elysia()
+  .use(goGoScope({ name: 'elysia-app', metrics: true }))
+  .get('/users/:id', async ({ scope, params }) => {
+    const [err, user] = await scope.task(
+      () => fetchUser(params.id),
+      { timeout: 5000 }
+    )
+    
+    if (err) {
+      return { error: err.message }
+    }
+    
+    return user
+  })
+```
+
+**Exports:**
+- `goGoScope(options?)` - Elysia plugin
+- `getScope(context)` - Get request scope from context
+- `getRootScope(context)` - Get root scope from context
+
+### Common Patterns
+
+#### Request Timeout
+
+All adapters support request-level timeouts:
+
+```typescript
+// Fastify
+await app.register(fastifyGoGoScope, { timeout: 30000 })
+
+// Express
+goGoScope(app, { timeout: 30000 })
+
+// NestJS
+GoGoScopeModule.forRoot({ timeout: 30000 })
+
+// Hono
+app.use(goGoScope({ timeout: 30000 }))
+
+// Elysia
+app.use(goGoScope({ timeout: 30000 }))
+```
+
+#### Metrics Collection
+
+Enable metrics to track task execution:
+
+```typescript
+// All adapters
+{ metrics: true }
+
+// Access metrics
+app.scope.metrics() // Root metrics
+request.scope.metrics() // Request metrics
+```
+
+#### Error Handling
+
+All adapters work with the Result tuple pattern:
+
+```typescript
+app.get('/data', async (req, res) => {
+  const [err, data] = await req.scope.task(
+    () => fetchData(),
+    { 
+      retry: { maxRetries: 3 },
+      timeout: 5000 
+    }
+  )
+  
+  if (err) {
+    // Handle error - err is typed as unknown
+    res.status(500).json({ error: String(err) })
+    return
+  }
+  
+  // Use data
+  res.json(data)
+})
+```
+
+---
+
 ## Next Steps
 
 - **[Quick Start](./01-quick-start.md)** - Get started in 5 minutes
 - **[API Reference](./03-api-reference.md)** - Complete API documentation
+- **[Recipes](./13-recipes.md)** - Common patterns for web applications

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { poll, Semaphore, scope, stream } from "../src/index.js";
+import { poll, scope, stream } from "../src/index.js";
+import { Semaphore } from "../src/semaphore.js";
 
 describe("Channel", () => {
 	test("basic send and receive", async () => {

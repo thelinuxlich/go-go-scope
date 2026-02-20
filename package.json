@@ -33,10 +33,32 @@
 		"./persistence/mysql": {
 			"types": "./dist/persistence/mysql.d.mts",
 			"default": "./dist/persistence/mysql.mjs"
+		},
+		"./adapters/fastify": {
+			"types": "./dist/adapters/fastify.d.mts",
+			"default": "./dist/adapters/fastify.mjs"
+		},
+		"./adapters/express": {
+			"types": "./dist/adapters/express.d.mts",
+			"default": "./dist/adapters/express.mjs"
+		},
+		"./adapters/nestjs": {
+			"types": "./dist/adapters/nestjs.d.mts",
+			"default": "./dist/adapters/nestjs.mjs"
+		},
+		"./adapters/hono": {
+			"types": "./dist/adapters/hono.d.mts",
+			"default": "./dist/adapters/hono.mjs"
+		},
+		"./adapters/elysia": {
+			"types": "./dist/adapters/elysia.d.mts",
+			"default": "./dist/adapters/elysia.mjs"
 		}
 	},
 	"scripts": {
-		"build": "pkgroll",
+		"build": "npm run build:core && npm run build:adapters",
+		"build:core": "pkgroll --clean-dist --packagejson='dist/index*'",
+		"build:adapters": "npx tsc -p tsconfig.adapters.json --skipLibCheck && cd dist/adapters && for f in *.js; do mv \"$f\" \"\"${f%.js}.mjs\"\"; done && for f in *.d.ts; do mv \"$f\" \"\"${f%.d.ts}.d.mts\"\"; done",
 		"lint": "biome check --write src/",
 		"test": "npm run build && npm run lint && vitest run",
 		"test:watch": "vitest",
@@ -57,6 +79,10 @@
 		"example:prometheus:push": "npm run build && node --experimental-strip-types examples/prometheus-push.ts",
 		"monitoring:up": "docker compose up -d",
 		"monitoring:down": "docker compose down",
+		"playground:basic": "tsx playground/basic.ts",
+		"playground:http-client": "tsx playground/http-client.ts",
+		"playground:websocket": "tsx playground/websocket.ts",
+		"playground:concurrency": "tsx playground/concurrency.ts",
 		"prepublishOnly": "npm test",
 		"publish:patch": "npm version patch && npm publish",
 		"publish:minor": "npm version minor && npm publish",
@@ -69,10 +95,16 @@
 		"using",
 		"typescript",
 		"esm",
-		"es2022"
+		"es2022",
+		"fastify",
+		"express",
+		"nestjs",
+		"hono",
+		"elysia",
+		"bun"
 	],
 	"engines": {
-		"node": ">=18.0.0"
+		"node": ">=24.0.0"
 	},
 	"author": "thelinuxlich",
 	"license": "MIT",
@@ -90,30 +122,35 @@
 		"LICENSE"
 	],
 	"devDependencies": {
-		"@biomejs/biome": "^2.4.2",
+		"@biomejs/biome": "^2.4.3",
+		"@nestjs/common": "^11.1.14",
 		"@opentelemetry/exporter-trace-otlp-http": "^0.212.0",
 		"@opentelemetry/resources": "^2.5.1",
 		"@opentelemetry/sdk-node": "^0.212.0",
 		"@opentelemetry/semantic-conventions": "^1.39.0",
 		"@types/debug": "^4.1.12",
+		"@types/express": "^5.0.6",
 		"@types/node": "^24",
-		"effect": "^3.19.17",
-		"go-go-try": "^7.3.0",
+		"@types/supertest": "^6.0.3",
+		"effect": "^3.19.18",
+		"elysia": "^1.4.25",
+		"express": "^5.2.1",
+		"fastify": "^5.7.4",
+		"fastify-plugin": "^5.1.0",
+		"go-go-try": "^7.4.1",
+		"hono": "^4.12.0",
 		"ioredis": "^5.9.3",
-		"mysql2": "^3.17.2",
+		"mysql2": "^3.17.3",
 		"pg": "^8.18.0",
-		"pkgroll": "^2.26.0",
+		"pkgroll": "^2.26.3",
 		"sqlite3": "^5.1.7",
+		"supertest": "^7.2.2",
+		"tsx": "^4.21.0",
 		"typescript": "^5.9.3",
 		"vitest": "^4.0.18"
 	},
 	"dependencies": {
 		"@opentelemetry/api": "^1.9.0",
 		"debug": "^4.4.3"
-	},
-	"peerDependencies": {
-		"ioredis": "^5.0.0",
-		"mysql2": "^3.6.0",
-		"pg": "^8.11.0"
 	}
 }
