@@ -8,15 +8,19 @@
  * - zipAll: Zip with defaults for unequal streams
  * - interleave: Fair round-robin interleaving
  * - cross: Cartesian product
+ * 
+ * Note: We use ReadableStream.from() to convert arrays to async iterables.
+ * This is a standard Web API available in Node.js 20+ and modern browsers.
  */
 
 import { scope } from "../dist/index.mjs";
 
-async function* fromArray<T>(arr: T[], delayMs = 0) {
-  for (const item of arr) {
-    if (delayMs > 0) await new Promise(r => setTimeout(r, delayMs));
-    yield item;
-  }
+/**
+ * Helper to convert arrays to ReadableStream (async iterable)
+ * ReadableStream.from() is available in Node.js 20+ and modern browsers
+ */
+function fromArray<T>(arr: T[]): ReadableStream<T> {
+  return ReadableStream.from(arr);
 }
 
 async function main() {
