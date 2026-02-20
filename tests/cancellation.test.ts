@@ -6,30 +6,28 @@ import { describe, expect, test } from "vitest";
 import {
 	abortPromise,
 	onAbort,
-	raceSignals,
-	throwIfAborted,
 	whenAborted,
 } from "../src/cancellation.js";
 
-describe("throwIfAborted", () => {
+describe("native throwIfAborted", () => {
 	test("does nothing if signal is not aborted", () => {
 		const controller = new AbortController();
 
-		expect(() => throwIfAborted(controller.signal)).not.toThrow();
+		expect(() => controller.signal.throwIfAborted()).not.toThrow();
 	});
 
 	test("throws reason if signal is aborted", () => {
 		const controller = new AbortController();
 		controller.abort(new Error("cancelled"));
 
-		expect(() => throwIfAborted(controller.signal)).toThrow("cancelled");
+		expect(() => controller.signal.throwIfAborted()).toThrow("cancelled");
 	});
 
 	test("throws with any reason type", () => {
 		const controller = new AbortController();
 		controller.abort("string reason");
 
-		expect(() => throwIfAborted(controller.signal)).toThrow("string reason");
+		expect(() => controller.signal.throwIfAborted()).toThrow("string reason");
 	});
 });
 
@@ -149,12 +147,12 @@ describe("abortPromise", () => {
 	});
 });
 
-describe("raceSignals", () => {
+describe("native AbortSignal.any", () => {
 	test("returns signal that aborts when first input aborts", async () => {
 		const controller1 = new AbortController();
 		const controller2 = new AbortController();
 
-		const raced = raceSignals([controller1.signal, controller2.signal]);
+		const raced = AbortSignal.any([controller1.signal, controller2.signal]);
 
 		expect(raced.aborted).toBe(false);
 
@@ -171,24 +169,23 @@ describe("raceSignals", () => {
 
 		controller1.abort(new Error("already"));
 
-		const raced = raceSignals([controller1.signal, controller2.signal]);
+		const raced = AbortSignal.any([controller1.signal, controller2.signal]);
 
 		expect(raced.aborted).toBe(true);
 		expect((raced.reason as Error).message).toBe("already");
 	});
 
-	test("returns same signal for single input", () => {
+	test("works with single input", () => {
 		const controller = new AbortController();
 
-		const raced = raceSignals([controller.signal]);
+		const raced = AbortSignal.any([controller.signal]);
 
-		expect(raced).toBe(controller.signal);
-	});
+		// Abort the controller
+		controller.abort(new Error("single"));
 
-	test("returns new signal for empty array", () => {
-		const raced = raceSignals([]);
-
-		expect(raced.aborted).toBe(false);
+		// Raced signal should also be aborted
+		expect(raced.aborted).toBe(true);
+		expect((raced.reason as Error).message).toBe("single");
 	});
 
 	test("works with multiple signals", async () => {
@@ -198,7 +195,7 @@ describe("raceSignals", () => {
 			new AbortController(),
 		];
 
-		const raced = raceSignals(controllers.map((c) => c.signal));
+		const raced = AbortSignal.any(controllers.map((c) => c.signal));
 
 		// Abort middle one
 		controllers[1]!.abort(new Error("middle"));
@@ -247,13 +244,13 @@ describe("integration with scope signal", () => {
 		const s = scope();
 
 		// Initially not aborted
-		expect(() => throwIfAborted(s.signal)).not.toThrow();
+		expect(() => s.signal.throwIfAborted()).not.toThrow();
 
 		// Abort the scope
 		await s[Symbol.asyncDispose]();
 
 		// Now should throw
-		expect(() => throwIfAborted(s.signal)).toThrow();
+		expect(() => s.signal.throwIfAborted()).toThrow();
 	});
 
 	test("onAbort works with scope signal", async () => {
@@ -277,14 +274,14 @@ describe("integration with scope signal", () => {
 		expect(aborted).toBe(true);
 	});
 
-	test("raceSignals combines scope and custom timeout", async () => {
+	test("AbortSignal.any combines scope and custom timeout", async () => {
 		const { scope } = await import("../src/index.js");
 
 		const s = scope();
 		const timeoutController = new AbortController();
 
 		// Create a combined signal
-		const combined = raceSignals([s.signal, timeoutController.signal]);
+		const combined = AbortSignal.any([s.signal, timeoutController.signal]);
 
 		// Fire timeout
 		timeoutController.abort(new Error("custom timeout"));
@@ -299,8 +296,8 @@ describe("integration with scope signal", () => {
 		await using s = scope();
 
 		const task = s.task(({ signal }) => {
-			// Test throwIfAborted
-			expect(() => throwIfAborted(signal)).not.toThrow();
+			// Test native throwIfAborted
+			expect(() => signal.throwIfAborted()).not.toThrow();
 
 			// Test onAbort
 			let callbackFired = false;

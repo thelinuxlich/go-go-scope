@@ -84,9 +84,14 @@ export class Semaphore implements AsyncDisposable {
 			return Promise.resolve();
 		}
 
-		return new Promise((resolve, reject) => {
-			this.queue.push({ resolve, reject });
+		let resolveSem!: () => void;
+		let rejectSem!: (reason: unknown) => void;
+		const promise = new Promise<void>((res, rej) => {
+			resolveSem = res;
+			rejectSem = rej;
 		});
+		this.queue.push({ resolve: resolveSem, reject: rejectSem });
+		return promise;
 	}
 
 	/**

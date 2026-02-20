@@ -15,6 +15,7 @@ import { Profiler } from "./profiler.js";
 import { ResourcePool } from "./resource-pool.js";
 import { exponentialBackoff, linear } from "./retry-strategies.js";
 import { Semaphore } from "./semaphore.js";
+import { Stream } from "./stream.js";
 import { Task } from "./task.js";
 import type {
 	CircuitBreakerOptions,
@@ -97,7 +98,7 @@ class HistogramImpl implements Histogram {
 
 	private percentile(sorted: number[], p: number): number {
 		const index = Math.floor(sorted.length * p);
-		return sorted[index] ?? sorted[sorted.length - 1] ?? 0;
+		return sorted[index] ?? sorted.at(-1) ?? 0;
 	}
 }
 
@@ -570,7 +571,7 @@ export class Scope<
 		if (durations.length > 0) {
 			const sorted = [...durations].sort((a, b) => a - b);
 			const p95Index = Math.floor(sorted.length * 0.95);
-			p95 = sorted[p95Index] ?? sorted[sorted.length - 1] ?? 0;
+			p95 = sorted[p95Index] ?? sorted.at(-1) ?? 0;
 		}
 
 		// Build histogram snapshots
@@ -1014,29 +1015,39 @@ export class Scope<
 			}
 
 			// 4. Apply timeout if specified
+			// Use native AbortSignal.timeout() and AbortSignal.any()
 			if (options?.timeout !== undefined && options.timeout > 0) {
 				const timeoutMs = options.timeout;
 				const innerFn = executeFn;
-				executeFn = (sig) =>
-					new Promise((resolve, reject) => {
-						const timeoutId = setTimeout(() => {
-							reject(
-								new Error(
-									`Task '${taskName}' in scope '${this.name}' timeout after ${timeoutMs}ms`,
-								),
-							);
-						}, timeoutMs);
+				executeFn = (sig) => {
+					// Combine task signal with timeout signal
+					const timeoutSignal = AbortSignal.timeout(timeoutMs);
+					const combinedSignal = AbortSignal.any([sig, timeoutSignal]);
 
-						innerFn(sig)
+					// Race the inner function against the timeout signal
+					// This ensures the timeout actually rejects even if innerFn doesn't check the signal
+					return new Promise((resolve, reject) => {
+						// Start the inner function
+						const innerPromise = innerFn(combinedSignal);
+
+						// Watch for timeout
+						const onTimeout = () => {
+							reject(new Error(`timeout after ${timeoutMs}ms`));
+						};
+
+						timeoutSignal.addEventListener("abort", onTimeout, { once: true });
+
+						innerPromise
 							.then((result) => {
-								clearTimeout(timeoutId);
+								timeoutSignal.removeEventListener("abort", onTimeout);
 								resolve(result);
 							})
 							.catch((err) => {
-								clearTimeout(timeoutId);
+								timeoutSignal.removeEventListener("abort", onTimeout);
 								reject(err);
 							});
 					});
+				};
 			}
 
 			// Execute the pipeline
@@ -1614,30 +1625,29 @@ export class Scope<
 		return ch;
 	}
 
-	/** Wrap an AsyncIterable with scope cancellation. */
-	async *stream<T>(source: AsyncIterable<T>): AsyncGenerator<T> {
-		const iterator = source[Symbol.asyncIterator]();
-
-		try {
-			while (true) {
-				// Check for abort before each iteration
-				if (this.signal.aborted) {
-					throw this.signal.reason;
-				}
-
-				const result = await iterator.next();
-
-				if (this.signal.aborted) {
-					throw this.signal.reason;
-				}
-
-				if (result.done) break;
-				yield result.value;
-			}
-		} finally {
-			// Ensure cleanup
-			await iterator.return?.();
-		}
+	/**
+	 * Create a lazy stream from an async iterable.
+	 * Provides composable operations with automatic cancellation.
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * const [err, results] = await s.stream(fetchData())
+	 *   .map(x => x * 2)
+	 *   .filter(x => x > 10)
+	 *   .take(5)
+	 *   .toArray()
+	 * ```
+	 */
+	stream<T>(source: AsyncIterable<T>): Stream<T> {
+		const stream = new Stream(source, this as unknown as Scope);
+		this.disposables.push({
+			async [Symbol.asyncDispose]() {
+				await stream[Symbol.asyncDispose]();
+			},
+		});
+		return stream;
 	}
 
 	/** Poll a function at regular intervals.

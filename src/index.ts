@@ -11,8 +11,6 @@ export { BroadcastChannel } from "./broadcast-channel.js";
 export {
 	abortPromise,
 	onAbort,
-	raceSignals,
-	throwIfAborted,
 	whenAborted,
 } from "./cancellation.js";
 export { Channel } from "./channel.js";
@@ -56,7 +54,7 @@ export type {
 // Re-export scope-related
 export { AsyncDisposableResource, Scope } from "./scope.js";
 // Semaphore is used internally for concurrency limiting, not exported as public API
-export { stream } from "./stream.js";
+export { Stream } from "./stream.js";
 export { Task } from "./task.js";
 // Re-export types
 export type {

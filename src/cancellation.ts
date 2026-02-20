@@ -10,28 +10,6 @@ import createDebug from "debug";
 const debugCancel = createDebug("go-go-scope:cancellation");
 
 /**
- * Throws the abort reason if the signal is aborted.
- *
- * @param signal - The AbortSignal to check
- * @throws The signal's reason if aborted
- *
- * @example
- * ```typescript
- * await s.task(({ signal }) => {
- *   throwIfAborted(signal)  // Throws if scope was cancelled
- *
- *   // Continue with operation...
- *   return await fetchData()
- * })
- * ```
- */
-export function throwIfAborted(signal: AbortSignal): void {
-	if (signal.aborted) {
-		throw signal.reason;
-	}
-}
-
-/**
  * Registers a callback to be invoked when the signal is aborted.
  * Returns a disposable that can be used to unregister the callback.
  *
@@ -132,63 +110,6 @@ export function abortPromise(signal: AbortSignal): Promise<never> {
 			{ once: true },
 		);
 	});
-}
-
-/**
- * Races multiple abort signals and returns a new signal that aborts
- * when any of the input signals abort.
- *
- * @param signals - Array of AbortSignals to race
- * @returns A new AbortSignal that aborts when any input aborts
- *
- * @example
- * ```typescript
- * const combined = raceSignals([scope.signal, timeoutSignal])
- *
- * await fetch(url, { signal: combined })
- * // Aborts if either scope is disposed OR timeout fires
- * ```
- */
-export function raceSignals(signals: AbortSignal[]): AbortSignal {
-	// Edge cases
-	if (signals.length === 0) {
-		return new AbortController().signal;
-	}
-	if (signals.length === 1) {
-		return signals[0]!;
-	}
-
-	// Check if any are already aborted
-	const alreadyAborted = signals.find((s) => s.aborted);
-	if (alreadyAborted) {
-		return alreadyAborted;
-	}
-
-	const controller = new AbortController();
-
-	// Subscribe to all signals
-	const handlers: { signal: AbortSignal; handler: () => void }[] = [];
-
-	signals.forEach((signal) => {
-		const handler = () => {
-			if (debugCancel.enabled) {
-				debugCancel("raced signal aborted, propagating reason:", signal.reason);
-			}
-			controller.abort(signal.reason);
-			// Clean up other handlers
-			handlers.forEach((h) => {
-				if (h.handler !== handler) {
-					h.signal.removeEventListener("abort", h.handler);
-				}
-			});
-		};
-
-		signal.addEventListener("abort", handler, { once: true });
-		handlers.push({ signal, handler });
-	});
-
-	// Return signal that will abort when any input aborts
-	return controller.signal;
 }
 
 /**

@@ -3,6 +3,7 @@
  */
 
 import createDebug from "debug";
+
 import { Scope } from "./scope.js";
 import type { RaceOptions, Result } from "./types.js";
 
@@ -103,9 +104,21 @@ export async function race<T>(
 	const errors: { index: number; error: unknown }[] = [];
 
 	try {
+		// Create combined signal with optional timeout
+		const signals: AbortSignal[] = [s.signal];
+		if (timeout) {
+			signals.push(AbortSignal.timeout(timeout));
+		}
+		const combinedSignal = AbortSignal.any(signals);
+
 		// Create abort promise that returns error as Result
 		const abortPromise = new Promise<Result<unknown, T>>((resolve) => {
-			s.signal.addEventListener(
+			// Use combined signal for abort detection
+			if (combinedSignal.aborted) {
+				resolve([combinedSignal.reason, undefined]);
+				return;
+			}
+			combinedSignal.addEventListener(
 				"abort",
 				() => {
 					if (debugScope.enabled) {
@@ -115,23 +128,11 @@ export async function race<T>(
 							totalTasks,
 						);
 					}
-					resolve([s.signal.reason, undefined]);
+					resolve([combinedSignal.reason, undefined]);
 				},
 				{ once: true },
 			);
 		});
-
-		// Create timeout promise if timeout is specified
-		const timeoutPromise = timeout
-			? new Promise<never>((_, reject) => {
-					setTimeout(() => {
-						if (debugScope.enabled) {
-							debugScope("timeout after %dms", timeout);
-						}
-						reject(new Error(`Race timeout after ${timeout}ms`));
-					}, timeout);
-				})
-			: null;
 
 		const debugEnabled = debugScope.enabled;
 
@@ -140,8 +141,9 @@ export async function race<T>(
 			factory: (signal: AbortSignal) => Promise<T>,
 			idx: number,
 		): Promise<TaskResult<T>> => {
-			const result = await s.task(async ({ signal }) => {
-				const r = await factory(signal);
+			const result = await s.task(async () => {
+				// Use combined signal (includes timeout if specified)
+				const r = await factory(combinedSignal);
 				settledCount++;
 				return r;
 			});
@@ -174,10 +176,8 @@ export async function race<T>(
 			// Spawn all tasks with tracking
 			const tasks = factories.map((factory, idx) => processTask(factory, idx));
 
-			// Race all tasks with optional timeout
-			const racePromise = timeoutPromise
-				? Promise.race([Promise.race(tasks), timeoutPromise])
-				: Promise.race([...tasks, abortPromise]);
+			// Race all tasks with abort/timeout detection
+			const racePromise = Promise.race([...tasks, abortPromise]);
 
 			const winner = await racePromise;
 
@@ -245,13 +245,11 @@ export async function race<T>(
 		// Keep racing until we have a winner
 		while (runningTasks.length > 0) {
 			// Build race competitors for this iteration
+			// combinedSignal (via abortPromise) handles both parent abort and timeout
 			const competitors: Promise<TaskResult<T> | Result<unknown, T>>[] = [
 				...runningTasks,
 				abortPromise,
 			];
-			if (timeoutPromise) {
-				competitors.push(timeoutPromise as Promise<never>);
-			}
 
 			// Race current batch
 			const winner = await Promise.race(competitors);

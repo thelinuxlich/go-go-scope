@@ -20,6 +20,7 @@ Complete guide to structured concurrency in TypeScript.
 | Doc | What You'll Learn |
 |-----|-------------------|
 | [🍳 Recipes](./13-recipes.md) | Common patterns: HTTP clients, DB pools, WebSockets |
+| [🌊 Streams](./04-streams.md) | Lazy async streams: processing pipelines, real-world examples |
 | [🔄 Concurrency](./04-concurrency-patterns.md) | Channels, broadcast, select statements |
 | [🛡️ Resilience](./05-resilience-patterns.md) | Circuit breakers, retry, timeouts |
 | [🔧 Advanced](./09-advanced-patterns.md) | Resource pools, parent-child scopes, DI |
@@ -59,7 +60,8 @@ Complete guide to structured concurrency in TypeScript.
 - ✅ **Hono** - Lightweight edge runtime support
 - ✅ **Elysia** - Bun-first performance optimized
 
-### Concurrency
+### Concurrency & Streams
+- ✅ **Streams** - Lazy async pipelines with 50+ operations
 - ✅ **Channels** - Go-style buffered channels with `map`, `filter`, `reduce`
 - ✅ **Batch Processing** - Process arrays with progress tracking
 - ✅ **Concurrency Limits** - Semaphore-based rate limiting

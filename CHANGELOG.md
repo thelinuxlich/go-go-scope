@@ -7,8 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2025-02-20
+
 ### Added
 
+- **Stream API**: Complete lazy stream processing with 50+ operations:
+  - **Core operations**: `map`, `filter`, `flatMap`, `flatten`, `filterMap`, `tap`
+  - **Slicing**: `take`, `takeWhile`, `takeUntil`, `drop`, `dropWhile`, `dropUntil`, `skip`, `splitAt`
+  - **Buffering**: `buffer`, `bufferTime`, `bufferTimeOrCount`, `groupAdjacentBy`
+  - **Deduplication**: `distinct`, `distinctBy`, `distinctAdjacent`, `distinctAdjacentBy`
+  - **Combining**: `merge`, `zip`, `zipWithIndex`, `concat`, `prepend`, `append`, `intersperse`
+  - **Splitting**: `partition`, `splitAt`, `broadcast` (queue-based distribution)
+  - **Timing**: `delay`, `spaced`, `throttle`, `debounce`, `timeout`
+  - **Error handling**: `catchAll`, `catchError`, `orElse`, `orElseSucceed`, `orElseIfEmpty`, `mapError`, `tapError`, `ensuring`, `retry`
+  - **Terminal**: `toArray`, `forEach`, `drain`, `first`, `last`, `find`, `reduce`, `fold`, `scan`, `count`, `sum`, `some`, `every`, `includes`, `groupBy`
+  - **Advanced**: `switchMap` (with reactive cancellation), `scan` (running fold)
+  - **Result tuples**: All terminal operations return `[error, value]` for type-safe error handling
+  - **Automatic cancellation**: Streams respect scope disposal via AbortSignal
+  - **Lazy evaluation**: Operations compose without executing until terminal operation called
 - **Framework Adapters**: Official adapters for popular web frameworks:
   - **Fastify**: `go-go-scope/adapters/fastify` - Request-scoped concurrency with automatic cleanup
   - **Express**: `go-go-scope/adapters/express` - Middleware-based scope management

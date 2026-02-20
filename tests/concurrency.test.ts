@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { poll, scope, stream } from "../src/index.js";
+import { poll, scope } from "../src/index.js";
 import { Semaphore } from "../src/semaphore.js";
 
 describe("Channel", () => {
@@ -341,9 +341,10 @@ describe("stream", () => {
 	}
 
 	test("iterates all values", async () => {
+		await using s = scope();
 		const results: number[] = [];
 
-		for await (const value of stream(testSource())) {
+		for await (const value of s.stream(testSource())) {
 			results.push(value);
 		}
 
@@ -351,7 +352,7 @@ describe("stream", () => {
 	});
 
 	test("stops on abort signal", async () => {
-		const controller = new AbortController();
+		await using s = scope();
 		const results: number[] = [];
 
 		// Create a slow stream
@@ -364,20 +365,21 @@ describe("stream", () => {
 
 		// Start iterating
 		const iteratePromise = (async () => {
-			for await (const value of stream(slowSource(), controller.signal)) {
+			for await (const value of s.stream(slowSource())) {
 				results.push(value);
 			}
 		})();
 
 		// Abort after 50ms
 		await new Promise((r) => setTimeout(r, 50));
-		controller.abort("cancelled");
+		await s[Symbol.asyncDispose]();
 
-		await expect(iteratePromise).rejects.toThrow("cancelled");
+		await expect(iteratePromise).rejects.toThrow();
 		expect(results.length).toBeLessThan(10);
 	});
 
 	test("cleans up iterator on break", async () => {
+		await using s = scope();
 		let cleanedUp = false;
 
 		async function* sourceWithCleanup() {
@@ -390,7 +392,7 @@ describe("stream", () => {
 			}
 		}
 
-		for await (const value of stream(sourceWithCleanup())) {
+		for await (const value of s.stream(sourceWithCleanup())) {
 			if (value === 2) break;
 		}
 

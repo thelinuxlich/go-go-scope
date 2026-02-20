@@ -146,7 +146,7 @@ export function createTimeController(): TimeController {
 
 			// Sort and find max time
 			pendingTimeouts.sort((a, b) => a.time - b.time);
-			const lastTimeout = pendingTimeouts[pendingTimeouts.length - 1];
+			const lastTimeout = pendingTimeouts.at(-1);
 			if (lastTimeout) {
 				processTimeouts(lastTimeout.time);
 			}

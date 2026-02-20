@@ -98,15 +98,20 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 		}
 
 		// Otherwise, wait for space
-		return new Promise((resolve, reject) => {
-			this.sendQueue.push({
-				resolve: () => {
-					this.buffer.push(value);
-					resolve(true);
-				},
-				reject,
-			});
+		let resolveSend!: (value: boolean) => void;
+		let rejectSend!: (reason: unknown) => void;
+		const promise = new Promise<boolean>((res, rej) => {
+			resolveSend = res;
+			rejectSend = rej;
 		});
+		this.sendQueue.push({
+			resolve: () => {
+				this.buffer.push(value);
+				resolveSend(true);
+			},
+			reject: rejectSend,
+		});
+		return promise;
 	}
 
 	/**
@@ -147,9 +152,14 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 		}
 
 		// Otherwise, wait for a value
-		return new Promise((resolve, reject) => {
-			this.receiveQueue.push({ resolve, reject });
+		let resolveRecv!: (value: T | undefined) => void;
+		let rejectRecv!: (reason: unknown) => void;
+		const promise = new Promise<T | undefined>((res, rej) => {
+			resolveRecv = res;
+			rejectRecv = rej;
 		});
+		this.receiveQueue.push({ resolve: resolveRecv, reject: rejectRecv });
+		return promise;
 	}
 
 	/**
