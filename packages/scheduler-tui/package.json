@@ -1,0 +1,89 @@
+{
+  "name": "@go-go-scope/scheduler-tui",
+  "version": "2.0.0",
+  "description": "Interactive TUI and CLI for go-go-scope scheduler",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "bin": {
+    "go-go-scheduler": "./dist/cli.mjs",
+    "go-go-scheduler-tui": "./dist/tui.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.mts",
+      "default": "./dist/cli.mjs"
+    },
+    "./tui": {
+      "types": "./dist/tui.d.mts",
+      "default": "./dist/tui.mjs"
+    }
+  },
+  "scripts": {
+    "build": "pkgroll --clean-dist",
+    "lint": "biome check --write src/",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "scheduler",
+    "cli",
+    "tui",
+    "terminal",
+    "interactive",
+    "go-go-scope"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "author": "thelinuxlich",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thelinuxlich/go-go-scope.git",
+    "directory": "packages/scheduler-tui"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "dependencies": {
+    "go-go-scope": "workspace:*",
+    "@go-go-scope/scheduler": "workspace:*"
+  },
+  "peerDependencies": {
+    "ioredis": "^5.9.3",
+    "pg": "^8.18.0",
+    "mysql2": "^3.18.0",
+    "sqlite3": "^5.1.7"
+  },
+  "peerDependenciesMeta": {
+    "ioredis": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    },
+    "mysql2": {
+      "optional": true
+    },
+    "sqlite3": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.4",
+    "@types/node": "^24",
+    "ioredis": "^5.9.3",
+    "mysql2": "^3.18.0",
+    "pg": "^8.18.0",
+    "pkgroll": "^2.26.3",
+    "sqlite3": "^5.1.7",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

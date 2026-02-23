@@ -1,0 +1,58 @@
+{
+  "name": "@go-go-scope/adapter-nestjs",
+  "version": "2.0.0",
+  "description": "NestJS adapter for go-go-scope - DI integration with @Task decorator",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "pkgroll --clean-dist",
+    "lint": "biome check --write src/",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "nestjs",
+    "adapter",
+    "go-go-scope",
+    "structured-concurrency",
+    "decorator"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "author": "thelinuxlich",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thelinuxlich/go-go-scope.git",
+    "directory": "packages/adapter-nestjs"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "go-go-scope": "workspace:*"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^11.1.14"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.4",
+    "@nestjs/common": "^11.1.14",
+    "@types/node": "^24",
+    "pkgroll": "^2.26.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

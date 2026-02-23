@@ -116,7 +116,7 @@ await s.task(() => fetchData(), {
 
 ### Test with Mocks
 ```typescript
-import { createMockScope } from 'go-go-scope/testing'
+import { createMockScope } from '@go-go-scope/testing'
 
 const s = createMockScope({
   services: { db: mockDb },

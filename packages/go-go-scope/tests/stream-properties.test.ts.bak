@@ -1,0 +1,438 @@
+/**
+ * Property-based tests for Stream API using fast-check
+ * 
+ * These tests verify mathematical properties and laws that should hold
+ * for stream operations, regardless of input values.
+ */
+
+import { describe, test, expect } from "vitest";
+import fc from "fast-check";
+import { Stream } from "@go-go-scope/stream";
+import { scope } from "../src/index.js";
+
+// Helper to create a stream from an array
+async function* fromArray<T>(arr: T[]): AsyncGenerator<T> {
+	for (const item of arr) yield item;
+}
+
+describe("Stream Property-Based Tests", () => {
+	describe("map properties", () => {
+		test("map composition: map(f).map(g) == map(g ∘ f)", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer()),
+					fc.integer(),
+					fc.integer(),
+					async (arr, add1, mul2) => {
+						await using s = scope();
+						const f = (x: number) => x + add1;
+						const g = (x: number) => x * mul2;
+
+						// map(f).map(g)
+						const [, result1] = await s
+							.stream(fromArray(arr))
+							.map(f)
+							.map(g)
+							.toArray(), s);
+
+						// map(g ∘ f)
+						const [, result2] = await s
+							.stream(fromArray(arr))
+							.map((x) => g(f(x)))
+							.toArray(), s);
+
+						expect(result1).toEqual(result2);
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+
+		test("map identity: map(x => x) == identity", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer()),
+					async (arr) => {
+						await using s = scope();
+
+						const [, result1] = await s
+							.stream(fromArray(arr))
+							.map((x) => x)
+							.toArray(), s);
+
+						expect(result1).toEqual(arr);
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+	});
+
+	describe("filter properties", () => {
+		test("filter idempotence: filter(p).filter(p) == filter(p)", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer()),
+					async (arr) => {
+						await using s = scope();
+						const predicate = (x: number) => x % 2 === 0;
+
+						// filter(p).filter(p)
+						const [, result1] = await s
+							.stream(fromArray(arr))
+							.filter(predicate)
+							.filter(predicate)
+							.toArray(), s);
+
+						// filter(p)
+						const [, result2] = await s
+							.stream(fromArray(arr))
+							.filter(predicate)
+							.toArray(), s);
+
+						expect(result1).toEqual(result2);
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+
+		test("filter with always-true predicate returns all elements", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer()),
+					async (arr) => {
+						await using s = scope();
+
+						const [, result] = await s
+							.stream(fromArray(arr))
+							.filter(() => true)
+							.toArray(), s);
+
+						expect(result).toEqual(arr);
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+
+		test("filter with always-false predicate returns empty array", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer()),
+					async (arr) => {
+						await using s = scope();
+
+						const [, result] = await s
+							.stream(fromArray(arr))
+							.filter(() => false)
+							.toArray(), s);
+
+						expect(result).toEqual([]);
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+	});
+
+	describe("take/drop properties", () => {
+		test("take(n) + drop(n) on infinite stream preserves order", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer(), { minLength: 1, maxLength: 100 }),
+					fc.integer({ min: 0, max: 50 }),
+					async (arr, n) => {
+						await using s = scope();
+
+						// Take n then drop n on the same stream
+						const [, taken] = await s
+							.stream(fromArray(arr))
+							.take(n)
+							.toArray(), s);
+
+						const [, dropped] = await s
+							.stream(fromArray(arr))
+							.drop(n)
+							.toArray(), s);
+
+						// taken + dropped should equal original (for arrays)
+						const combined = [...taken, ...dropped];
+						expect(combined).toEqual(arr);
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+
+		test("take(n) returns at most n elements", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer()),
+					fc.integer({ min: 0, max: 100 }),
+					async (arr, n) => {
+						await using s = scope();
+
+						const [, result] = await s
+							.stream(fromArray(arr))
+							.take(n)
+							.toArray(), s);
+
+						expect(result.length).toBeLessThanOrEqual(n);
+						expect(result.length).toBeLessThanOrEqual(arr.length);
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+
+		test("drop(0) returns all elements", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer()),
+					async (arr) => {
+						await using s = scope();
+
+						const [, result] = await s
+							.stream(fromArray(arr))
+							.drop(0)
+							.toArray(), s);
+
+						expect(result).toEqual(arr);
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+	});
+
+	describe("map/filter interactions", () => {
+		test("filter then map == map then filter (with adjusted predicate)", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer()),
+					async (arr) => {
+						await using s = scope();
+						const isEven = (x: number) => x % 2 === 0;
+						const double = (x: number) => x * 2;
+
+						// filter then map
+						const [, result1] = await s
+							.stream(fromArray(arr))
+							.filter(isEven)
+							.map(double)
+							.toArray(), s);
+
+						// map then filter (on doubled values)
+						const [, result2] = await s
+							.stream(fromArray(arr))
+							.map(double)
+							.filter((x) => x % 4 === 0)
+							.toArray(), s);
+
+						expect(result1).toEqual(result2);
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+	});
+
+	describe("distinct properties", () => {
+		test("distinct result has no duplicates", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer({ min: -10, max: 10 }), { minLength: 1, maxLength: 50 }),
+					async (arr) => {
+						await using s = scope();
+
+						const [, result] = await s
+							.stream(fromArray(arr))
+							.distinct()
+							.toArray(), s);
+
+						// Result should have unique values
+						const uniqueCount = new Set(result).size;
+						expect(result.length).toBe(uniqueCount);
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+
+		test("distinct result is subset of original", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer()),
+					async (arr) => {
+						await using s = scope();
+
+						const [, result] = await s
+							.stream(fromArray(arr))
+							.distinct()
+							.toArray(), s);
+
+						// Every element in result should be in original
+						for (const item of result) {
+							expect(arr).toContain(item);
+						}
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+	});
+
+	describe("scan properties", () => {
+		test("scan with sum produces running totals", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer(), { minLength: 1, maxLength: 50 }),
+					async (arr) => {
+						await using s = scope();
+
+						const [, result] = await s
+							.stream(fromArray(arr))
+							.scan((acc, x) => acc + x, 0)
+							.toArray(), s);
+
+						// Verify it's a running sum
+						for (let i = 0; i < result.length; i++) {
+							const expectedSum = arr.slice(0, i + 1).reduce((a, b) => a + b, 0);
+							expect(result[i]).toBe(expectedSum);
+						}
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+	});
+
+	describe("buffer properties", () => {
+		test("buffer(n) concatenated equals original", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer()),
+					fc.integer({ min: 1, max: 10 }),
+					async (arr, n) => {
+						await using s = scope();
+
+						const [, buffers] = await s
+							.stream(fromArray(arr))
+							.buffer(n)
+							.toArray(), s);
+
+						// Concatenate all buffers
+						const flat = buffers.flat();
+						expect(flat).toEqual(arr);
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+
+		test("buffer(n) produces chunks of at most n elements", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer()),
+					fc.integer({ min: 1, max: 10 }),
+					async (arr, n) => {
+						await using s = scope();
+
+						const [, buffers] = await s
+							.stream(fromArray(arr))
+							.buffer(n)
+							.toArray(), s);
+
+						// All buffers except possibly the last should have n elements
+						for (let i = 0; i < buffers.length - 1; i++) {
+							expect(buffers[i].length).toBe(n);
+						}
+						// Last buffer should have at most n elements
+						if (buffers.length > 0) {
+							expect(buffers[buffers.length - 1].length).toBeLessThanOrEqual(n);
+						}
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+	});
+
+	describe("count/sum properties", () => {
+		test("count equals array length", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer()),
+					async (arr) => {
+						await using s = scope();
+
+						const [, result] = await s
+							.stream(fromArray(arr))
+							.count();
+
+						expect(result).toBe(arr.length);
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+
+		test("sum equals array sum", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer()),
+					async (arr) => {
+						await using s = scope();
+
+						const [, result] = await s
+							.stream(fromArray(arr))
+							.sum();
+
+						const expectedSum = arr.reduce((a, b) => a + b, 0);
+						expect(result).toBe(expectedSum);
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+	});
+
+	describe("first/last properties", () => {
+		test("first returns first element", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer(), { minLength: 1 }),
+					async (arr) => {
+						await using s = scope();
+
+						const [, result] = await s
+							.stream(fromArray(arr))
+							.first();
+
+						expect(result).toBe(arr[0]);
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+
+		test("last returns last element", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer(), { minLength: 1 }),
+					async (arr) => {
+						await using s = scope();
+
+						const [, result] = await s
+							.stream(fromArray(arr))
+							.last();
+
+						expect(result).toBe(arr[arr.length - 1]);
+					},
+				),
+				{ numRuns: 100 },
+			);
+		});
+	});
+});

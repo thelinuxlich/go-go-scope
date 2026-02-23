@@ -354,7 +354,7 @@ import { scope } from "go-go-scope"
 
 await using s = scope()
 
-const [err, result] = await s.stream(range(1, 100))
+const [err, result] = await new Stream(range(1, 100, s))
   .map(x => x * 2)
   .filter(x => x > 10)
   .take(5)
@@ -375,7 +375,7 @@ const result = await Effect.runPromise(
 )
 
 // go-go-scope (proposed)
-const [err, result] = await s.stream([url1, url2, url3])
+const [err, result] = await new Stream([url1, url2, url3], s)
   .mapAsync(fetchUrl, { concurrency: 2 })
   .toArray()
 ```
@@ -394,7 +394,7 @@ const result = await Effect.runPromise(
 )
 
 // go-go-scope (proposed)
-const [err, result] = await s.stream(source)
+const [err, result] = await new Stream(source, s)
   .map(riskyOperation)
   .catchError(error => fallbackStream)
   .toArray()

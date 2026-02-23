@@ -17,7 +17,7 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.race(factories)`](#scoperacefactories)
   - [`scope.parallel(factories, options?)`](#scopeparallelfactories-options)
   - [`scope.channel(capacity?)`](#scopechannelcapacity)
-  - [`scope.stream(source)`](#scopestreamsource)
+  - [`Stream` (from `@go-go-scope/stream`)](#stream-from-go-go-scopstream)
   - [`scope.poll(fn, onValue, options?)`](#scopepollfn-onvalue-options)
   - [`scope.debounce(fn, options?)](#scopedebouncefn-options)
   - [`scope.throttle(fn, options?)](#scopethrottlefn-options)
@@ -778,12 +778,20 @@ for await (const item of ch) {
 
 ---
 
-### `scope.stream(source)`
+### Stream (from `@go-go-scope/stream`)
 
-Wrap an AsyncIterable with scope cancellation.
+The Stream API has been extracted to a separate package. Install it with:
+
+```bash
+npm install @go-go-scope/stream
+```
+
+Wrap an AsyncIterable with lazy processing and scope cancellation.
 
 ```typescript
-stream<T>(source: AsyncIterable<T>): AsyncGenerator<T>
+import { Stream } from '@go-go-scope/stream'
+
+new Stream<T>(source: AsyncIterable<T>, scope: Scope): Stream<T>
 ```
 
 **Parameters:**
@@ -791,18 +799,35 @@ stream<T>(source: AsyncIterable<T>): AsyncGenerator<T>
 | Name | Type | Description |
 |------|------|-------------|
 | `source` | `AsyncIterable<T>` | Source iterable |
+| `scope` | `Scope` | Scope for cancellation |
 
-**Returns:** `AsyncGenerator<T>` - Cancellable async generator
+**Returns:** `Stream<T>` - Chainable stream instance
 
 **Example:**
 
 ```typescript
+import { scope } from 'go-go-scope'
+import { Stream } from '@go-go-scope/stream'
+
 await using s = scope()
 
-for await (const chunk of s.stream(readableStream)) {
+for await (const chunk of new Stream(readableStream, s)) {
   await processChunk(chunk)
   // Automatically stops when scope is cancelled
 }
+```
+
+**Note:** To use `scope.stream()` method instead, add the stream plugin:
+
+```typescript
+import { streamPlugin } from '@go-go-scope/stream'
+
+await using s = scope({
+  plugins: [{ plugin: streamPlugin }]
+})
+
+// Now you can use s.stream()
+const results = await s.stream(source).toArray()
 ```
 
 ---

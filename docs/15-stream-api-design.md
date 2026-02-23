@@ -22,7 +22,7 @@ import { scope } from 'go-go-scope';
 await using s = scope();
 
 // Lazy stream processing with automatic cancellation
-const [err, results] = await s.stream(fetchData())
+const [err, results] = await new Stream(fetchData(), s)
   .map(x => x * 2)
   .filter(x => x > 10)
   .take(5)
@@ -41,7 +41,7 @@ if (err) {
 await using s = scope();
 
 // From any async iterable
-const stream1 = s.stream(fetchData());
+const stream1 = new Stream(fetchData(), s);
 
 // From a generator
 async function* generate() {
@@ -49,10 +49,10 @@ async function* generate() {
     yield await fetchItem(i);
   }
 }
-const stream2 = s.stream(generate());
+const stream2 = new Stream(generate(), s);
 
 // From an array (wrap in async generator)
-const stream3 = s.stream((async function* () {
+const stream3 = new Stream((async function* () {
   yield* [1, 2, 3, 4, 5];
 })());
 ```
@@ -63,100 +63,100 @@ All transformations return a new Stream - nothing is executed until a terminal o
 
 ### map
 ```typescript
-const doubled = s.stream(numbers)
+const doubled = new Stream(numbers, s)
   .map(x => x * 2);
 ```
 
 ### mapAsync
 ```typescript
 // Concurrent async mapping
-const fetched = s.stream(urls)
+const fetched = new Stream(urls, s)
   .mapAsync(async url => await fetch(url), { concurrency: 4 });
 ```
 
 ### filter
 ```typescript
-const evens = s.stream(numbers)
+const evens = new Stream(numbers, s)
   .filter(x => x % 2 === 0);
 ```
 
 ### take / drop
 ```typescript
-const first5 = s.stream(infinite)
+const first5 = new Stream(infinite, s)
   .take(5);
 
-const rest = s.stream(items)
+const rest = new Stream(items, s)
   .drop(10);
 ```
 
 ### takeWhile / dropWhile / takeUntil / dropUntil
 ```typescript
 // Take while condition is true
-const valid = s.stream(items)
+const valid = new Stream(items, s)
   .takeWhile(x => x !== null);
 
 // Drop while condition is true
-const data = s.stream(lines)
+const data = new Stream(lines, s)
   .dropWhile(line => line.startsWith('#'));
 
 // Take until condition is true (inclusive)
-const section = s.stream(lines)
+const section = new Stream(lines, s)
   .takeUntil(line => line === 'END');
 
 // Drop until condition is true (inclusive)  
-const afterHeader = s.stream(lines)
+const afterHeader = new Stream(lines, s)
   .dropUntil(line => line === '---');
 ```
 
 ### flatMap
 ```typescript
-const flattened = s.stream(nestedArrays)
+const flattened = new Stream(nestedArrays, s)
   .flatMap(arr => arr);
 ```
 
 ### scan (running fold)
 ```typescript
-const runningTotals = s.stream(prices)
+const runningTotals = new Stream(prices, s)
   .scan((sum, price) => sum + price, 0);
 // Emits: [10, 25, 35, 60, ...]
 ```
 
 ### tap (side effects)
 ```typescript
-const logged = s.stream(data)
+const logged = new Stream(data, s)
   .tap((item, index) => console.log(`Processing ${index}:`, item));
 ```
 
 ### distinct / distinctAdjacent
 ```typescript
 // Remove all duplicates (uses memory)
-const unique = s.stream(items)
+const unique = new Stream(items, s)
   .distinct();
 
 // Remove only consecutive duplicates
-const deduped = s.stream(items)
+const deduped = new Stream(items, s)
   .distinctAdjacent();
 ```
 
 ### buffer / bufferTime / bufferTimeOrCount
 ```typescript
 // Group into chunks by count
-const batches = s.stream(items)
+const batches = new Stream(items, s)
   .buffer(10); // Stream<T[]>
 
 // Group by time window
-const timeBatches = s.stream(items)
+const timeBatches = new Stream(items, s)
   .bufferTime(1000); // Emit every second
 
 // Group by time OR count
-const flexible = s.stream(items)
+const flexible = new Stream(items, s)
   .bufferTimeOrCount(1000, 100); // Every second OR 100 items
 ```
 
 ### groupAdjacentBy
 ```typescript
 // Group consecutive items by key
-const grouped = s.stream(events)
+const grouped = new Stream(events, s)
   .groupAdjacentBy(e => e.userId);
 // Yields: [[e1, e2], [e3], [e4, e5, e6], ...]
 ```
@@ -164,57 +164,57 @@ const grouped = s.stream(events)
 ### throttle / debounce / spaced / delay / timeout
 ```typescript
 // Rate limit: max 10 items per second
-const throttled = s.stream(items)
+const throttled = new Stream(items, s)
   .throttle({ limit: 10, interval: 1000 });
 
 // Debounce: emit only after quiet period
-const debounced = s.stream(inputs)
+const debounced = new Stream(inputs, s)
   .debounce(300); // Wait 300ms of silence
 
 // Spaced: delay between elements
-const spaced = s.stream(items)
+const spaced = new Stream(items, s)
   .spaced(100); // 100ms between each
 
 // Delay: alias for spaced
-const delayed = s.stream(items)
+const delayed = new Stream(items, s)
   .delay(100);
 
 // Timeout: fail if stream takes too long
-const withTimeout = s.stream(slowSource)
+const withTimeout = new Stream(slowSource, s)
   .timeout(5000); // 5 second timeout
 ```
 
 ### catchError / orElse
 ```typescript
 // Recover from errors
-const recovered = s.stream(riskySource)
-  .catchError(err => s.stream(fallback));
+const recovered = new Stream(riskySource, s)
+  .catchError(err => new Stream(fallback, s));
 
 // Provide fallback if empty or error
-const withFallback = s.stream(maybeEmpty)
+const withFallback = new Stream(maybeEmpty, s)
   .orElse(fallbackStream);
 
 // Provide fallback only if empty (not on error)
-const ifEmpty = s.stream(maybeEmpty)
+const ifEmpty = new Stream(maybeEmpty, s)
   .orElseIfEmpty(fallbackStream);
 
 // Transform errors
-const transformed = s.stream(riskySource)
+const transformed = new Stream(riskySource, s)
   .mapError(err => new CustomError(err));
 
 // Tap into errors for logging
-const logged = s.stream(riskySource)
+const logged = new Stream(riskySource, s)
   .tapError(err => console.error('Stream error:', err));
 
 // Ensure cleanup runs
-const cleaned = s.stream(source)
+const cleaned = new Stream(source, s)
   .ensuring(() => cleanup());
 ```
 
 ### retry
 ```typescript
 // Retry on failure with delay
-const retried = s.stream(unreliableSource)
+const retried = new Stream(unreliableSource, s)
   .retry({ maxRetries: 3, delay: 100 });
 ```
 
@@ -271,58 +271,58 @@ All terminal operations return `Result<E, T>` tuples for error handling.
 
 ### toArray
 ```typescript
-const [err, items] = await s.stream(source)
+const [err, items] = await new Stream(source, s)
   .toArray();
 ```
 
 ### first / last
 ```typescript
 // Get first element
-const [err, first] = await s.stream(source)
+const [err, first] = await new Stream(source, s)
   .first();
 
 // Get last element (consumes entire stream)
-const [err2, last] = await s.stream(source)
+const [err2, last] = await new Stream(source, s)
   .last();
 ```
 
 ### reduce
 ```typescript
-const [err, sum] = await s.stream(numbers)
+const [err, sum] = await new Stream(numbers, s)
   .reduce((a, b) => a + b, 0);
 ```
 
 ### forEach
 ```typescript
-const [err] = await s.stream(items)
+const [err] = await new Stream(items, s)
   .forEach(item => console.log(item));
 ```
 
 ### find
 ```typescript
-const [err, user] = await s.stream(users)
+const [err, user] = await new Stream(users, s)
   .find(u => u.id === 123);
 ```
 
 ### some / every
 ```typescript
-const [err, hasAdmin] = await s.stream(users)
+const [err, hasAdmin] = await new Stream(users, s)
   .some(u => u.role === 'admin');
 
-const [err2, allActive] = await s.stream(users)
+const [err2, allActive] = await new Stream(users, s)
   .every(u => u.active);
 ```
 
 ### count
 ```typescript
-const [err, total] = await s.stream(items)
+const [err, total] = await new Stream(items, s)
   .count();
 ```
 
 ### drain
 ```typescript
 // Consume without collecting (for side effects)
-const [err] = await s.stream(events)
+const [err] = await new Stream(events, s)
   .tap(processEvent)
   .drain();
 ```
@@ -335,7 +335,7 @@ Streams automatically respect scope cancellation:
 await using s = scope({ timeout: 5000 });
 
 // If timeout fires mid-stream, iteration stops immediately
-const [err, results] = await s.stream(largeDataset)
+const [err, results] = await new Stream(largeDataset, s)
   .map(async x => await expensiveTransform(x))
   .toArray();
 
@@ -389,7 +389,7 @@ const results = (await Array.fromAsync(source))
   .slice(0, 5);
 
 // Stream - lazy, processes on demand, cancellable
-const [err, results] = await s.stream(source)
+const [err, results] = await new Stream(source, s)
   .map(x => x * 2)
   .filter(x => x > 10)
   .take(5)
@@ -406,7 +406,7 @@ const stream = Stream.fromIterable(items).pipe(
 const result = Effect.runPromise(Stream.runCollect(stream));
 
 // go-go-scope Stream
-const [err, results] = await s.stream(items)
+const [err, results] = await new Stream(items, s)
   .map(x => x * 2)
   .take(5)
   .toArray();
@@ -418,7 +418,7 @@ const [err, results] = await s.stream(items)
 |----------|----------|
 | `Array.fromAsync()` | Small datasets, need all data in memory |
 | `for await...of` | Simple iteration, no transformation chain |
-| `s.stream()` | Large/infinite datasets, transformation chains, need cancellation |
+| `Stream` | Large/infinite datasets, transformation chains, need cancellation |
 
 ## API Reference
 
@@ -453,7 +453,7 @@ const [err, results] = await s.stream(items)
 All terminal operations return Result tuples:
 
 ```typescript
-const [err, results] = await s.stream(source)
+const [err, results] = await new Stream(source, s)
   .map(riskyOperation)
   .toArray();
 

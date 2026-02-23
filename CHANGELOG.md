@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2025-02-22
+
+### Added
+
+- **New Stream Operators**:
+  - `pairwise()` - Emit [previous, current] tuples for detecting changes
+  - `window(size)` - Sliding window of values
+  - `concatMap()` - Sequential flatMap (waits for each inner iterable)
+  - `exhaustMap()` - Ignore new emissions while processing previous
+  - `share()` - Multicast to multiple subscribers
+  
+- **Automatic Metrics Export**: Background metrics flushing with configurable interval
+  - `metricsExport` option in scope configuration
+  - Supports JSON, Prometheus, and OpenTelemetry formats
+  - Automatic cleanup on scope disposal
+  
+- **Error Context Tracking**: Attach debugging context to task errors
+  - `errorContext` option in TaskOptions
+  - Context attached to error objects for easier debugging
+  
+- **Enhanced Test Utilities**:
+  - `createTimeTravelController()` - Advanced time control for deterministic tests
+  - `createMockChannel()` - Mock channels for testing
+  - Support for jumping to specific times, intervals, and timeline inspection
+  
+- **Property-Based Testing**: Tests using fast-check for mathematical properties
+  - Stream operator properties (map composition, filter idempotence, etc.)
+  - Channel properties (FIFO, capacity limits)
+  - Scope properties (task consistency, DI behavior)
+  
+- **Tree-Shaking Optimizations**: Added `/* #__PURE__ */` annotations
+  - 18% bundle size reduction when importing only specific functions
+  
+- **Code Organization**:
+  - Extracted `HistogramImpl` to `src/scope/histogram.ts`
+  - Extracted `AsyncDisposableResource` to `src/scope/resource.ts`
+  
+- **Job Scheduler** (`go-go-scope/scheduler`): Production-ready distributed job scheduling
+  - Cron expression support with presets (MINUTELY, HOURLY, DAILY, WEEKLY, MONTHLY)
+  - Distributed locking via persistence adapters (Redis, PostgreSQL, MySQL, SQLite)
+  - Job retry with exponential backoff and jitter
+  - Event hooks for monitoring (jobStarted, jobCompleted, jobFailed, etc.)
+  - Multiple storage backends: InMemoryJobStorage, RedisJobStorage, SQLJobStorage
+  - Concurrent execution control per schedule
+  - One-time and recurring job scheduling
+  - See [docs/15-scheduler.md](./docs/15-scheduler.md) for complete documentation
+
 ## [1.7.0] - 2025-02-20
 
 ### Added

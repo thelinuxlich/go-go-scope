@@ -14,9 +14,9 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 - Semaphores for rate limiting
 - Circuit breaker pattern for preventing cascading failures
 - Retry logic with configurable delays and conditions (exponential backoff, jitter, linear)
+- Stream API with 55+ lazy operations (map, filter, flatMap, buffer, debounce, throttle, pairwise, window, exhaustMap, concatMap, etc.)
 - `parallel()` for processing arrays with progress tracking and error handling
 - Dependency injection via `provide()`/`use()`/`override()`
-- Stream processing with automatic cancellation
 - Polling utilities with start/stop control
 - Debounce and throttle rate-limiting utilities
 - Select statement for channel operations (Go-style) with timeout
@@ -28,10 +28,15 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 - Structured logging integration
 - OpenTelemetry tracing integration
 - Cancellation utilities: `throwIfAborted`, `onAbort`, `abortPromise`, `raceSignals`, `whenAborted`
-- Debug visualization via `debugTree()` for scope hierarchies
+- Debug visualization via `debugTree()` for scope hierarchies (supports Mermaid format)
 - Built-in debug logging via the `debug` module
+- **Property-based testing**: Mathematical properties verified with fast-check
 - **Persistence adapters**: Distributed locks and circuit breaker state across Redis, PostgreSQL, MySQL, SQLite
 - **Framework adapters**: Fastify, Express, NestJS, Hono, Elysia
+
+### Patterns (via composition)
+- **Actor Model**: Message-passing concurrency with channels (see recipes)
+- **Health Checks**: Parallel dependency checking with timeouts (see recipes)
 
 ## Technology Stack
 
@@ -83,7 +88,7 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 │   ├── retry-strategies.ts    # Retry delay strategies (exponential, jitter, linear)
 │   ├── race.ts                # Standalone race() function
 │   ├── parallel.ts            # Standalone parallel() function
-│   ├── stream.ts              # Standalone stream() function
+│   ├── stream.ts              # Stream class - lazy async iterable processing
 │   ├── poll.ts                # Standalone poll() function
 │   ├── rate-limiting.ts       # Standalone debounce and throttle utilities
 │   ├── errors.ts              # Error classes (AbortError, UnknownError)
@@ -118,7 +123,8 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 │   ├── fuzz.test.ts           # Fuzz tests for race conditions
 │   ├── memory-leak.test.ts    # Memory leak verification tests
 │   ├── lock-ttl-analysis.test.ts # Lock TTL analysis tests
-│   └── persistence-integration.test.ts  # Persistence adapter tests (Redis, PG, MySQL, SQLite)
+│   ├── stream.test.ts         # Stream API tests
+│   └── persistence-integration.test.ts  # Persistence adapter tests
 ├── dist/                      # Compiled output (generated, NOT committed)
 │   ├── index.mjs              # ESM build
 │   ├── index.d.mts            # ESM type definitions
@@ -155,8 +161,7 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 │   ├── 11-integrations.md            # OpenTelemetry, Prometheus, Grafana, Framework Adapters
 │   ├── 12-cancellation.md            # Cancellation utilities and helpers
 │   ├── 13-recipes.md                 # Common patterns and solutions
-│   ├── 14-migration-guides.md        # Migration from Promises, p-queue, Effect, RxJS
-│   └── README.md              # Documentation index
+│   └── 14-migration-guides.md        # Migration from Promises, p-queue, Effect, RxJS
 ├── grafana/                   # Grafana provisioning
 │   └── provisioning/          # Dashboards and datasources
 ├── package.json               # Package configuration
@@ -173,7 +178,7 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 └── README.md                  # Project overview
 ```
 
-## Build Commands
+## Build and Test Commands
 
 ```bash
 # Build the project (outputs to dist/)
@@ -311,145 +316,6 @@ Tasks receive a context object with services and signal:
 task<T>(fn: (ctx: { services: Services; signal: AbortSignal }) => Promise<T>): Task<Result<unknown, T>>
 ```
 
-## Testing Strategy
-
-### Test Organization
-- **tests/core.test.ts**: Core functionality
-  - Task (lazy execution, cancellation, settlement tracking)
-  - Scope (task spawning, cancellation, timeout, parent signal linking)
-  - Parent scope inheritance (signal, services, options)
-  - AsyncDisposableResource (acquire/dispose lifecycle)
-  - Result type exports
-  - Retry functionality (maxRetries, delay, retryCondition, onRetry)
-  - OpenTelemetry integration (mock tracer, span creation, attributes)
-  
-- **tests/concurrency.test.ts**: Concurrency primitives
-  - Channel (send/receive, async iterator, backpressure, multiple producers/consumers)
-  - Semaphore (acquire/release, concurrent access limits, cancellation)
-  - CircuitBreaker (scope-level, state transitions, reset timeout)
-  - stream (async iterable wrapper, abort signal handling, cleanup)
-  - poll (interval polling, immediate option, error handling, controller)
-  - Integration scenarios (log aggregation, scope concurrency)
-  
-- **tests/rate-limiting.test.ts**: Rate limiting & observability
-  - Debounce (wait, leading/trailing edges, scope disposal)
-  - Throttle (interval, leading/trailing edges, scope disposal)
-  - Metrics (tasks spawned/completed/failed, duration statistics, resources)
-  - Lifecycle Hooks (beforeTask, afterTask, onCancel, onDispose)
-  - Select (multiple channel operations, empty cases, closed channels)
-  - Histogram (percentile calculations, p50/p90/p95/p99)
-
-- **tests/cancellation.test.ts**: Cancellation utilities
-  - throwIfAborted
-  - onAbort
-  - abortPromise
-  - raceSignals
-  - whenAborted
-  
-- **tests/prometheus.test.ts**: Prometheus metrics export
-  - JSON format export
-  - Prometheus format export
-  - OpenTelemetry format export
-  - MetricsReporter functionality
-  - Custom prefix support
-  
-- **tests/testing.test.ts**: Test utilities
-  - createMockScope
-  - createControlledTimer
-  - createSpy
-  - flushPromises
-  - assertScopeDisposed
-  - createTestScope
-  - createTimeController
-
-- **tests/type-check.test.ts**: TypeScript type-level tests
-  - Type inference validations
-  - errorClass/systemErrorClass mutual exclusivity
-
-- **tests/performance.test.ts**: Performance benchmarks
-
-- **tests/bun-compatibility.test.ts**: Bun runtime compatibility
-  - Core functionality under Bun
-  - SQLite adapter with Bun
-
-- **tests/fuzz.test.ts**: Fuzz tests
-  - Randomized tests for race conditions in channels and scopes
-
-- **tests/memory-leak.test.ts**: Memory leak tests
-  - Verify no leaks after 10,000 scope operations
-
-- **tests/persistence-integration.test.ts**: Persistence adapter integration tests
-  - Tests all persistence providers (Redis, PostgreSQL, MySQL, SQLite)
-  - Distributed lock tests (acquire, release, extend, expiration, force release)
-  - Circuit breaker state tests (persistence, failure counting, subscriptions)
-  - Scope integration tests (acquireLock with different providers)
-  - Gracefully skips tests for unavailable databases
-
-### Test Patterns
-- Uses Vitest with globals enabled (no need to import `describe`, `test`, `expect`)
-- Tests use `await using` and `using` syntax extensively
-- Async cleanup is verified using event tracking
-- Timeouts use actual timers (no fake timers)
-- Tests verify both success and failure paths
-- Mock OpenTelemetry tracer implemented for testing
-
-### Running Tests
-```bash
-# Full test suite (builds, lints, then tests)
-npm test
-
-# Watch mode for development
-npm run test:watch
-
-# Run specific test file
-npx vitest run tests/core.test.ts
-npx vitest run tests/concurrency.test.ts
-npx vitest run tests/rate-limiting.test.ts
-npx vitest run tests/cancellation.test.ts
-npx vitest run tests/prometheus.test.ts
-npx vitest run tests/testing.test.ts
-npx vitest run tests/type-check.test.ts
-npx vitest run tests/performance.test.ts
-
-# Run persistence integration tests (requires services)
-npm run services:up && npm run test:integration
-
-# Run Bun compatibility tests
-npm run test:bun
-
-# Run all tests under Bun
-npm run test:bun:all
-```
-
-### Writing New Tests
-- Use `describe` and `test` from vitest (globals enabled)
-- Test both success and failure paths
-- Verify cleanup happens correctly
-- Test AbortSignal propagation
-- Use small timeouts (10-100ms) to keep tests fast
-
-Example test pattern:
-```typescript
-test("cancels when scope disposed", async () => {
-    const s = scope();
-    let aborted = false;
-    
-    using t = s.task(async ({ signal }) => {
-        return new Promise((_, reject) => {
-            signal.addEventListener("abort", () => {
-                aborted = true;
-                reject(new Error("aborted"));
-            });
-        });
-    });
-    
-    await s[Symbol.asyncDispose]().catch(() => {});
-    await new Promise((r) => setTimeout(r, 10)); // Allow propagation
-    
-    expect(aborted).toBe(true);
-});
-```
-
 ## Architecture Details
 
 ### Core Classes
@@ -543,10 +409,12 @@ test("cancels when scope disposed", async () => {
     - Configurable timeout with callback
     - Methods: `check()`, `dispose()`
 
-11. **HistogramImpl** (`scope.ts`): Internal histogram implementation
-    - Records value distributions
-    - Calculates percentiles (p50, p90, p95, p99)
-    - Methods: `record()`, `snapshot()`
+11. **Stream<T>** (`stream.ts`): Lazy async iterable processing
+    - 50+ operations: map, filter, flatMap, take, drop, buffer, debounce, throttle, etc.
+    - Lazy evaluation - operations compose until terminal operation
+    - Result tuples for type-safe error handling
+    - Automatic cancellation via scope disposal
+    - Methods: `map()`, `filter()`, `flatMap()`, `take()`, `toArray()`, `forEach()`, `drain()`, etc.
 
 12. **Cancellation Utilities** (`cancellation.ts`): AbortSignal helpers
     - `throwIfAborted(signal)` - Throws if signal is aborted
@@ -598,7 +466,6 @@ Located in `src/adapters/`:
 - **scope(options?)**: Factory for Scope instances (`factory.ts`)
 - **race(factories, options?)**: Race with automatic cancellation of losers (`race.ts`)
 - **parallel(factories, options?)**: Parallel execution with concurrency limit (`parallel.ts`)
-- **stream(source, signal?)**: Async iterable wrapper with cancellation (`stream.ts`)
 - **poll(fn, onValue, options?)**: Interval polling with cleanup (`poll.ts`)
 - **debounce(scope, fn, options?)**: Debounced function wrapper (`rate-limiting.ts`)
 - **throttle(scope, fn, options?)**: Throttled function wrapper (`rate-limiting.ts`)
@@ -626,30 +493,6 @@ When a task is spawned, it goes through a pipeline of wrappers (from innermost t
 4. **Timeout** (if `timeout` option specified in TaskOptions)
 5. **Result Wrapping** (always - converts to Result tuple)
 
-### Scope Extension Pattern
-
-Advanced features are added to Scope as methods:
-
-```typescript
-// Scope methods that create resources:
-channel<T>(capacity?: number): Channel<T>
-broadcast<T>(): BroadcastChannel<T>
-stream<T>(source: AsyncIterable<T>): AsyncGenerator<T>
-poll<T>(fn, onValue, options?): PollController
-race<T>(factories): Promise<Result<unknown, T>>
-parallel<T>(factories, options?): ParallelAggregateResult<T>
-debounce<T, Args>(fn, options?): (...args: Args) => Promise<Result<unknown, T>>
-throttle<T, Args>(fn, options?): (...args: Args) => Promise<Result<unknown, T>>
-select<T>(cases): Promise<Result<unknown, T>>
-resourcePool<T>(options): ResourcePool<T>
-pool<T>(options): ResourcePool<T>  // alias
-acquireLock(key, ttl): Promise<LockHandle | null>
-histogram(name): Histogram
-metrics(): ScopeMetrics | undefined
-profile(): ScopeProfileReport | undefined
-debugTree(options?): string  // supports { format: 'mermaid' }
-```
-
 ### Debug Logging
 
 The library uses the `debug` module for logging:
@@ -669,6 +512,297 @@ Namespaces:
 - `go-go-scope:cancellation` - Cancellation utility events
 
 Enable with: `DEBUG=go-go-scope:* node your-app.js`
+
+## New Features in v1.8.0
+
+### Additional Stream Operators
+
+New operators for advanced stream processing:
+
+```typescript
+// pairwise() - emit [previous, current] tuples
+const [_, pairs] = await s.stream([1, 2, 3, 4])
+  .pairwise()
+  .toArray()
+// pairs = [[1, 2], [2, 3], [3, 4]]
+
+// window() - sliding window of values
+const [_, windows] = await s.stream([1, 2, 3, 4, 5])
+  .window(3)
+  .toArray()
+// windows = [[1, 2, 3], [2, 3, 4], [3, 4, 5]]
+
+// concatMap() - sequential flatMap
+const [_, pages] = await s.stream([url1, url2])
+  .concatMap(url => fetchAllPages(url)) // Wait for each to complete
+  .toArray()
+
+// exhaustMap() - ignore new emissions while processing
+const [_, results] = await s.stream(searchQueries)
+  .exhaustMap(q => fetchResults(q)) // Ignore new queries while fetching
+  .toArray()
+
+// share() - multicast to multiple subscribers
+const shared = s.stream(source).share()
+shared.forEach(v => console.log('A:', v))
+shared.forEach(v => console.log('B:', v)) // Both get same values
+```
+
+### Automatic Metrics Export
+
+Background metrics flushing for continuous monitoring:
+
+```typescript
+await using s = scope({
+  metrics: true,
+  metricsExport: {
+    interval: 60000,           // Export every minute
+    format: 'json',            // 'json' | 'prometheus' | 'otel'
+    destination: (metrics) => { // Send to your metrics backend
+      fetch('/metrics', { method: 'POST', body: metrics })
+    },
+    prefix: 'myapp'            // Optional metric name prefix
+  }
+})
+```
+
+### Error Context Tracking
+
+Attach debugging context to errors:
+
+```typescript
+const [err, user] = await s.task(() => fetchUser(id), {
+  errorContext: { operation: 'fetchUser', userId: id, endpoint: '/api/users' }
+})
+
+if (err) {
+  console.log(err.message)     // "Request failed"
+  console.log(err.context)     // { operation: 'fetchUser', userId: '123', endpoint: '/api/users' }
+}
+```
+
+### Enhanced Test Utilities
+
+Time travel controller for deterministic tests:
+
+```typescript
+import { createTimeTravelController, createMockChannel } from 'go-go-scope/testing'
+
+// Time travel for deterministic async tests
+const time = createTimeTravelController()
+
+const results: number[] = []
+time.setTimeout(() => results.push(1), 100)
+time.setTimeout(() => results.push(2), 200)
+
+time.jumpTo(150)  // Jump to specific time
+expect(results).toEqual([1])  // Only first timer fired
+
+time.advance(100) // Advance by milliseconds
+expect(results).toEqual([1, 2])
+
+// Mock channels for testing
+const mockCh = createMockChannel<number>()
+mockCh.setReceiveValues([1, 2, 3])
+
+const ch = mockCh.channel
+await ch.send(42)
+expect(mockCh.getSentValues()).toEqual([42])
+```
+
+## Testing Strategy
+
+### Test Organization
+- **tests/core.test.ts**: Core functionality
+  - Task (lazy execution, cancellation, settlement tracking)
+  - Scope (task spawning, cancellation, timeout, parent signal linking)
+  - Parent scope inheritance (signal, services, options)
+  - AsyncDisposableResource (acquire/dispose lifecycle)
+  - Result type exports
+  - Retry functionality (maxRetries, delay, retryCondition, onRetry)
+  - OpenTelemetry integration (mock tracer, span creation, attributes)
+  
+- **tests/concurrency.test.ts**: Concurrency primitives
+  - Channel (send/receive, async iterator, backpressure, multiple producers/consumers)
+  - Semaphore (acquire/release, concurrent access limits, cancellation)
+  - CircuitBreaker (scope-level, state transitions, reset timeout)
+  - poll (interval polling, immediate option, error handling, controller)
+  - Integration scenarios (log aggregation, scope concurrency)
+  
+- **tests/rate-limiting.test.ts**: Rate limiting & observability
+  - Debounce (wait, leading/trailing edges, scope disposal)
+  - Throttle (interval, leading/trailing edges, scope disposal)
+  - Metrics (tasks spawned/completed/failed, duration statistics, resources)
+  - Lifecycle Hooks (beforeTask, afterTask, onCancel, onDispose)
+  - Select (multiple channel operations, empty cases, closed channels)
+  - Histogram (percentile calculations, p50/p90/p95/p99)
+
+- **tests/stream.test.ts**: Stream API
+  - Core operations (map, filter, flatMap, take, drop)
+  - Buffering (buffer, bufferTime, groupAdjacentBy)
+  - Deduplication (distinct, distinctBy)
+  - Combining (zip, concat, merge)
+  - Terminal operations (toArray, forEach, reduce)
+  - Error handling (catchAll, orElse, retry)
+  - Cancellation support
+
+- **tests/cancellation.test.ts**: Cancellation utilities
+  - throwIfAborted
+  - onAbort
+  - abortPromise
+  - raceSignals
+  - whenAborted
+  
+- **tests/prometheus.test.ts**: Prometheus metrics export
+  - JSON format export
+  - Prometheus format export
+  - OpenTelemetry format export
+  - MetricsReporter functionality
+  - Custom prefix support
+  
+- **tests/testing.test.ts**: Test utilities
+  - createMockScope
+  - createControlledTimer
+  - createSpy
+  - flushPromises
+  - assertScopeDisposed
+  - createTestScope
+  - createTimeController
+
+- **tests/type-check.test.ts**: TypeScript type-level tests
+  - Type inference validations
+  - errorClass/systemErrorClass mutual exclusivity
+
+- **tests/performance.test.ts**: Performance benchmarks
+
+- **tests/bun-compatibility.test.ts**: Bun runtime compatibility
+  - Core functionality under Bun
+  - SQLite adapter with Bun
+
+- **tests/fuzz.test.ts**: Fuzz tests
+  - Randomized tests for race conditions in channels and scopes
+
+- **tests/memory-leak.test.ts**: Memory leak tests
+  - Verify no leaks after 10,000 scope operations
+
+- **tests/persistence-integration.test.ts**: Persistence adapter integration tests
+  - Tests all persistence providers (Redis, PostgreSQL, MySQL, SQLite)
+  - Distributed lock tests (acquire, release, extend, expiration, force release)
+  - Circuit breaker state tests (persistence, failure counting, subscriptions)
+  - Scope integration tests (acquireLock with different providers)
+  - Gracefully skips tests for unavailable databases
+
+### Test Patterns
+- Uses Vitest with globals enabled (no need to import `describe`, `test`, `expect`)
+- Tests use `await using` and `using` syntax extensively
+- Async cleanup is verified using event tracking
+- Timeouts use actual timers (no fake timers)
+- Tests verify both success and failure paths
+- Mock OpenTelemetry tracer implemented for testing
+
+### Running Tests
+```bash
+# Full test suite (builds, lints, then tests)
+npm test
+
+# Watch mode for development
+npm run test:watch
+
+# Run specific test file
+npx vitest run tests/core.test.ts
+npx vitest run tests/concurrency.test.ts
+npx vitest run tests/rate-limiting.test.ts
+npx vitest run tests/cancellation.test.ts
+npx vitest run tests/prometheus.test.ts
+npx vitest run tests/testing.test.ts
+npx vitest run tests/type-check.test.ts
+npx vitest run tests/performance.test.ts
+
+# Property-based tests (requires Node 18+)
+npx vitest run tests/stream-properties.test.ts
+npx vitest run tests/channel-properties.test.ts
+npx vitest run tests/scope-properties.test.ts
+```
+
+### Property-Based Testing
+
+The library includes property-based tests using [fast-check](https://github.com/dubzzz/fast-check) to verify mathematical properties and laws:
+
+**Stream Properties:**
+- Map composition: `map(f).map(g) == map(g ∘ f)`
+- Map identity: `map(x => x) == identity`
+- Filter idempotence: `filter(p).filter(p) == filter(p)`
+- Take/drop: `take(n) + drop(n)` preserves order
+- Distinct: No duplicates in result
+- Buffer concatenation equals original
+
+**Channel Properties:**
+- FIFO order for send/receive
+- Size never exceeds capacity
+- All broadcast subscribers receive all messages
+
+**Scope Properties:**
+- Task results are consistent on multiple awaits
+- Parallel preserves order
+- Race returns one of the provided values
+- DI: provided services can be retrieved
+- Cancellation: disposed scope rejects new tasks
+
+Example property test:
+```typescript
+test("map composition law", async () => {
+  await fc.assert(
+    fc.asyncProperty(
+      fc.array(fc.integer()),
+      fc.integer(),
+      fc.integer(),
+      async (arr, add1, mul2) => {
+        await using s = scope();
+        const f = (x: number) => x + add1;
+        const g = (x: number) => x * mul2;
+
+        // map(f).map(g) should equal map(g ∘ f)
+        const [, result1] = await s.stream(fromArray(arr))
+          .map(f).map(g).toArray();
+        const [, result2] = await s.stream(fromArray(arr))
+          .map((x) => g(f(x))).toArray();
+
+        expect(result1).toEqual(result2);
+      }
+    ),
+    { numRuns: 100 }
+  );
+});
+```
+
+### Writing New Tests
+- Use `describe` and `test` from vitest (globals enabled)
+- Test both success and failure paths
+- Verify cleanup happens correctly
+- Test AbortSignal propagation
+- Use small timeouts (10-100ms) to keep tests fast
+
+Example test pattern:
+```typescript
+test("cancels when scope disposed", async () => {
+    const s = scope();
+    let aborted = false;
+    
+    using t = s.task(async ({ signal }) => {
+        return new Promise((_, reject) => {
+            signal.addEventListener("abort", () => {
+                aborted = true;
+                reject(new Error("aborted"));
+            });
+        });
+    });
+    
+    await s[Symbol.asyncDispose]().catch(() => {});
+    await new Promise((r) => setTimeout(r, 10)); // Allow propagation
+    
+    expect(aborted).toBe(true);
+});
+```
 
 ## Package Exports
 
@@ -830,47 +964,6 @@ await s.task(fn, { errorClass: DatabaseError })
 // Only wrap system/infrastructure errors (preserve tagged business errors)
 await s.task(fn, { systemErrorClass: InfrastructureError })
 ```
-
-## Dependencies
-
-### Runtime Dependencies
-- `debug` ^4.4.3 - Debug logging utility
-- `@opentelemetry/api` ^1.9.0 - OpenTelemetry API for tracing
-
-### Dev Dependencies
-- `@biomejs/biome` ^2.4.3 - Linter/formatter
-- `@nestjs/common` ^11.1.14 - NestJS framework adapter
-- `@opentelemetry/exporter-trace-otlp-http` ^0.212.0 - OTLP trace exporter
-- `@opentelemetry/resources` ^2.5.1 - OpenTelemetry resources
-- `@opentelemetry/sdk-node` ^0.212.0 - OpenTelemetry Node.js SDK
-- `@opentelemetry/semantic-conventions` ^1.39.0 - Semantic conventions
-- `@types/debug` ^4.1.12 - Type definitions for debug
-- `@types/express` ^5.0.6 - Express type definitions
-- `@types/node` ^24 - Type definitions for Node.js
-- `@types/supertest` ^6.0.3 - Supertest type definitions
-- `effect` ^3.19.18 - For comparison examples
-- `elysia` ^1.4.25 - Elysia framework adapter
-- `express` ^5.2.1 - Express framework adapter
-- `fastify` ^5.7.4 - Fastify framework adapter
-- `fastify-plugin` ^5.1.0 - Fastify plugin helper
-- `go-go-try` ^7.4.1 - For typed error handling examples
-- `hono` ^4.12.0 - Hono framework adapter
-- `ioredis` ^5.9.3 - Redis persistence adapter
-- `mysql2` ^3.17.3 - MySQL persistence adapter
-- `pg` ^8.18.0 - PostgreSQL persistence adapter
-- `pkgroll` ^2.26.3 - Build tool
-- `sqlite3` ^5.1.7 - SQLite persistence adapter
-- `supertest` ^7.2.2 - HTTP testing
-- `tsx` ^4.21.0 - TypeScript execution for playground
-- `typescript` ^5.9.3 - TypeScript compiler
-- `vitest` ^4.0.18 - Test framework
-
-## Development Workflow
-
-1. **Make changes** to `src/*.ts` or test files
-2. **Run tests**: `npm test` (this builds, lints, and tests)
-3. **Check types**: TypeScript compilation happens during build
-4. **Commit**: The dist/ folder should NOT be committed (it's in .gitignore)
 
 ## Bun Compatibility
 

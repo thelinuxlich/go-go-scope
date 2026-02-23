@@ -12,6 +12,8 @@ Common patterns and solutions using go-go-scope.
 - [Rate-Limited API Client](#rate-limited-api-client)
 - [Cache with TTL](#cache-with-ttl)
 - [Circuit Breaker Pattern](#circuit-breaker-pattern)
+- [Health Check Endpoint](#health-check-endpoint)
+- [Actor Model](#actor-model)
 
 ---
 
@@ -499,6 +501,160 @@ async function callExternalService() {
   return result
 }
 ```
+
+---
+
+## Health Check Endpoint
+
+Check multiple service dependencies in parallel with timeout protection:
+
+```typescript
+import { scope } from 'go-go-scope'
+
+interface HealthStatus {
+  healthy: boolean
+  timestamp: string
+  checks: Record<string, { status: 'ok' | 'fail'; error?: string }>
+}
+
+async function healthCheck(): Promise<HealthStatus> {
+  await using s = scope({ timeout: 5000 }) // 5s timeout for all checks
+
+  // Run all health checks in parallel
+  const [dbResult, cacheResult, apiResult] = await s.parallel([
+    // Database check
+    async () => {
+      await db.query('SELECT 1')
+      return 'connected'
+    },
+    // Redis/cache check  
+    async () => {
+      await redis.ping()
+      return 'connected'
+    },
+    // External API check
+    async () => {
+      const res = await fetch('https://api.example.com/health')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return 'available'
+    }
+  ], { 
+    continueOnError: true // Don't stop if one check fails
+  })
+
+  // Build health status from results
+  const checks: Record<string, { status: 'ok' | 'fail'; error?: string }> = {
+    database: dbResult[0] 
+      ? { status: 'fail', error: dbResult[0].message }
+      : { status: 'ok' },
+    cache: cacheResult[0]
+      ? { status: 'fail', error: cacheResult[0].message }
+      : { status: 'ok' },
+    externalApi: apiResult[0]
+      ? { status: 'fail', error: apiResult[0].message }
+      : { status: 'ok' }
+  }
+
+  const healthy = Object.values(checks).every(c => c.status === 'ok')
+
+  return {
+    healthy,
+    timestamp: new Date().toISOString(),
+    checks
+  }
+}
+
+// Express/Fastify endpoint example
+app.get('/health', async (req, res) => {
+  const status = await healthCheck()
+  res.status(status.healthy ? 200 : 503)
+  res.json(status)
+})
+```
+
+**Key features:**
+- All checks run concurrently with `parallel()`
+- Global timeout via scope ensures checks don't hang
+- `continueOnError: true` means all checks run even if some fail
+- Individual error details preserved for debugging
+
+---
+
+---
+
+## Actor Model
+
+Implement actor-style concurrency using channels and tasks:
+
+```typescript
+import { scope } from 'go-go-scope'
+
+// Actor factory
+function createCounterActor(initial = 0) {
+  await using s = scope()
+
+  // Actor state
+  let count = initial
+
+  // Message channel (inbox)
+  const inbox = s.channel<{ type: 'inc' | 'dec' | 'get'; amount?: number; replyTo?: ReturnType<typeof s.channel> }>(100)
+
+  // Processing loop
+  s.task(async () => {
+    for await (const msg of inbox) {
+      switch (msg.type) {
+        case 'inc':
+          count += msg.amount ?? 1
+          break
+        case 'dec':
+          count -= msg.amount ?? 1
+          break
+        case 'get':
+          // Send response back
+          if (msg.replyTo) {
+            await msg.replyTo.send(count)
+          }
+          break
+      }
+    }
+  })
+
+  return {
+    // Fire-and-forget (tell)
+    increment: (amount = 1) => inbox.send({ type: 'inc', amount }),
+    decrement: (amount = 1) => inbox.send({ type: 'dec', amount }),
+
+    // Request-response (ask)
+    getCount: async () => {
+      const replyCh = s.channel<number>(1)
+      await inbox.send({ type: 'get', replyTo: replyCh })
+      return (await replyCh.receive()) ?? 0
+    },
+
+    dispose: () => s[Symbol.asyncDispose]()
+  }
+}
+
+// Usage
+const counter = createCounterActor(0)
+
+// Tell (fire-and-forget)
+await counter.increment(5)
+await counter.decrement(2)
+
+// Ask (request-response)
+const count = await counter.getCount()
+console.log(count) // 3
+
+// Cleanup
+await counter.dispose()
+```
+
+**Key features:**
+- Single-threaded state processing (no race conditions)
+- Channel-based message passing
+- Supports both tell (async) and ask (sync) patterns
+- Automatic cleanup with scope disposal
 
 ---
 

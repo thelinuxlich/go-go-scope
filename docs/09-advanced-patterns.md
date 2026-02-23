@@ -452,9 +452,11 @@ Process async iterables with automatic cancellation.
 ### Basic Streaming
 
 ```typescript
+import { Stream } from '@go-go-scope/stream'
+
 await using s = scope()
 
-for await (const chunk of s.stream(readableStream)) {
+for await (const chunk of new Stream(readableStream, s)) {
   await processChunk(chunk)
   // Automatically stops when scope is cancelled
 }
@@ -463,9 +465,11 @@ for await (const chunk of s.stream(readableStream)) {
 ### With Timeout
 
 ```typescript
+import { Stream } from '@go-go-scope/stream'
+
 await using s = scope({ timeout: 30000 })
 
-for await (const chunk of s.stream(readableStream)) {
+for await (const chunk of new Stream(readableStream, s)) {
   await processChunk(chunk)
 }
 // Stream stops after 30 seconds
@@ -474,9 +478,11 @@ for await (const chunk of s.stream(readableStream)) {
 ### Early Break
 
 ```typescript
+import { Stream } from '@go-go-scope/stream'
+
 await using s = scope()
 
-for await (const chunk of s.stream(readableStream)) {
+for await (const chunk of new Stream(readableStream, s)) {
   if (foundWhatWeNeed(chunk)) {
     break  // Iterator is properly cleaned up
   }

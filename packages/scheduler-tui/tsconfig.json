@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "paths": {
+      "go-go-scope": ["../go-go-scope/src/index.ts"],
+      "go-go-scope/*": ["../go-go-scope/src/*.ts"],
+      "@go-go-scope/scheduler": ["../scheduler/src/index.ts"],
+      "@go-go-scope/scheduler/*": ["../scheduler/src/*.ts"]
+    }
+  },
+  "include": ["src/**/*"]
+}

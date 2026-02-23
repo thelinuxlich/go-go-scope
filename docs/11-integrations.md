@@ -662,7 +662,7 @@ npm install sqlite3
 
 ```typescript
 import { scope } from 'go-go-scope'
-import { RedisAdapter } from 'go-go-scope/persistence/redis'
+import { RedisAdapter } from '@go-go-scope/persistence-redis'
 import { Pool } from 'pg'
 
 // Redis example
@@ -698,7 +698,7 @@ All adapters provide TTL-based distributed locks that expire automatically:
 
 ```typescript
 import { scope } from 'go-go-scope'
-import { RedisAdapter } from 'go-go-scope/persistence/redis'
+import { RedisAdapter } from '@go-go-scope/persistence-redis'
 
 const redis = new Redis()
 const adapter = new RedisAdapter(redis)
@@ -749,7 +749,7 @@ Share circuit breaker state across instances:
 
 ```typescript
 import { scope } from 'go-go-scope'
-import { MySQLAdapter } from 'go-go-scope/persistence/mysql'
+import { MySQLAdapter } from '@go-go-scope/persistence-mysql'
 
 const pool = createPool(process.env.DATABASE_URL)
 const adapter = new MySQLAdapter(pool)
@@ -793,8 +793,8 @@ await using s = scope({
 All persistence adapters work with Bun:
 
 ```typescript
-// Bun with SQLite
-import { SQLiteAdapter } from 'go-go-scope/persistence/sqlite'
+// Bun with SQLite (sqlite3 package)
+import { SQLiteAdapter } from '@go-go-scope/persistence-sqlite'
 import sqlite3 from 'sqlite3'
 
 const db = new sqlite3.Database(':memory:')
@@ -805,6 +805,26 @@ await using s = scope({
   persistence: { lock: adapter }
 })
 ```
+
+#### Bun-Native SQLite (bun:sqlite)
+
+For optimal performance under Bun, use the native SQLite adapter:
+
+```typescript
+// Bun-native SQLite (recommended for Bun)
+import { BunSQLiteAdapter } from '@go-go-scope/persistence-sqlite-bun'
+import { Database } from 'bun:sqlite'
+
+const db = new Database(':memory:')
+const adapter = new BunSQLiteAdapter(db)
+await adapter.connect()
+
+await using s = scope({
+  persistence: { lock: adapter }
+})
+```
+
+The `BunSQLiteAdapter` uses Bun's built-in `bun:sqlite` module for better performance and smaller bundle size compared to the `sqlite3` package.
 
 ---
 
@@ -826,7 +846,7 @@ await using s = scope({
 
 ```typescript
 import fastify from 'fastify'
-import { fastifyGoGoScope } from 'go-go-scope/adapters/fastify'
+import { fastifyGoGoScope } from '@go-go-scope/adapter-fastify'
 
 const app = fastify()
 
@@ -868,7 +888,7 @@ app.get('/users/:id', async (request, reply) => {
 
 ```typescript
 import express from 'express'
-import { goGoScope } from 'go-go-scope/adapters/express'
+import { goGoScope } from '@go-go-scope/adapter-express'
 
 const app = express()
 
@@ -913,7 +933,7 @@ app.get('/users/:id', async (req, res) => {
 
 ```typescript
 import { Module, Controller, Get, Param } from '@nestjs/common'
-import { GoGoScopeModule, GoGoScopeService, GoGoRequestScopeService } from 'go-go-scope/adapters/nestjs'
+import { GoGoScopeModule, GoGoScopeService, GoGoRequestScopeService } from '@go-go-scope/adapter-nestjs'
 
 // Import the module
 @Module({
@@ -960,7 +980,7 @@ class UserController {
 
 ```typescript
 import { Hono } from 'hono'
-import { goGoScope, getScope } from 'go-go-scope/adapters/hono'
+import { goGoScope, getScope } from '@go-go-scope/adapter-hono'
 
 const app = new Hono()
 
@@ -993,7 +1013,7 @@ app.get('/users/:id', async (c) => {
 
 ```typescript
 import { Elysia } from 'elysia'
-import { goGoScope } from 'go-go-scope/adapters/elysia'
+import { goGoScope } from '@go-go-scope/adapter-elysia'
 
 const app = new Elysia()
   .use(goGoScope({ name: 'elysia-app', metrics: true }))

@@ -2,14 +2,37 @@
 
 The `Stream` class provides lazy, composable, and cancellable async iterable processing. It's designed for handling data flows, event streams, and reactive programming with automatic resource management.
 
+> **Note**: The Stream API has been extracted to a separate package `@go-go-scope/stream`.
+
 ## Overview
 
 ```typescript
-import { scope, stream } from 'go-go-scope'
+import { scope } from 'go-go-scope'
+import { Stream } from '@go-go-scope/stream'
 
 await using s = scope()
 
 // Create a stream from any async iterable
+const [err, results] = await new Stream(fetchData(), s)
+  .filter(item => item.active)
+  .map(item => item.name)
+  .take(10)
+  .toArray()
+```
+
+### Alternative: Using the Stream Plugin
+
+If you prefer the `new Stream(, s)` method, you can use the stream plugin:
+
+```typescript
+import { scope } from 'go-go-scope'
+import { streamPlugin } from '@go-go-scope/stream'
+
+await using s = scope({
+  plugins: [{ plugin: streamPlugin }]
+})
+
+// Now you can use s.stream()
 const [err, results] = await s.stream(fetchData())
   .filter(item => item.active)
   .map(item => item.name)
@@ -37,22 +60,27 @@ async function* fetchUsers() {
 }
 
 await using s = scope()
-const users = s.stream(fetchUsers())
+import { Stream } from '@go-go-scope/stream'
+const users = new Stream(fetchUsers(), s)
 ```
 
 ### From Arrays
 
 ```typescript
-const numbers = s.stream(async function* () {
+import { Stream } from '@go-go-scope/stream'
+
+const numbers = new Stream(async function* () {
   for (const n of [1, 2, 3, 4, 5]) yield n
-}())
+}(), s)
 ```
 
 ### With Scope-based Cancellation
 
 ```typescript
+import { Stream } from '@go-go-scope/stream'
+
 await using s = scope()
-const data = s.stream(fetchSource())
+const data = new Stream(fetchSource(), s)
 
 // Automatically cancelled when scope disposes
 ```
@@ -66,12 +94,12 @@ Transform each value:
 
 ```typescript
 // Double each number
-const [err, doubled] = await s.stream(numbers)
+const [err, doubled] = await new Stream(numbers, s)
   .map(n => n * 2)
   .toArray() // [2, 4, 6, 8, 10]
 
 // Extract properties
-const [err, names] = await s.stream(users)
+const [err, names] = await new Stream(users, s)
   .map(user => user.name)
   .toArray()
 ```
@@ -81,7 +109,7 @@ Combine filter and map (more efficient than separate operations):
 
 ```typescript
 // Get active user emails, skip inactive
-const [err, emails] = await s.stream(users)
+const [err, emails] = await new Stream(users, s)
   .filterMap(user => 
     user.active ? user.email : null
   )
@@ -93,7 +121,7 @@ Flatten nested iterables:
 
 ```typescript
 // Flatten paginated results
-const [err, allItems] = await s.stream(pages)
+const [err, allItems] = await new Stream(pages, s)
   .flatMap(page => page.items)
   .toArray()
 ```
@@ -103,7 +131,7 @@ Running fold - emits intermediate values:
 
 ```typescript
 // Running totals
-const [err, totals] = await s.stream(sales)
+const [err, totals] = await new Stream(sales, s)
   .scan((sum, sale) => sum + sale.amount, 0)
   .toArray() // [100, 250, 400, ...]
 ```
@@ -114,20 +142,20 @@ Control how much data to process:
 
 ```typescript
 // Pagination: skip 20, take 10
-const page2 = s.stream(allItems)
+const page2 = new Stream(allItems, s)
   .drop(20)
   .take(10)
 
 // Take while condition holds
-const intro = s.stream(lines)
+const intro = new Stream(lines, s)
   .takeWhile(line => !line.startsWith('---'))
 
 // Take until (inclusive) - good for delimited data
-const section = s.stream(lines)
+const section = new Stream(lines, s)
   .takeUntil(line => line === 'END')
 
 // Drop header comments
-const data = s.stream(lines)
+const data = new Stream(lines, s)
   .dropWhile(line => line.startsWith('#'))
 ```
 
@@ -135,14 +163,14 @@ const data = s.stream(lines)
 
 ```typescript
 // Remove all duplicates
-const unique = s.stream(ids).distinct()
+const unique = new Stream(ids, s).distinct()
 
 // Remove only consecutive duplicates
-const changes = s.stream(sensorReadings)
+const changes = new Stream(sensorReadings, s)
   .distinctAdjacent() // Remove consecutive duplicates
 
 // With custom comparison (objects)
-const uniqueById = s.stream(updates)
+const uniqueById = new Stream(updates, s)
   .groupAdjacentBy(u => u.id)
   .map(group => group.at(-1)!) // keep latest
 ```
@@ -153,40 +181,40 @@ Merge and combine multiple streams:
 
 ```typescript
 // Merge two streams (interleave values as they arrive)
-const combined = s.stream(source1)
-  .merge(s.stream(source2))
+const combined = new Stream(source1, s)
+  .merge(new Stream(source2, s))
 
 // Concatenate streams (one after another)
-const sequence = s.stream(part1)
-  .concat(s.stream(part2))
+const sequence = new Stream(part1, s)
+  .concat(new Stream(part2, s))
 
 // Prepend/append values
-const withHeader = s.stream(data)
+const withHeader = new Stream(data, s)
   .prepend('START')
   .append('END')
 
 // Zip two streams together (pair values)
-const paired = s.stream(users)
-  .zip(s.stream(orders))  // [user, order] pairs
+const paired = new Stream(users, s)
+  .zip(new Stream(orders, s))  // [user, order] pairs
 
 // Zip with latest value from either stream
-const latest = s.stream(temperature)
-  .zipLatest(s.stream(humidity))  // emits when either updates
+const latest = new Stream(temperature, s)
+  .zipLatest(new Stream(humidity, s))  // emits when either updates
 
 // Zip with defaults for unequal lengths
-const padded = s.stream(short)
-  .zipAll(s.stream(long), 'default-for-short', 'default-for-long')
+const padded = new Stream(short, s)
+  .zipAll(new Stream(long, s), 'default-for-short', 'default-for-long')
 
 // Fair interleave (round-robin)
-const interleaved = s.stream(a)
-  .interleave(s.stream(b), s.stream(c))  // a1, b1, c1, a2, b2, c2...
+const interleaved = new Stream(a, s)
+  .interleave(new Stream(b, s), new Stream(c, s))  // a1, b1, c1, a2, b2, c2...
 
 // Cartesian product
-const combinations = s.stream(colors)
-  .cross(s.stream(sizes))  // [red, S], [red, M], [blue, S], [blue, M]...
+const combinations = new Stream(colors, s)
+  .cross(new Stream(sizes, s))  // [red, S], [red, M], [blue, S], [blue, M]...
 
 // Intersperse separator
-const csv = s.stream(values)
+const csv = new Stream(values, s)
   .intersperse(',')
   .toArray()  // "a,b,c"
 ```
@@ -197,15 +225,15 @@ Fan out to multiple consumers:
 
 ```typescript
 // Partition into two streams based on predicate
-const [evens, odds] = s.stream(numbers)
+const [evens, odds] = new Stream(numbers, s)
   .partition(n => n % 2 === 0)
 
 // Split at position n
-const [head, tail] = s.stream(items)
+const [head, tail] = new Stream(items, s)
   .splitAt(5)  // first 5, rest
 
 // Broadcast to multiple consumers
-const [s1, s2, s3] = s.stream(events)
+const [s1, s2, s3] = new Stream(events, s)
   .broadcast(3)  // all get same values
 ```
 
@@ -215,15 +243,15 @@ Control timing of emissions:
 
 ```typescript
 // Add delay between elements
-const delayed = s.stream(items)
+const delayed = new Stream(items, s)
   .delay(100)  // 100ms between each
 
 // Spaced (alias for delay)
-const spaced = s.stream(items)
+const spaced = new Stream(items, s)
   .spaced(50)
 
 // Timeout entire stream
-const withTimeout = s.stream(slowSource)
+const withTimeout = new Stream(slowSource, s)
   .timeout(5000)  // fails if > 5s
 ```
 
@@ -233,11 +261,11 @@ Buffer with time windows:
 
 ```typescript
 // Buffer with time window
-const batched = s.stream(events)
+const batched = new Stream(events, s)
   .bufferTime(1000)  // emit batch every second
 
 // Buffer with time OR count
-const flexible = s.stream(events)
+const flexible = new Stream(events, s)
   .bufferTimeOrCount(1000, 100)  // every second OR 100 items
 ```
 
@@ -247,11 +275,11 @@ Group elements by size, time, or key:
 
 ```typescript
 // Group by size or time window
-const batched = s.stream(events)
+const batched = new Stream(events, s)
   .groupedWithin(100, 1000)  // 100 items OR 1 second
 
 // Group by key into substreams
-const { groups, done } = s.stream(users)
+const { groups, done } = new Stream(users, s)
   .groupByKey(user => user.department)
 
 // Consume each group's stream
@@ -268,23 +296,23 @@ Fine-grained error control:
 
 ```typescript
 // Tap into errors without modifying
-const [err] = await s.stream(source)
+const [err] = await new Stream(source, s)
   .tapError(e => console.log('Error:', e))
   .toArray()
 
 // Transform errors
-const [err] = await s.stream(source)
+const [err] = await new Stream(source, s)
   .mapError(e => new CustomError(e))
   .toArray()
 
 // Ensure cleanup runs
-const [err] = await s.stream(source)
+const [err] = await new Stream(source, s)
   .ensuring(() => console.log('Done'))
   .toArray()
 
 // Fallback if empty
-const [err, items] = await s.stream(maybeEmpty)
-  .orElse(s.stream(fallback))
+const [err, items] = await new Stream(maybeEmpty, s)
+  .orElse(new Stream(fallback, s))
   .toArray()
 ```
 
@@ -294,15 +322,15 @@ Reduce to single values:
 
 ```typescript
 // Sum all values
-const [err, total] = await s.stream(prices)
+const [err, total] = await new Stream(prices, s)
   .sum()
 
 // Reduce
-const [err, product] = await s.stream(numbers)
+const [err, product] = await new Stream(numbers, s)
   .reduce((a, b) => a * b)
 
 // Fold with initial
-const [err, total] = await s.stream(items)
+const [err, total] = await new Stream(items, s)
   .fold(0, (acc, item) => acc + item.price)
 ```
 
@@ -311,7 +339,7 @@ const [err, total] = await s.stream(items)
 Automatically retry on failure:
 
 ```typescript
-const [err, results] = await s.stream(unreliableSource)
+const [err, results] = await new Stream(unreliableSource, s)
   .retry({ maxRetries: 3, delay: 100 })
   .toArray()
 ```
@@ -325,7 +353,7 @@ Process application logs with filtering, grouping, and rate limiting:
 ```typescript
 await using s = scope()
 
-const [err, errorSummary] = await s.stream(tailLogs())
+const [err, errorSummary] = await new Stream(tailLogs(), s)
   .filter(log => log.level === 'ERROR')
   .groupAdjacentBy(log => log.service)
   .map(([service, logs]) => ({
@@ -345,7 +373,7 @@ Sample and throttle sensor readings:
 await using s = scope()
 
 // Sample every 5 seconds, emit only on significant changes
-const readings = s.stream(sensor.poll())
+const readings = new Stream(sensor.poll(), s)
   .fixed(5000) // Sample every 5s
   .filter(r => r.temperature > 0) // Valid readings only
   .distinctAdjacent() // Only when value changes
@@ -367,7 +395,7 @@ await using s = scope()
 
 const urls = ['https://api.example.com/user/1', ...]
 
-const [err, users] = await s.stream(urls)
+const [err, users] = await new Stream(urls, s)
   .mapAsync(
     url => fetch(url).then(r => r.json()),
     { concurrency: 5 } // Max 5 concurrent
@@ -388,7 +416,7 @@ await using s = scope()
 let processed = 0
 const total = await db.count()
 
-const [err] = await s.stream(db.query())
+const [err] = await new Stream(db.query(), s)
   .buffer(1000) // Process in chunks
   .tap(() => {
     processed += 1000
@@ -409,7 +437,7 @@ Process event stream with partitioning:
 await using s = scope()
 
 // Partition by aggregate type
-const [userEvents, orderEvents] = s.stream(eventStore.subscribe())
+const [userEvents, orderEvents] = new Stream(eventStore.subscribe(), s)
   .partition(e => e.aggregateType === 'User')
 
 // Process in parallel with different handlers
@@ -433,7 +461,7 @@ Group messages by user session:
 ```typescript
 await using s = scope()
 
-const [err, sessions] = await s.stream(websocket.messages())
+const [err, sessions] = await new Stream(websocket.messages(), s)
   .takeWhile(() => !shutdownSignal.aborted)
   .groupAdjacentBy(msg => msg.userId)
   .filter(session => session.length > 5) // Active users only
@@ -452,7 +480,7 @@ Process large CSV file line by line:
 ```typescript
 await using s = scope()
 
-const [err, summary] = await s.stream(readFileLines('huge.csv'))
+const [err, summary] = await new Stream(readFileLines('huge.csv', s))
   .drop(1) // Skip header
   .map(parseCSVLine)
   .filter(row => row.isValid)
@@ -470,7 +498,7 @@ Retry failed webhooks with exponential backoff:
 ```typescript
 await using s = scope()
 
-await s.stream(failedWebhooks)
+await new Stream(failedWebhooks, s)
   .mapAsync(async webhook => {
     const response = await fetch(webhook.url, {
       method: 'POST',
@@ -492,7 +520,7 @@ Implement search-as-you-type with debouncing:
 ```typescript
 await using s = scope()
 
-const searchResults = s.stream(searchInput.events())
+const searchResults = new Stream(searchInput.events(), s)
   .map(e => e.target.value)
   .filter(q => q.length > 2)
   .debounce(300) // Wait 300ms after typing stops
@@ -512,7 +540,7 @@ Fan out to multiple tenants:
 await using s = scope()
 
 // Create 3 streams from one source
-const [tenantA, tenantB, tenantC] = s.stream(globalEvents)
+const [tenantA, tenantB, tenantC] = new Stream(globalEvents, s)
   .broadcast(3)
 
 // Each tenant filters their data
@@ -536,7 +564,7 @@ tenantC
 Streams use Result tuples for error handling:
 
 ```typescript
-const [err, results] = await s.stream(source)
+const [err, results] = await new Stream(source, s)
   .mapAsync(riskyOperation)
   .catchError(err => {
     // Recover with fallback
@@ -584,7 +612,7 @@ await using s = scope()
 let processed = 0
 let failed = 0
 
-const [err, results] = await s.stream(dataSource)
+const [err, results] = await new Stream(dataSource, s)
   .tap(() => processed++)
   .map(transform)
   .tapError(() => failed++)
@@ -603,7 +631,7 @@ Add logging at key points in the pipeline:
 ```typescript
 await using s = scope()
 
-const [err, results] = await s.stream(fetchData())
+const [err, results] = await new Stream(fetchData(), s)
   .tap(() => console.log('Starting data fetch'))
   .map(processItem)
   .tap((item, index) => console.log(`Processed item ${index}: ${item.id}`))
@@ -626,7 +654,7 @@ const tracer = trace.getTracer('my-app')
 
 const span = tracer.startSpan('process-data-stream')
 
-const [err, results] = await s.stream(dataSource)
+const [err, results] = await new Stream(dataSource, s)
   .tap(() => span.addEvent('stream-started'))
   .buffer(100)
   .tap(batch => span.addEvent('batch-buffered', { count: batch.length }))
@@ -655,7 +683,7 @@ await using s = scope({
 // Trigger hooks manually for streams
 s.hooks?.beforeTask?.('data-pipeline', 0)
 
-const [err, results] = await s.stream(dataSource)
+const [err, results] = await new Stream(dataSource, s)
   .map(process)
   .ensuring(() => s.hooks?.afterTask?.('data-pipeline', 0))
   .toArray()
@@ -671,7 +699,7 @@ await using s = scope()
 const startTime = Date.now()
 let itemCount = 0
 
-const [err, results] = await s.stream(eventSource)
+const [err, results] = await new Stream(eventSource, s)
   // Metrics
   .tap(() => s.metrics()?.tasksSpawned++)
   

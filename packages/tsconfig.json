@@ -1,0 +1,8 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./go-go-scope" },
+    { "path": "./scheduler" },
+    { "path": "./scheduler-tui" }
+  ]
+}

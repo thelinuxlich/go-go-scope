@@ -1,156 +1,59 @@
 {
-	"name": "go-go-scope",
-	"version": "1.7.0",
-	"description": "Structured concurrency for TypeScript using Explicit Resource Management",
-	"type": "module",
-	"main": "./dist/index.mjs",
-	"types": "./dist/index.d.mts",
-	"exports": {
-		".": {
-			"types": "./dist/index.d.mts",
-			"default": "./dist/index.mjs"
-		},
-		"./testing": {
-			"types": "./dist/testing/index.d.mts",
-			"default": "./dist/testing/index.mjs"
-		},
-		"./persistence": {
-			"types": "./dist/persistence/index.d.mts",
-			"default": "./dist/persistence/index.mjs"
-		},
-		"./persistence/redis": {
-			"types": "./dist/persistence/redis.d.mts",
-			"default": "./dist/persistence/redis.mjs"
-		},
-		"./persistence/sqlite": {
-			"types": "./dist/persistence/sqlite.d.mts",
-			"default": "./dist/persistence/sqlite.mjs"
-		},
-		"./persistence/postgres": {
-			"types": "./dist/persistence/postgres.d.mts",
-			"default": "./dist/persistence/postgres.mjs"
-		},
-		"./persistence/mysql": {
-			"types": "./dist/persistence/mysql.d.mts",
-			"default": "./dist/persistence/mysql.mjs"
-		},
-		"./adapters/fastify": {
-			"types": "./dist/adapters/fastify.d.mts",
-			"default": "./dist/adapters/fastify.mjs"
-		},
-		"./adapters/express": {
-			"types": "./dist/adapters/express.d.mts",
-			"default": "./dist/adapters/express.mjs"
-		},
-		"./adapters/nestjs": {
-			"types": "./dist/adapters/nestjs.d.mts",
-			"default": "./dist/adapters/nestjs.mjs"
-		},
-		"./adapters/hono": {
-			"types": "./dist/adapters/hono.d.mts",
-			"default": "./dist/adapters/hono.mjs"
-		},
-		"./adapters/elysia": {
-			"types": "./dist/adapters/elysia.d.mts",
-			"default": "./dist/adapters/elysia.mjs"
-		}
-	},
-	"scripts": {
-		"build": "npm run build:core && npm run build:adapters",
-		"build:core": "pkgroll --clean-dist --packagejson='dist/index*'",
-		"build:adapters": "npx tsc -p tsconfig.adapters.json --skipLibCheck && cd dist/adapters && for f in *.js; do mv \"$f\" \"\"${f%.js}.mjs\"\"; done && for f in *.d.ts; do mv \"$f\" \"\"${f%.d.ts}.d.mts\"\"; done",
-		"lint": "biome check --write src/",
-		"test": "npm run build && npm run lint && vitest run",
-		"test:watch": "vitest",
-		"test:integration": "vitest run tests/persistence-integration.test.ts",
-		"test:integration:watch": "vitest tests/persistence-integration.test.ts",
-		"test:bun": "bun test tests/bun-compatibility.test.ts",
-		"test:bun:all": "bun test",
-		"benchmark": "npm run build && node --experimental-strip-types benchmarks/index.ts",
-		"services:up": "docker compose up -d redis postgres mysql",
-		"services:down": "docker compose down redis postgres mysql",
-		"services:logs": "docker compose logs -f redis postgres mysql",
-		"jaeger:up": "docker compose up -d jaeger",
-		"jaeger:down": "docker compose down jaeger",
-		"example:jaeger": "npm run build && node examples/jaeger-tracing.ts",
-		"prometheus:up": "docker compose up -d prometheus pushgateway grafana",
-		"prometheus:down": "docker compose down prometheus pushgateway grafana",
-		"example:prometheus": "npm run build && node --experimental-strip-types examples/prometheus-metrics.ts",
-		"example:prometheus:push": "npm run build && node --experimental-strip-types examples/prometheus-push.ts",
-		"monitoring:up": "docker compose up -d",
-		"monitoring:down": "docker compose down",
-		"playground:basic": "tsx playground/basic.ts",
-		"playground:http-client": "tsx playground/http-client.ts",
-		"playground:websocket": "tsx playground/websocket.ts",
-		"playground:concurrency": "tsx playground/concurrency.ts",
-		"prepublishOnly": "npm test",
-		"publish:patch": "npm version patch && npm publish",
-		"publish:minor": "npm version minor && npm publish",
-		"publish:major": "npm version major && npm publish"
-	},
-	"keywords": [
-		"structured-concurrency",
-		"async",
-		"disposable",
-		"using",
-		"typescript",
-		"esm",
-		"es2022",
-		"fastify",
-		"express",
-		"nestjs",
-		"hono",
-		"elysia",
-		"bun"
-	],
-	"engines": {
-		"node": ">=24.0.0"
-	},
-	"author": "thelinuxlich",
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/thelinuxlich/go-go-scope.git"
-	},
-	"bugs": {
-		"url": "https://github.com/thelinuxlich/go-go-scope/issues"
-	},
-	"homepage": "https://github.com/thelinuxlich/go-go-scope#readme",
-	"files": [
-		"dist/",
-		"README.md",
-		"LICENSE"
-	],
-	"devDependencies": {
-		"@biomejs/biome": "^2.4.3",
-		"@nestjs/common": "^11.1.14",
-		"@opentelemetry/exporter-trace-otlp-http": "^0.212.0",
-		"@opentelemetry/resources": "^2.5.1",
-		"@opentelemetry/sdk-node": "^0.212.0",
-		"@opentelemetry/semantic-conventions": "^1.39.0",
-		"@types/debug": "^4.1.12",
-		"@types/express": "^5.0.6",
-		"@types/node": "^24",
-		"@types/supertest": "^6.0.3",
-		"effect": "^3.19.18",
-		"elysia": "^1.4.25",
-		"express": "^5.2.1",
-		"fastify": "^5.7.4",
-		"fastify-plugin": "^5.1.0",
-		"go-go-try": "^7.4.1",
-		"hono": "^4.12.0",
-		"ioredis": "^5.9.3",
-		"mysql2": "^3.17.3",
-		"pg": "^8.18.0",
-		"pkgroll": "^2.26.3",
-		"sqlite3": "^5.1.7",
-		"supertest": "^7.2.2",
-		"tsx": "^4.21.0",
-		"typescript": "^5.9.3",
-		"vitest": "^4.0.18"
-	},
-	"dependencies": {
-		"@opentelemetry/api": "^1.9.0",
-		"debug": "^4.4.3"
-	}
+  "name": "go-go-scope-monorepo",
+  "version": "2.0.0",
+  "description": "Structured concurrency for TypeScript using Explicit Resource Management",
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r build",
+    "build:core": "pnpm --filter go-go-scope build",
+    "build:scheduler": "pnpm --filter @go-go-scope/scheduler build",
+    "build:tui": "pnpm --filter @go-go-scope/scheduler-tui build",
+    "build:adapters": "pnpm --filter @go-go-scope/adapter-* build",
+    "build:persistence": "pnpm --filter @go-go-scope/persistence-* build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "test:core": "pnpm --filter go-go-scope test",
+    "test:scheduler": "pnpm --filter @go-go-scope/scheduler test",
+    "clean": "pnpm -r clean",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && changeset publish",
+    "tui": "tsx packages/scheduler-tui/src/tui.ts",
+    "tui:redis": "tsx packages/scheduler-tui/src/tui.ts -s redis -u redis://localhost:6379",
+    "cli": "tsx packages/scheduler-tui/src/cli.ts"
+  },
+  "keywords": [
+    "structured-concurrency",
+    "async",
+    "disposable",
+    "using",
+    "typescript",
+    "esm",
+    "es2022",
+    "scheduler",
+    "cron",
+    "jobs",
+    "monorepo"
+  ],
+  "author": "thelinuxlich",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thelinuxlich/go-go-scope.git"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.4",
+    "@changesets/cli": "^2.29.8",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=8.0.0"
+  }
 }

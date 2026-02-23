@@ -20,7 +20,7 @@ Helper functions for testing code that uses `go-go-scope`.
 ## Installation
 
 ```typescript
-import { createMockScope, createControlledTimer, createSpy, flushPromises, assertScopeDisposed } from 'go-go-scope/testing'
+import { createMockScope, createControlledTimer, createSpy, flushPromises, assertScopeDisposed } from '@go-go-scope/testing'
 ```
 
 ---
@@ -30,7 +30,7 @@ import { createMockScope, createControlledTimer, createSpy, flushPromises, asser
 Creates a mock scope for testing with tracking capabilities.
 
 ```typescript
-import { createMockScope } from 'go-go-scope/testing'
+import { createMockScope } from '@go-go-scope/testing'
 
 test('should track task calls', async () => {
   const s = createMockScope({
@@ -70,7 +70,7 @@ Replace real services with mocks for isolated unit testing.
 Provide services first, then override them with mocks:
 
 ```typescript
-import { createMockScope } from 'go-go-scope/testing'
+import { createMockScope } from '@go-go-scope/testing'
 
 test('should use mocked database', async () => {
   const mockDb = {
@@ -99,7 +99,7 @@ test('should use mocked database', async () => {
 Override services at any time:
 
 ```typescript
-import { createMockScope } from 'go-go-scope/testing'
+import { createMockScope } from '@go-go-scope/testing'
 
 test('should allow runtime mocking', async () => {
   const s = createMockScope({
@@ -283,7 +283,7 @@ describe('parent-child with overrides', () => {
 Controlled timer environment for testing async operations.
 
 ```typescript
-import { createControlledTimer } from 'go-go-scope/testing'
+import { createControlledTimer } from '@go-go-scope/testing'
 
 test('should handle timeouts', () => {
   const timer = createControlledTimer()
@@ -315,7 +315,7 @@ test('should handle timeouts', () => {
 Advanced time control for testing timeouts, retries, and debouncing. Allows you to manipulate time globally within your tests.
 
 ```typescript
-import { createTimeController } from 'go-go-scope/testing'
+import { createTimeController } from '@go-go-scope/testing'
 
 test('should timeout after 5 seconds', async () => {
   const time = createTimeController()
@@ -352,7 +352,7 @@ test('should timeout after 5 seconds', async () => {
 Creates a spy function for testing.
 
 ```typescript
-import { createSpy } from 'go-go-scope/testing'
+import { createSpy } from '@go-go-scope/testing'
 
 test('should track calls', () => {
   const spy = createSpy<[number, number], number>()
@@ -382,7 +382,7 @@ test('should track calls', () => {
 Waits for all promises to settle.
 
 ```typescript
-import { flushPromises } from 'go-go-scope/testing'
+import { flushPromises } from '@go-go-scope/testing'
 
 test('async operation', async () => {
   let resolved = false
@@ -401,7 +401,7 @@ test('async operation', async () => {
 Asserts that a scope has been properly disposed.
 
 ```typescript
-import { assertScopeDisposed } from 'go-go-scope/testing'
+import { assertScopeDisposed } from '@go-go-scope/testing'
 
 test('should dispose properly', async () => {
   const s = scope()
@@ -421,7 +421,7 @@ test('should dispose properly', async () => {
 
 ```typescript
 import { describe, test, expect } from 'vitest'
-import { createMockScope, flushPromises } from 'go-go-scope/testing'
+import { createMockScope, flushPromises } from '@go-go-scope/testing'
 
 describe('UserService', () => {
   test('should fetch user with retries', async () => {

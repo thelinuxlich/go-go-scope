@@ -504,7 +504,7 @@ describe('createUser', () => {
 **Test with `createMockScope`:**
 
 ```typescript
-import { createMockScope } from 'go-go-scope/testing'
+import { createMockScope } from '@go-go-scope/testing'
 
 describe('createUser', () => {
   test('creates user with mocks', async () => {

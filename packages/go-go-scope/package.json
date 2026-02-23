@@ -1,0 +1,70 @@
+{
+  "name": "go-go-scope",
+  "version": "2.0.0",
+  "description": "Structured concurrency for TypeScript using Explicit Resource Management",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "pkgroll --clean-dist --packagejson='dist/index*'",
+    "lint": "biome check --write src/",
+    "test": "npm run build && npm run lint && vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "structured-concurrency",
+    "async",
+    "disposable",
+    "using",
+    "typescript",
+    "esm",
+    "es2022"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "author": "thelinuxlich",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thelinuxlich/go-go-scope.git",
+    "directory": "packages/go-go-scope"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.4",
+    "@go-go-scope/persistence-sqlite": "workspace:*",
+    "@go-go-scope/persistence-sqlite-bun": "workspace:*",
+    "@go-go-scope/stream": "workspace:*",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.212.0",
+    "@opentelemetry/resources": "^2.5.1",
+    "@opentelemetry/sdk-node": "^0.212.0",
+    "@opentelemetry/semantic-conventions": "^1.39.0",
+    "@types/debug": "^4.1.12",
+    "@types/node": "^24",
+    "fast-check": "^4.5.3",
+    "ioredis": "^5.9.3",
+    "mysql2": "^3.18.0",
+    "pg": "^8.18.0",
+    "pkgroll": "^2.26.3",
+    "sqlite3": "^5.1.7",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "debug": "^4.4.3"
+  }
+}
