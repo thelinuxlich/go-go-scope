@@ -560,6 +560,129 @@ Remove a handler for a schedule.
 scheduler.offSchedule("my-schedule");
 ```
 
+### Error Handling & Retries
+
+When a job handler throws an error, the scheduler automatically handles retries with exponential backoff.
+
+#### Automatic Retry Behavior
+
+```typescript
+await scheduler.createSchedule("risky-job", {
+  maxRetries: 3,      // Retry up to 3 times (default)
+  retryDelay: 1000,   // Base delay: 1 second (default)
+  jitter: 100,        // Random jitter 0-100ms (default: 0)
+});
+```
+
+**Retry delay calculation:** `delay = retryDelay * 2^retryCount + random(0, jitter)`
+
+| Attempt | Delay (base 1000ms) | With 100ms jitter |
+|---------|--------------------:|------------------:|
+| 1st retry | ~2 seconds | 2.0s - 2.1s |
+| 2nd retry | ~4 seconds | 4.0s - 4.1s |
+| 3rd retry | ~8 seconds | 8.0s - 8.1s |
+
+#### Failure Lifecycle
+
+```
+Handler throws
+    ↓
+Status: running → pending
+    ↓
+Retry scheduled (if under maxRetries)
+    ↓
+After maxRetries: Status → failed
+    ↓
+Next occurrence scheduled (for recurring jobs)
+```
+
+**Key points:**
+- Job status changes: `running` → `pending` (for retry) → `failed` (after max retries)
+- Error message stored in `job.error`
+- Retry count tracked in `job.retryCount`
+- Even on permanent failure, next occurrence is scheduled for recurring jobs
+- Job lock is released so other instances can pick up retries
+
+#### Handling Errors in Handlers
+
+**Option 1: Let it throw (automatic retry)**
+```typescript
+scheduler.onSchedule("send-email", async (job, scope) => {
+  const [err, result] = await scope.task(() => sendEmail(job.payload));
+  
+  if (err) {
+    throw err; // Will be retried automatically
+  }
+});
+```
+
+**Option 2: Handle gracefully (no retry)**
+```typescript
+scheduler.onSchedule("send-email", async (job, scope) => {
+  const [err, result] = await scope.task(() => sendEmail(job.payload));
+  
+  if (err) {
+    // Log to dead letter queue instead of retrying
+    await scope.task(() => logFailedEmail(job, err));
+    // Don't throw - job will be marked as completed
+  }
+});
+```
+
+#### Job Failure Events
+
+```typescript
+// Retry scheduled
+scheduler.on("jobRetryScheduled", ({ job, error, retryDelay }) => {
+  console.log(`Retrying ${job.id} in ${retryDelay}ms: ${error.message}`);
+});
+
+// Permanent failure (max retries exceeded)
+scheduler.on("jobFailed", ({ job, error, permanent }) => {
+  if (permanent) {
+    console.error(`Job ${job.id} failed permanently:`, error.message);
+    // Send alert, move to dead letter queue, etc.
+  }
+});
+```
+
+#### Hooks for Error Handling
+
+```typescript
+const scheduler = new Scheduler({
+  hooks: {
+    beforeJob: async (job, schedule) => {
+      console.log(`Starting ${job.id}`);
+    },
+    afterJob: async (job, schedule, result) => {
+      if (!result.success) {
+        console.error(`Failed after ${result.duration}ms:`, result.error?.message);
+      }
+    },
+    onJobError: async (job, schedule, error, willRetry) => {
+      console.log(`Error: ${error.message}, will retry: ${willRetry}`);
+      if (!willRetry) {
+        // Last attempt failed - send alert
+        await sendAlert(`Job ${job.id} failed permanently`);
+      }
+    },
+  },
+});
+```
+
+#### Timeout Handling
+
+Prevent stuck jobs with timeouts:
+
+```typescript
+await scheduler.createSchedule("slow-job", {
+  timeout: 30000,  // 30 second timeout
+  maxRetries: 2,
+});
+```
+
+When timeout is exceeded, the job throws a timeout error and follows the normal retry flow.
+
 ### Common Methods
 
 #### `start()` / `stop()`
