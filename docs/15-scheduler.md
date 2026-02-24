@@ -25,11 +25,6 @@ The `@go-go-scope/scheduler` module provides a production-ready distributed job 
 ## Quick Start
 
 > 💡 **Tip**: Always instantiate schedulers with `using` for automatic cleanup:
-> ```typescript
-> using scheduler = new Scheduler({ storage });
-> ```
-
-### Disposal Patterns
 
 The scheduler implements `AsyncDisposable`, enabling the `await using` declaration for automatic cleanup:
 
