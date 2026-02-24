@@ -365,6 +365,18 @@ importers:
       '@biomejs/biome':
         specifier: ^2.4.4
         version: 2.4.4
+      '@go-go-scope/persistence-mysql':
+        specifier: workspace:*
+        version: link:../persistence-mysql
+      '@go-go-scope/persistence-postgres':
+        specifier: workspace:*
+        version: link:../persistence-postgres
+      '@go-go-scope/persistence-redis':
+        specifier: workspace:*
+        version: link:../persistence-redis
+      '@go-go-scope/persistence-sqlite':
+        specifier: workspace:*
+        version: link:../persistence-sqlite
       '@types/node':
         specifier: ^24
         version: 24.10.13
@@ -380,6 +392,9 @@ importers:
       pkgroll:
         specifier: ^2.26.3
         version: 2.26.3(typescript@5.9.3)(vite@7.3.1(@types/node@24.10.13)(tsx@4.21.0)(yaml@2.8.2))
+      sqlite:
+        specifier: ^5.1.1
+        version: 5.1.1
       sqlite3:
         specifier: ^5.1.7
         version: 5.1.7
@@ -2855,6 +2870,9 @@ packages:
 
   sqlite3@5.1.7:
     resolution: {integrity: sha512-GGIyOiFaG+TUra3JIfkI/zGP8yZYLPQ0pl1bH+ODjiX57sPhrLU5sQJn1y9bDKZUFYkX1crlrPfSYt0BKKdkog==}
+
+  sqlite@5.1.1:
+    resolution: {integrity: sha512-oBkezXa2hnkfuJwUo44Hl9hS3er+YFtueifoajrgidvqsJRQFpc5fKoAkAor1O5ZnLoa28GBScfHXs8j0K358Q==}
 
   ssri@8.0.1:
     resolution: {integrity: sha512-97qShzy1AiyxvPNIkLWoGua7xoQzzPjQ0HAH4B0rWKo7SZ6USuPcrUiAFrws0UH8RrbWmgq3LMTObhPIHbbBeQ==}
@@ -5620,6 +5638,8 @@ snapshots:
     transitivePeerDependencies:
       - bluebird
       - supports-color
+
+  sqlite@5.1.1: {}
 
   ssri@8.0.1:
     dependencies:

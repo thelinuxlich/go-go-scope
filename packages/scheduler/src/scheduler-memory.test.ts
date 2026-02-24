@@ -1,6 +1,6 @@
 /**
  * Scheduler memory leak tests
- * 
+ *
  * These tests verify that the scheduler properly cleans up:
  * - Jobs after completion/failure/cancellation
  * - Schedules after deletion
@@ -9,9 +9,9 @@
  * - Internal timers and intervals
  */
 
-import { describe, test, expect } from "vitest";
 import { scope } from "go-go-scope";
-import { Scheduler, InMemoryJobStorage, SchedulerRole } from "./index.js";
+import { describe, expect, test } from "vitest";
+import { InMemoryJobStorage, Scheduler } from "./index.js";
 import type { Job, JobStatus } from "./types.js";
 
 // Helper to force garbage collection if available
@@ -37,7 +37,6 @@ describe("Scheduler Memory Management", () => {
 			await using s = scope();
 			const storage = new InMemoryJobStorage();
 			const scheduler = new Scheduler({
-				role: SchedulerRole.ADMIN,
 				scope: s,
 				storage,
 				autoStart: false,
@@ -54,7 +53,9 @@ describe("Scheduler Memory Management", () => {
 			// Create 100 jobs
 			const jobIds: string[] = [];
 			for (let i = 0; i < 100; i++) {
-				const [_, result] = await scheduler.scheduleJob("memory-test", { index: i });
+				const [_, result] = await scheduler.scheduleJob("memory-test", {
+					index: i,
+				});
 				if (result) jobIds.push(result.jobId);
 			}
 
@@ -74,7 +75,9 @@ describe("Scheduler Memory Management", () => {
 			const finalMemory = getMemoryMB();
 
 			const memoryGrowth = finalMemory - initialMemory;
-			console.log(`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`);
+			console.log(
+				`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`,
+			);
 
 			expect(memoryGrowth).toBeLessThan(50);
 		}, 30000);
@@ -87,7 +90,6 @@ describe("Scheduler Memory Management", () => {
 			await using s = scope();
 			const storage = new InMemoryJobStorage();
 			const scheduler = new Scheduler({
-				role: SchedulerRole.ADMIN,
 				scope: s,
 				storage,
 				autoStart: false,
@@ -124,7 +126,9 @@ describe("Scheduler Memory Management", () => {
 			const finalMemory = getMemoryMB();
 
 			const memoryGrowth = finalMemory - initialMemory;
-			console.log(`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`);
+			console.log(
+				`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`,
+			);
 
 			expect(memoryGrowth).toBeLessThan(50);
 		}, 30000);
@@ -137,7 +141,6 @@ describe("Scheduler Memory Management", () => {
 			await using s = scope();
 			const storage = new InMemoryJobStorage();
 			const scheduler = new Scheduler({
-				role: SchedulerRole.ADMIN,
 				scope: s,
 				storage,
 				autoStart: false,
@@ -150,7 +153,11 @@ describe("Scheduler Memory Management", () => {
 
 			// Create and immediately cancel jobs
 			for (let i = 0; i < 50; i++) {
-				const [_, result] = await scheduler.scheduleJob("cancellable", {}, { delay: 60000 });
+				const [_, result] = await scheduler.scheduleJob(
+					"cancellable",
+					{},
+					{ delay: 60000 },
+				);
 				if (result) {
 					await scheduler.cancelJob(result.jobId);
 				}
@@ -168,7 +175,9 @@ describe("Scheduler Memory Management", () => {
 			const finalMemory = getMemoryMB();
 
 			const memoryGrowth = finalMemory - initialMemory;
-			console.log(`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`);
+			console.log(
+				`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`,
+			);
 
 			expect(memoryGrowth).toBeLessThan(50);
 		}, 30000);
@@ -178,7 +187,6 @@ describe("Scheduler Memory Management", () => {
 		test.skip("running jobs map is cleared after completion", async () => {
 			await using s = scope();
 			const scheduler = new Scheduler({
-				role: SchedulerRole.ADMIN,
 				scope: s,
 				autoStart: false,
 				checkInterval: 50,
@@ -221,7 +229,6 @@ describe("Scheduler Memory Management", () => {
 		test.skip("running jobs are cancelled and cleaned on scheduler stop", async () => {
 			await using s = scope();
 			const scheduler = new Scheduler({
-				role: SchedulerRole.ADMIN,
 				scope: s,
 				autoStart: false,
 				checkInterval: 50,
@@ -270,7 +277,6 @@ describe("Scheduler Memory Management", () => {
 
 			await using s = scope();
 			const scheduler = new Scheduler({
-				role: SchedulerRole.ADMIN,
 				scope: s,
 				autoStart: false,
 			});
@@ -298,7 +304,9 @@ describe("Scheduler Memory Management", () => {
 			const finalMemory = getMemoryMB();
 
 			const memoryGrowth = finalMemory - initialMemory;
-			console.log(`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`);
+			console.log(
+				`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`,
+			);
 
 			expect(memoryGrowth).toBeLessThan(50);
 		}, 30000);
@@ -310,7 +318,6 @@ describe("Scheduler Memory Management", () => {
 
 			await using s = scope();
 			const scheduler = new Scheduler({
-				role: SchedulerRole.ADMIN,
 				scope: s,
 				autoStart: false,
 			});
@@ -333,7 +340,9 @@ describe("Scheduler Memory Management", () => {
 			const finalMemory = getMemoryMB();
 
 			const memoryGrowth = finalMemory - initialMemory;
-			console.log(`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`);
+			console.log(
+				`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`,
+			);
 
 			expect(memoryGrowth).toBeLessThan(50);
 		}, 30000);
@@ -347,7 +356,6 @@ describe("Scheduler Memory Management", () => {
 
 			await using s = scope();
 			const scheduler = new Scheduler({
-				role: SchedulerRole.ADMIN,
 				scope: s,
 				autoStart: false,
 			});
@@ -393,7 +401,9 @@ describe("Scheduler Memory Management", () => {
 			const finalMemory = getMemoryMB();
 
 			const memoryGrowth = finalMemory - initialMemory;
-			console.log(`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`);
+			console.log(
+				`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`,
+			);
 
 			expect(memoryGrowth).toBeLessThan(50);
 		}, 30000);
@@ -404,7 +414,6 @@ describe("Scheduler Memory Management", () => {
 			await using s = scope();
 
 			const scheduler = new Scheduler({
-				role: SchedulerRole.ADMIN,
 				scope: s,
 				autoStart: true,
 				checkInterval: 100,
@@ -430,7 +439,6 @@ describe("Scheduler Memory Management", () => {
 
 			await using s = scope();
 			const scheduler = new Scheduler({
-				role: SchedulerRole.ADMIN,
 				scope: s,
 				autoStart: false,
 				checkInterval: 50,
@@ -456,7 +464,9 @@ describe("Scheduler Memory Management", () => {
 			const finalMemory = getMemoryMB();
 
 			const memoryGrowth = finalMemory - initialMemory;
-			console.log(`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`);
+			console.log(
+				`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`,
+			);
 
 			expect(memoryGrowth).toBeLessThan(50);
 		}, 30000);
@@ -538,7 +548,6 @@ describe("Scheduler Memory Management", () => {
 			await using s = scope();
 			const storage = new InMemoryJobStorage();
 			const scheduler = new Scheduler({
-				role: SchedulerRole.ADMIN,
 				scope: s,
 				storage,
 				autoStart: false,
@@ -552,7 +561,9 @@ describe("Scheduler Memory Management", () => {
 			// Create 1000 jobs
 			const jobIds: string[] = [];
 			for (let i = 0; i < 1000; i++) {
-				const [_, result] = await scheduler.scheduleJob("high-volume", { index: i });
+				const [_, result] = await scheduler.scheduleJob("high-volume", {
+					index: i,
+				});
 				if (result) jobIds.push(result.jobId);
 			}
 
@@ -580,7 +591,9 @@ describe("Scheduler Memory Management", () => {
 			const finalMemory = getMemoryMB();
 
 			const memoryGrowth = finalMemory - initialMemory;
-			console.log(`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`);
+			console.log(
+				`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`,
+			);
 
 			expect(memoryGrowth).toBeLessThan(50);
 		}, 30000);
@@ -592,7 +605,6 @@ describe("Scheduler Memory Management", () => {
 
 			await using s = scope();
 			const scheduler = new Scheduler({
-				role: SchedulerRole.ADMIN,
 				scope: s,
 				autoStart: true,
 				checkInterval: 50,
@@ -624,7 +636,9 @@ describe("Scheduler Memory Management", () => {
 			const finalMemory = getMemoryMB();
 
 			const memoryGrowth = finalMemory - initialMemory;
-			console.log(`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`);
+			console.log(
+				`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Growth: ${memoryGrowth}MB`,
+			);
 
 			expect(memoryGrowth).toBeLessThan(50);
 		}, 30000);
@@ -639,7 +653,6 @@ describe("Scheduler Memory Management", () => {
 			await using s = scope();
 			const storage = new InMemoryJobStorage();
 			const scheduler = new Scheduler({
-				role: SchedulerRole.ADMIN,
 				scope: s,
 				storage,
 				autoStart: true,
@@ -688,7 +701,9 @@ describe("Scheduler Memory Management", () => {
 			const last = measurements[measurements.length - 1];
 			const growthRatio = last / first || 1;
 
-			console.log(`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Ratio: ${growthRatio.toFixed(2)}`);
+			console.log(
+				`   Initial: ${initialMemory}MB, Final: ${finalMemory}MB, Ratio: ${growthRatio.toFixed(2)}`,
+			);
 
 			// Allow some variance but not exponential growth
 			expect(growthRatio).toBeLessThan(5);

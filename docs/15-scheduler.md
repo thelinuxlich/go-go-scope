@@ -1,17 +1,17 @@
 # Job Scheduler
 
-The `@go-go-scope/scheduler` module provides a production-ready distributed job scheduler using a **mandatory Admin + Workers architecture**.
+The `@go-go-scope/scheduler` module provides a production-ready distributed job scheduler with automatic database-driven scheduling.
 
 ## Features
 
-- **Admin + Workers Pattern**: Enforced separation between schedule management and execution
+- **Simple API**: Create schedules and register handlers on the same instance
 - **Schedule Management**: Create, update, pause, resume, disable, and delete schedules
 - **Schedule States**: Active, paused, or disabled states with automatic handling
 - **Statistics**: Track job success rates, durations, and counts
 - **CLI Tool**: Command-line interface for managing schedules
 - **TUI Tool**: Interactive terminal UI for real-time monitoring and control
 - **Timezone Support**: Full IANA timezone support with DST handling
-- **Distributed Locking**: Prevents duplicate execution across multiple workers
+- **Distributed Locking**: Prevents duplicate execution across multiple instances
 - **Persistent Storage**: Redis, PostgreSQL, MySQL, SQLite support
 - **Debug Logging**: Built-in debug output via `debug` module
 - **OpenTelemetry Tracing**: Automatic span creation for job execution
@@ -22,63 +22,21 @@ The `@go-go-scope/scheduler` module provides a production-ready distributed job 
 - **Job Profiling**: Detailed execution timing and stage breakdowns
 - **Optional Scope**: Auto-creates scope if not provided
 
-## Architecture
-
-The scheduler enforces a clear separation of concerns:
-
-### Admin Instance
-- **Creates and manages schedules** using `createSchedule()`
-- Stores schedule metadata in persistent storage
-- Typically only **one admin runs at a time**
-- Handles schedule lifecycle (create, delete, update)
-
-### Worker Instances
-- **Load schedules** from storage using `loadSchedules()`
-- Provide handler functions for each schedule
-- Execute jobs with distributed locking
-- Multiple workers can run for **high availability**
-
-```
-┌─────────────┐         ┌──────────────┐
-│    Admin    │────────▶│   Storage    │
-│  Instance   │ create  │   (Redis/    │
-│             │────────▶│  Postgres/   │
-└─────────────┘         │   MySQL)     │
-                        └──────┬───────┘
-                               │
-                    ┌─────────┼─────────┐
-                    ▼         ▼         ▼
-              ┌─────────┐ ┌─────────┐ ┌─────────┐
-              │ Worker  │ │ Worker  │ │ Worker  │
-              │   #1    │ │   #2    │ │   #3    │
-              └─────────┘ └─────────┘ └─────────┘
-                 load       load       load
-               schedules   schedules  schedules
-```
-
 ## Quick Start
 
 > 💡 **Tip**: Always instantiate schedulers with `using` for automatic cleanup:
 > ```typescript
-> using scheduler = new Scheduler({ role: SchedulerRole.ADMIN, storage });
+> using scheduler = new Scheduler({ storage });
 > ```
 
 ### Disposal Patterns
 
-The scheduler implements `AsyncDisposable`, enabling the `using` and `await using` declarations for automatic cleanup:
+The scheduler implements `AsyncDisposable`, enabling the `await using` declaration for automatic cleanup:
 
 ```typescript
-// Pattern 1: Sync disposal (using)
-using scheduler = new Scheduler({ role: SchedulerRole.ADMIN, storage });
-// Automatically calls scheduler[Symbol.asyncDispose]() when block exits
-
-// Pattern 2: Async disposal (await using)
-await using scheduler = new Scheduler({ role: SchedulerRole.WORKER, storage });
+// Async disposal
+await using scheduler = new Scheduler({ storage });
 // For async cleanup operations
-
-// Pattern 3: Explicit disposal (not recommended)
-const scheduler = new Scheduler({ role: SchedulerRole.ADMIN, storage });
-await scheduler[Symbol.asyncDispose]();  // Manual cleanup
 ```
 
 **What gets cleaned up:**
@@ -88,13 +46,11 @@ await scheduler[Symbol.asyncDispose]();  // Manual cleanup
 - Event listeners removed
 - "stopped" event emitted
 
-### 1. Admin Instance
-
-Creates schedules that workers will execute:
+### Basic Usage
 
 ```typescript
 import { scope } from "go-go-scope";
-import { Scheduler, SchedulerRole, CronPresets } from "@go-go-scope/scheduler";
+import { Scheduler, CronPresets } from "@go-go-scope/scheduler";
 import { RedisJobStorage } from "@go-go-scope/scheduler";
 import { RedisAdapter } from "@go-go-scope/persistence-redis";
 import Redis from "ioredis";
@@ -102,77 +58,36 @@ import Redis from "ioredis";
 const redis = new Redis("redis://localhost:6379");
 const redisAdapter = new RedisAdapter(redis);
 
-await using s = scope({ persistence: redisAdapter });
+await using s = scope();
 
 // Use 'using' for automatic cleanup (recommended)
-using admin = new Scheduler({
-  role: SchedulerRole.ADMIN,  // Required!
+using scheduler = new Scheduler({
   scope: s,
   storage: new RedisJobStorage(redis, redisAdapter),
 });
 
-// Create schedules - no handler needed here
-await admin.createSchedule("daily-report", {
+// Create schedules
+await scheduler.createSchedule("daily-report", {
   cron: CronPresets.DAILY,
   timezone: "America/New_York",
   maxRetries: 3,
   timeout: 30000,
 });
 
-await admin.createSchedule("hourly-cleanup", {
-  cron: "0 * * * *",
+// Register handler for the schedule
+scheduler.onSchedule("daily-report", async (job, jobScope) => {
+  // Generate report
+  const [err, data] = await jobScope.task(async () => {
+    return fetchReportData();
+  });
+  
+  if (err) throw err;
+  await sendReport(data);
 });
 
-console.log("Schedules created. Workers can now load them.");
-// admin is automatically disposed when 'using' block exits
-```
-
-### 2. Worker Instance
-
-Loads schedules and provides handlers:
-
-```typescript
-// Use 'using' for automatic cleanup (recommended)
-using worker = new Scheduler({
-  role: SchedulerRole.WORKER,  // Required!
-  scope: s,
-  storage: new RedisJobStorage(redis, redisAdapter),
-});
-
-// Load schedules from storage and provide handlers
-await worker.loadSchedules({
-  handlerFactory: (name, schedule) => {
-    switch (name) {
-      case "daily-report":
-        return async (job, jobScope) => {
-          // Generate report
-          const [err, data] = await jobScope.task(async () => {
-            return fetchReportData();
-          });
-          
-          if (err) throw err;
-          await sendReport(data);
-        };
-
-      case "hourly-cleanup":
-        return async (job, jobScope) => {
-          // Parallel cleanup tasks
-          await jobScope.parallel([
-            async () => cleanTempFiles(),
-            async () => cleanOldSessions(),
-            async () => cleanExpiredCache(),
-          ]);
-        };
-
-      default:
-        return null; // Skip unknown schedules
-    }
-  },
-});
-
-worker.start();
-console.log("Worker ready to process jobs");
-// worker is automatically disposed when 'using' block exits
+scheduler.start();
+console.log("Scheduler ready to process jobs");
+// scheduler is automatically disposed when 'using' block exits
 ```
 
 ## Schedule Management
@@ -183,35 +98,35 @@ Schedules can be in one of three states:
 
 - **`ACTIVE`** (default): Schedule is running normally, creating jobs
 - **`PAUSED`**: Schedule temporarily stopped, no new jobs created
-- **`DISABLED`**: Schedule disabled, workers will skip jobs
+- **`DISABLED`**: Schedule disabled, handlers will skip jobs
 
 ```typescript
 // Pause a schedule (no new jobs)
-await admin.pauseSchedule("daily-report");
+await scheduler.pauseSchedule("daily-report");
 
 // Resume a paused schedule
-await admin.resumeSchedule("daily-report");
+await scheduler.resumeSchedule("daily-report");
 
-// Disable a schedule (workers will skip)
-await admin.disableSchedule("daily-report");
+// Disable a schedule (handlers will skip)
+await scheduler.disableSchedule("daily-report");
 ```
 
 ### Listing and Getting Schedules
 
 ```typescript
 // List all schedules
-const schedules = await admin.listSchedules();
+const schedules = await scheduler.listSchedules();
 // [{ name: "daily-report", state: "active", cron: "0 9 * * *", ... }]
 
 // Get specific schedule
-const schedule = await admin.getSchedule("daily-report");
+const schedule = await scheduler.getSchedule("daily-report");
 ```
 
 ### Updating Schedules
 
 ```typescript
 // Update schedule configuration
-await admin.updateSchedule("daily-report", {
+await scheduler.updateSchedule("daily-report", {
   cron: "0 10 * * *",        // Change to 10 AM
   timezone: "Europe/London", // Change timezone
   maxRetries: 5,             // More retries
@@ -223,7 +138,7 @@ await admin.updateSchedule("daily-report", {
 
 ```typescript
 // Get stats for one schedule
-const stats = await admin.getScheduleStats("daily-report");
+const stats = await scheduler.getScheduleStats("daily-report");
 console.log(stats);
 // {
 //   name: "daily-report",
@@ -239,20 +154,53 @@ console.log(stats);
 // }
 
 // Get stats for all schedules
-const allStats = await admin.getAllScheduleStats();
+const allStats = await scheduler.getAllScheduleStats();
 ```
 
 ### Manual Trigger
 
 ```typescript
 // Trigger a schedule to run immediately
-const [err, result] = await admin.triggerSchedule("daily-report", {
+const [err, result] = await scheduler.triggerSchedule("daily-report", {
   force: true, // Optional: bypass paused state
 });
 
 if (result) {
   console.log("Triggered job:", result.jobId);
 }
+```
+
+## Handler Registration
+
+Register handlers using `onSchedule()`. Handlers can be registered before or after schedules are created:
+
+```typescript
+// Register handler BEFORE schedule exists
+scheduler.onSchedule("future-task", async (job, scope) => {
+  console.log("Handler ready!");
+});
+
+// Later, create the schedule
+await scheduler.createSchedule("future-task", { interval: 5000 });
+```
+
+### Multiple Handlers
+
+Multiple handlers can be registered for the same schedule (each job runs once, picked up by one handler):
+
+```typescript
+// In a distributed setup, multiple instances can register
+// for the same schedule - only one will execute each job
+scheduler.onSchedule("shared-task", async (job) => {
+  console.log(`Processing job ${job.id}`);
+});
+```
+
+### Removing Handlers
+
+```typescript
+// Remove handler when no longer needed
+scheduler.offSchedule("daily-report");
 ```
 
 ## CLI & TUI Tools
@@ -311,7 +259,7 @@ npx go-go-scheduler get daily-report
 
 # Show statistics
 npx go-go-scheduler stats daily-report
-n# or for all schedules
+# or for all schedules
 npx go-go-scheduler stats
 
 # Update a schedule
@@ -351,12 +299,6 @@ npx go-go-scheduler jobs daily-report
 
 ```typescript
 interface SchedulerOptions {
-  /** 
-   * Required: ADMIN creates schedules, WORKER loads and executes.
-   * There is no default - you must specify the role.
-   */
-  role: SchedulerRole;
-  
   /** 
    * Parent scope for structured concurrency.
    * If not provided, a new scope is created automatically.
@@ -408,21 +350,16 @@ interface SchedulerOptions {
   /** Callback invoked when a deadlock is detected */
   onDeadlock?: (job: Job, duration: number) => void | Promise<void>;
 }
-
-enum SchedulerRole {
-  ADMIN = "admin",    // Creates and manages schedules
-  WORKER = "worker",  // Loads schedules and executes jobs
-}
 ```
 
-### Admin Methods
+### Schedule Management Methods
 
 #### `createSchedule(name, options)`
 
-Creates a schedule. Throws if called by a worker.
+Creates a schedule.
 
 ```typescript
-await admin.createSchedule("my-schedule", {
+await scheduler.createSchedule("my-schedule", {
   cron: "0 9 * * *",           // Cron expression
   interval: undefined,         // Or use interval (ms)
   timezone: "America/New_York", // IANA timezone
@@ -436,10 +373,10 @@ await admin.createSchedule("my-schedule", {
 
 #### `deleteSchedule(name)`
 
-Deletes a schedule. Throws if called by a worker.
+Deletes a schedule.
 
 ```typescript
-await admin.deleteSchedule("my-schedule");
+await scheduler.deleteSchedule("my-schedule");
 ```
 
 #### `listSchedules()`
@@ -447,7 +384,7 @@ await admin.deleteSchedule("my-schedule");
 List all schedules.
 
 ```typescript
-const schedules = await admin.listSchedules();
+const schedules = await scheduler.listSchedules();
 // [Schedule, Schedule, ...]
 ```
 
@@ -456,7 +393,7 @@ const schedules = await admin.listSchedules();
 Get a specific schedule by name.
 
 ```typescript
-const schedule = await admin.getSchedule("my-schedule");
+const schedule = await scheduler.getSchedule("my-schedule");
 ```
 
 #### `updateSchedule(name, options)`
@@ -464,7 +401,7 @@ const schedule = await admin.getSchedule("my-schedule");
 Update an existing schedule.
 
 ```typescript
-await admin.updateSchedule("my-schedule", {
+await scheduler.updateSchedule("my-schedule", {
   cron: "0 10 * * *",        // New time
   timezone: "Europe/London",  // New timezone
   maxRetries: 5,
@@ -476,9 +413,9 @@ await admin.updateSchedule("my-schedule", {
 Change schedule state.
 
 ```typescript
-await admin.pauseSchedule("my-schedule");    // No new jobs
-await admin.resumeSchedule("my-schedule");   // Resume normal operation
-await admin.disableSchedule("my-schedule");  // Workers will skip
+await scheduler.pauseSchedule("my-schedule");    // No new jobs
+await scheduler.resumeSchedule("my-schedule");   // Resume normal operation
+await scheduler.disableSchedule("my-schedule");  // Handlers will skip
 ```
 
 #### `getScheduleStats(name)` / `getAllScheduleStats()`
@@ -487,10 +424,10 @@ Get statistics for schedules.
 
 ```typescript
 // One schedule
-const stats = await admin.getScheduleStats("my-schedule");
+const stats = await scheduler.getScheduleStats("my-schedule");
 
 // All schedules
-const allStats = await admin.getAllScheduleStats();
+const allStats = await scheduler.getAllScheduleStats();
 ```
 
 #### `triggerSchedule(name, payload?)`
@@ -498,7 +435,7 @@ const allStats = await admin.getAllScheduleStats();
 Manually trigger a schedule to run immediately.
 
 ```typescript
-const [err, result] = await admin.triggerSchedule("my-schedule");
+const [err, result] = await scheduler.triggerSchedule("my-schedule");
 if (result) {
   console.log("Job ID:", result.jobId);
 }
@@ -506,10 +443,10 @@ if (result) {
 
 #### `scheduleJob(scheduleName, payload?, options?)`
 
-Schedules a one-time job. Throws if called by a worker.
+Schedules a one-time job.
 
 ```typescript
-const [err, result] = await admin.scheduleJob("my-schedule", 
+const [err, result] = await scheduler.scheduleJob("my-schedule", 
   { userId: "123" },  // payload
   { delay: 60000 }    // run in 1 minute
 );
@@ -521,39 +458,36 @@ if (result) {
 
 #### `cancelJob(jobId)`
 
-Cancels a pending job. Throws if called by a worker.
+Cancels a pending job.
 
 ```typescript
-await admin.cancelJob(jobId);
+await scheduler.cancelJob(jobId);
 ```
 
-### Worker Methods
+### Handler Methods
 
-#### `loadSchedules(options)`
+#### `onSchedule(name, handler)`
 
-Loads schedules from storage and registers handlers. Throws if called by an admin.
+Register a handler for a schedule.
 
 ```typescript
-await worker.loadSchedules({
-  /** 
-   * Required: Factory function that receives schedule name and metadata,
-   * returns handler function or null to skip.
-   */
-  handlerFactory: (name: string, schedule: Schedule) => {
-    if (name === "known-schedule") {
-      return async (job: Job, scope: Scope) => {
-        // Execute job
-      };
-    }
-    return null; // Skip unknown schedules
-  },
+scheduler.onSchedule("my-schedule", async (job: Job, scope: Scope) => {
+  // Execute job
+  const [err, data] = await scope.task(async () => {
+    return fetchData();
+  });
   
-  /** Whether to auto-reload schedules periodically (default: false) */
-  autoReload?: boolean;
-  
-  /** Reload interval in ms (default: 60000) */
-  reloadInterval?: number,
+  if (err) throw err;
+  await process(data);
 });
+```
+
+#### `offSchedule(name)`
+
+Remove a handler for a schedule.
+
+```typescript
+scheduler.offSchedule("my-schedule");
 ```
 
 ### Common Methods
@@ -563,8 +497,8 @@ await worker.loadSchedules({
 Control the scheduler lifecycle.
 
 ```typescript
-worker.start();  // Workers start polling for jobs
-await worker.stop();  // Stop and cleanup
+scheduler.start();  // Start polling for jobs
+await scheduler.stop();  // Stop and cleanup
 ```
 
 #### `getStatus()`
@@ -572,13 +506,12 @@ await worker.stop();  // Stop and cleanup
 Get current scheduler status.
 
 ```typescript
-const status = worker.getStatus();
+const status = scheduler.getStatus();
 // {
 //   isRunning: true,
 //   runningJobs: 2,
 //   scheduledJobs: 5,
-//   instanceId: "scheduler-worker-abc123",
-//   role: "worker"
+//   instanceId: "scheduler-abc123"
 // }
 ```
 
@@ -587,8 +520,12 @@ const status = worker.getStatus();
 All instances emit events for monitoring:
 
 ```typescript
-scheduler.on("started", ({ instanceId, role }) => {
-  console.log(`${role} instance started: ${instanceId}`);
+scheduler.on("started", ({ instanceId }) => {
+  console.log(`Scheduler started: ${instanceId}`);
+});
+
+scheduler.on("stopped", ({ instanceId }) => {
+  console.log(`Scheduler stopped: ${instanceId}`);
 });
 
 scheduler.on("scheduleCreated", ({ schedule }) => {
@@ -607,8 +544,8 @@ scheduler.on("scheduleDeleted", ({ scheduleName }) => {
   console.log("Schedule deleted:", scheduleName);
 });
 
-scheduler.on("schedulesLoaded", ({ count, names }) => {
-  console.log(`Loaded ${count} schedules: ${names.join(", ")}`);
+scheduler.on("handlerRegistered", ({ scheduleName }) => {
+  console.log(`Handler registered for: ${scheduleName}`);
 });
 
 scheduler.on("jobStarted", ({ job, instanceId }) => {
@@ -651,8 +588,7 @@ Automatic span creation for each job execution:
 ```typescript
 import { trace } from "@opentelemetry/api";
 
-const worker = new Scheduler({
-  role: SchedulerRole.WORKER,
+const scheduler = new Scheduler({
   storage,
   tracer: trace.getTracer("my-app"),
 });
@@ -671,8 +607,7 @@ import { pino } from "pino";
 
 const logger = pino({ level: "info" });
 
-const worker = new Scheduler({
-  role: SchedulerRole.WORKER,
+const scheduler = new Scheduler({
   storage,
   logger: {
     debug: (msg, meta) => logger.debug(meta, msg),
@@ -694,8 +629,7 @@ const worker = new Scheduler({
 Execute custom code at key points in job execution:
 
 ```typescript
-const worker = new Scheduler({
-  role: SchedulerRole.WORKER,
+const scheduler = new Scheduler({
   storage,
   hooks: {
     beforeJob: async (job, schedule) => {
@@ -723,8 +657,7 @@ const worker = new Scheduler({
 Detect and handle jobs that get stuck:
 
 ```typescript
-const worker = new Scheduler({
-  role: SchedulerRole.WORKER,
+const scheduler = new Scheduler({
   storage,
   deadlockThreshold: 60000,  // Check after 60 seconds
   onDeadlock: async (job, duration) => {
@@ -743,8 +676,7 @@ Export scheduler metrics in multiple formats:
 // Collect current metrics
 const metrics = await scheduler.collectMetrics();
 // {
-//   instanceId: "scheduler-worker-abc123",
-//   role: "worker",
+//   instanceId: "scheduler-abc123",
 //   timestamp: Date,
 //   jobs: { total, pending, running, completed, failed, cancelled },
 //   schedules: [...],
@@ -772,8 +704,7 @@ Get detailed execution profiles for analysis:
 
 ```typescript
 // Enable profiling
-const worker = new Scheduler({
-  role: SchedulerRole.WORKER,
+const scheduler = new Scheduler({
   storage,
   metrics: true,  // Enables profiling
 });
@@ -803,14 +734,13 @@ The scheduler can create its own scope if you don't provide one:
 ```typescript
 // Without scope - creates one internally
 // Always use 'using' for automatic cleanup!
-using admin = new Scheduler({
-  role: SchedulerRole.ADMIN,
+using scheduler = new Scheduler({
   storage,
 });
 
-await admin.createSchedule("test", { cron: "* * * * *" });
+await scheduler.createSchedule("test", { cron: "* * * * *" });
 
-// admin is automatically disposed when 'using' block exits
+// scheduler is automatically disposed when 'using' block exits
 ```
 
 Compare with external scope:
@@ -819,13 +749,12 @@ Compare with external scope:
 // With external scope
 await using s = scope();
 
-using worker = new Scheduler({
-  role: SchedulerRole.WORKER,
+using scheduler = new Scheduler({
   scope: s,  // Uses existing scope
   storage,
 });
 
-// Both worker and 's' are automatically disposed
+// Both scheduler and 's' are automatically disposed
 ```
 
 ## Storage Backends
@@ -933,18 +862,18 @@ const storage = new InMemoryJobStorage();
 The scheduler fully supports IANA timezones with automatic DST handling:
 
 ```typescript
-// Admin sets timezone
-await admin.createSchedule("ny-report", {
+// Set timezone on schedule
+await scheduler.createSchedule("ny-report", {
   cron: "0 9 * * *",
   timezone: "America/New_York",  // Always 9 AM NY time
 });
 
-await admin.createSchedule("london-report", {
+await scheduler.createSchedule("london-report", {
   cron: "0 9 * * *",
   timezone: "Europe/London",  // Always 9 AM London time
 });
 
-await admin.createSchedule("utc-report", {
+await scheduler.createSchedule("utc-report", {
   cron: "0 9 * * *",
   timezone: "UTC",  // Not affected by DST
 });
@@ -952,11 +881,10 @@ await admin.createSchedule("utc-report", {
 
 ## Stale Job Handling
 
-When workers restart, they may find old jobs. Control this behavior:
+When schedulers restart, they may find old jobs. Control this behavior:
 
 ```typescript
-const worker = new Scheduler({
-  role: SchedulerRole.WORKER,
+const scheduler = new Scheduler({
   scope: s,
   storage,
   staleThreshold: 5 * 60 * 1000,  // 5 minutes
@@ -974,110 +902,64 @@ const worker = new Scheduler({
 
 1. **Always use `using`** - For automatic disposal and cleanup:
    ```typescript
-   using scheduler = new Scheduler({ role: SchedulerRole.ADMIN, storage });
+   using scheduler = new Scheduler({ storage });
    // Automatically disposed when block exits
    ```
-2. **Always specify a role** - There's no default
-3. **Use persistent storage** for multi-instance deployments
-4. **One admin at a time** - Multiple admins can cause conflicts
-5. **Workers skip unknown schedules** - Use `handlerFactory` to filter
-6. **Handle errors in handlers** - Uncaught errors trigger retry
-7. **Use job scope** for child operations to ensure cleanup
-8. **Set appropriate timeouts** - Prevent stuck jobs
-9. **Monitor events** - For observability and alerting
-10. **Configure stale handling** - For deployments with downtime
-11. **Enable debug logging** in development: `DEBUG=go-go-scope:scheduler*`
-12. **Use structured logging** in production for better observability
-13. **Set deadlock detection** to catch stuck jobs: `deadlockThreshold: 60000`
-14. **Export metrics** for monitoring and alerting
-15. **Use job hooks** for cross-cutting concerns (metrics, alerting)
-16. **Enable OpenTelemetry tracing** for distributed systems
-17. **Profile jobs** periodically to identify performance issues
+2. **Use persistent storage** for multi-instance deployments
+3. **Handle errors in handlers** - Uncaught errors trigger retry
+4. **Use job scope** for child operations to ensure cleanup
+5. **Set appropriate timeouts** - Prevent stuck jobs
+6. **Monitor events** - For observability and alerting
+7. **Configure stale handling** - For deployments with downtime
+8. **Enable debug logging** in development: `DEBUG=go-go-scope:scheduler*`
+9. **Use structured logging** in production for better observability
+10. **Set deadlock detection** to catch stuck jobs: `deadlockThreshold: 60000`
+11. **Export metrics** for monitoring and alerting
+12. **Use job hooks** for cross-cutting concerns (metrics, alerting)
+13. **Enable OpenTelemetry tracing** for distributed systems
+14. **Profile jobs** periodically to identify performance issues
 
 ## Error Handling
 
-### Admin Errors
+### Common Errors
 
 ```typescript
-// Throws if worker tries to create schedule
-await worker.createSchedule("test", { cron: "* * * * *" });
-// Error: Cannot create schedule from worker instance
+// Schedule not found
+try {
+  await scheduler.triggerSchedule("missing");
+} catch (err) {
+  // Error: Schedule 'missing' not found
+}
 
-// Throws if schedule already exists
-await admin.createSchedule("existing", { cron: "* * * * *" });
-await admin.createSchedule("existing", { cron: "0 * * * *" });
-// Error: Schedule 'existing' already exists
+// Duplicate schedule
+try {
+  await scheduler.createSchedule("existing", { cron: "* * * * *" });
+  await scheduler.createSchedule("existing", { cron: "* * * * *" });
+} catch (err) {
+  // Error: Schedule 'existing' already exists
+}
 ```
 
-### Worker Errors
+### Handler Errors
+
+Errors in handlers trigger retry logic:
 
 ```typescript
-// Throws if admin tries to load schedules
-await admin.loadSchedules({ handlerFactory: () => null });
-// Error: Admin instances manage schedules directly
-
-// Job fails if schedule not loaded
-// Emits: jobFailed with permanent: true
+scheduler.onSchedule("risky-task", async (job) => {
+  // If this throws, job will be retried (up to maxRetries)
+  await flakyOperation();
+});
 ```
 
-## Deployment Example
+### Permanent Failures
 
-```yaml
-# docker-compose.yml
-version: '3.8'
-
-services:
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-
-  scheduler-admin:
-    build: .
-    environment:
-      - INSTANCE_ROLE=admin
-      - REDIS_URL=redis://redis:6379
-    command: node admin.js
-    deploy:
-      replicas: 1  # Only one admin!
-
-  scheduler-worker:
-    build: .
-    environment:
-      - INSTANCE_ROLE=worker
-      - REDIS_URL=redis://redis:6379
-    command: node worker.js
-    deploy:
-      replicas: 3  # Multiple workers for HA
-```
-
-## TypeScript Types
+After max retries, jobs are marked as failed:
 
 ```typescript
-import type {
-  Job,
-  JobStatus,
-  JobResult,
-  Schedule,
-  ScheduleStats,
-  ScheduleHandler,
-  SchedulerOptions,
-  LoadSchedulesOptions,
-  CreateScheduleOptions,
-  UpdateScheduleOptions,
-  JobStorage,
-  SchedulerEvents,
-  CronExpression,
-  SchedulerHooks,
-  SchedulerMetrics,
-  MetricsExportOptions,
-  JobProfile,
-} from "@go-go-scope/scheduler";
-
-import {
-  SchedulerRole,
-  ScheduleState,
-  StaleJobBehavior,
-  SCHEDULER_VERSION,
-} from "@go-go-scope/scheduler";
+scheduler.on("jobFailed", ({ job, error, permanent }) => {
+  if (permanent) {
+    // Alert on permanent failure
+    alertOpsTeam(job.scheduleName, error);
+  }
+});
 ```
