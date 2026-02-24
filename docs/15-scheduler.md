@@ -366,7 +366,7 @@ await scheduler.createSchedule("my-schedule", {
   maxRetries: 3,               // Retry attempts
   retryDelay: 1000,            // Delay between retries
   timeout: 30000,              // Job timeout
-  concurrent: false,           // Allow concurrent execution
+  concurrent: false,           // Allow concurrent job execution
   jitter: 0,                   // Random jitter (ms)
 });
 ```
@@ -462,6 +462,76 @@ Cancels a pending job.
 
 ```typescript
 await scheduler.cancelJob(jobId);
+```
+
+### Concurrent Execution Control
+
+The `concurrent` option controls whether multiple jobs from the same schedule can run simultaneously.
+
+#### `concurrent: false` (Default)
+
+When `concurrent: false`, only **one job per schedule** runs at a time. If a job is already running when another job becomes due, the new job waits until the current one completes.
+
+```typescript
+// Sequential execution - jobs run one at a time
+await scheduler.createSchedule("sequential-task", {
+  interval: 60000,
+  concurrent: false,  // Default
+});
+
+scheduler.onSchedule("sequential-task", async (job) => {
+  // This handler will never run concurrently for the same schedule
+  console.log(`Starting job ${job.id}`);
+  await longRunningProcess();
+  console.log(`Completed job ${job.id}`);
+});
+```
+
+**Use cases for `concurrent: false`:**
+- Database migrations or schema updates
+- Report generation that writes to the same file
+- API calls with rate limits per schedule
+- Any task that modifies shared state
+
+#### `concurrent: true`
+
+When `concurrent: true`, **multiple jobs from the same schedule** can run simultaneously. This is useful when jobs are independent and you want to maximize throughput.
+
+```typescript
+// Parallel execution - jobs can run simultaneously
+await scheduler.createSchedule("parallel-task", {
+  cron: "*/5 * * * *",  // Every 5 minutes
+  concurrent: true,
+});
+
+scheduler.onSchedule("parallel-task", async (job) => {
+  // Multiple jobs from this schedule can run at the same time
+  console.log(`Processing job ${job.id}`);
+  await processIndependentData(job.payload);
+});
+```
+
+**Use cases for `concurrent: true`:**
+- Processing independent user data
+- Image/video encoding jobs
+- Sending emails or notifications
+- Any embarrassingly parallel workload
+
+#### Cross-Instance Coordination
+
+The `concurrent` setting is respected **across all scheduler instances**. If you have multiple workers:
+
+```typescript
+// Worker 1
+const worker1 = new Scheduler({ storage });
+worker1.onSchedule("task", handler);
+
+// Worker 2
+const worker2 = new Scheduler({ storage });
+worker2.onSchedule("task", handler);
+
+// With concurrent: false, only one worker will execute a job at a time
+// even if both poll at the same moment
 ```
 
 ### Handler Methods

@@ -932,12 +932,43 @@ export class Scheduler implements AsyncDisposable {
 		const now = new Date();
 		const dueJobs = await this.storage.getDueJobs(now);
 
+		// Get all running jobs from storage to check for concurrent execution
+		// This includes jobs running on other instances
+		const storageRunningJobs = await this.storage.getJobsByStatus("running");
+
+		// Track which schedules are starting jobs in this iteration (for non-concurrent)
+		const startingSchedules = new Set<string>();
+
 		for (const job of dueJobs) {
-			// Skip if already running
+			// Skip if already running locally
 			if (this.runningJobs.has(job.id)) continue;
 
 			// Skip if not yet time (respect runAt)
 			if (job.runAt && job.runAt > now) continue;
+
+			// Check if concurrent execution is disabled for this schedule
+			const schedule = await this.storage.getSchedule(job.scheduleName);
+			if (schedule?.options?.concurrent === false) {
+				// Check if any job from this schedule is running in storage (other instances)
+				const hasStorageRunningJob = storageRunningJobs.some(
+					(j) => j.scheduleName === job.scheduleName && j.id !== job.id
+				);
+
+				// Check if we're already starting a job from this schedule in this iteration
+				const isStartingThisSchedule = startingSchedules.has(job.scheduleName);
+
+				if (hasStorageRunningJob || isStartingThisSchedule) {
+					debugScheduler(
+						"skipping concurrent job: schedule=%s, jobId=%s",
+						job.scheduleName,
+						job.id
+					);
+					continue;
+				}
+
+				// Mark this schedule as starting
+				startingSchedules.add(job.scheduleName);
+			}
 
 			// Run the job
 			this.runJob(job).catch(() => {});
