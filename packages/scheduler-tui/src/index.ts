@@ -13,7 +13,7 @@
  * ```
  */
 
-export { Scheduler, SchedulerRole, ScheduleState, StaleJobBehavior } from "@go-go-scope/scheduler";
+export { Scheduler, ScheduleState, StaleJobBehavior } from "@go-go-scope/scheduler";
 export type {
   Job,
   JobStatus,
@@ -21,7 +21,6 @@ export type {
   ScheduleStats,
   ScheduleHandler,
   SchedulerOptions,
-  LoadSchedulesOptions,
   CreateScheduleOptions,
   UpdateScheduleOptions,
   JobStorage,

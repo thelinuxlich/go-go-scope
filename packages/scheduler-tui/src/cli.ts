@@ -36,7 +36,7 @@
  *   npx go-go-scope-scheduler trigger daily-report
  */
 
-import { Scheduler, SchedulerRole } from "@go-go-scope/scheduler";
+import { Scheduler } from "@go-go-scope/scheduler";
 import { scope } from "go-go-scope";
 import { InMemoryJobStorage } from "@go-go-scope/scheduler";
 import { parseArgs } from "node:util";
@@ -393,7 +393,7 @@ ${colors.bright}Examples:${colors.reset}
   await using s = scope();
   const storage = await createStorage(values);
   const scheduler = new Scheduler({
-    role: SchedulerRole.ADMIN,
+    
     scope: s,
     storage,
     autoStart: false,

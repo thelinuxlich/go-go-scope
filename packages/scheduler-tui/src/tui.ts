@@ -19,7 +19,7 @@
  *   q or Ctrl+C    Quit
  */
 
-import { Scheduler, SchedulerRole } from "@go-go-scope/scheduler";
+import { Scheduler } from "@go-go-scope/scheduler";
 import { scope } from "go-go-scope";
 import { InMemoryJobStorage, type ScheduleStats, ScheduleState } from "@go-go-scope/scheduler";
 import { parseArgs } from "node:util";
@@ -102,7 +102,7 @@ class TUI {
   async init() {
     const s = scope();
     this.scheduler = new Scheduler({
-      role: SchedulerRole.ADMIN,
+      
       scope: s,
       storage: this.storage,
       autoStart: false,

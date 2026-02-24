@@ -1,6 +1,6 @@
 {
   "name": "@go-go-scope/scheduler-tui",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Interactive TUI and CLI for go-go-scope scheduler",
   "type": "module",
   "main": "./dist/index.mjs",
