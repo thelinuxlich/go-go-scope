@@ -24,6 +24,12 @@
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "pnpm build && changeset publish",
+    "publish:all": "pnpm build && pnpm -r publish --access public",
+    "publish:core": "pnpm build:core && pnpm --filter go-go-scope publish --access public",
+    "publish:scheduler": "pnpm build:scheduler && pnpm --filter @go-go-scope/scheduler publish --access public",
+    "publish:tui": "pnpm build:tui && pnpm --filter @go-go-scope/scheduler-tui publish --access public",
+    "publish:adapters": "pnpm build:adapters && pnpm --filter '@go-go-scope/adapter-*' publish --access public",
+    "publish:persistence": "pnpm build:persistence && pnpm --filter '@go-go-scope/persistence-*' publish --access public",
     "tui": "tsx packages/scheduler-tui/src/tui.ts",
     "tui:redis": "tsx packages/scheduler-tui/src/tui.ts -s redis -u redis://localhost:6379",
     "cli": "tsx packages/scheduler-tui/src/cli.ts"
