@@ -1,103 +1,145 @@
-# go-go-scope Monorepo
+<div align="center">
 
-> Structured concurrency for TypeScript using Explicit Resource Management
+# 🔥 go-go-scope
 
-This is a monorepo containing the go-go-scope ecosystem of packages.
+### Structured Concurrency for TypeScript
 
-## Packages
+> **Write concurrent code that cleans up after itself.**
 
-### Core
+[![npm version](https://img.shields.io/npm/v/go-go-scope?style=for-the-badge&color=blue)](https://www.npmjs.com/package/go-go-scope)
+[![npm downloads](https://img.shields.io/npm/dm/go-go-scope?style=for-the-badge&color=green)](https://www.npmjs.com/package/go-go-scope)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9+-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-24+-green?style=for-the-badge&logo=node.js)](https://nodejs.org/)
+[![License](https://img.shields.io/badge/license-MIT-purple?style=for-the-badge)](LICENSE)
 
-| Package | Description | Version |
-|---------|-------------|---------|
-| [`go-go-scope`](./packages/go-go-scope) | Core library with structured concurrency primitives | ![npm](https://img.shields.io/npm/v/go-go-scope) |
-| [`@go-go-scope/scheduler`](./packages/scheduler) | Distributed job scheduler with DLQ and metrics | ![npm](https://img.shields.io/npm/v/@go-go-scope/scheduler) |
-| [`@go-go-scope/scheduler-tui`](./packages/scheduler-tui) | Interactive TUI and CLI for managing schedules | ![npm](https://img.shields.io/npm/v/@go-go-scope/scheduler-tui) |
-| [`@go-go-scope/stream`](./packages/stream) | Lazy async streams with 50+ operations | ![npm](https://img.shields.io/npm/v/@go-go-scope/stream) |
-| [`@go-go-scope/testing`](./packages/testing) | Mock scopes, spies, and test utilities | ![npm](https://img.shields.io/npm/v/@go-go-scope/testing) |
+```typescript
+// Structured concurrency with automatic cleanup
+await using s = scope({ timeout: 5000 });
 
-### Persistence Adapters
-
-| Package | Description | Version |
-|---------|-------------|---------|
-| [`@go-go-scope/persistence-redis`](./packages/persistence-redis) | Redis adapter for locks, circuit breaker, and caching | ![npm](https://img.shields.io/npm/v/@go-go-scope/persistence-redis) |
-| [`@go-go-scope/persistence-postgres`](./packages/persistence-postgres) | PostgreSQL adapter for distributed locks | ![npm](https://img.shields.io/npm/v/@go-go-scope/persistence-postgres) |
-| [`@go-go-scope/persistence-mysql`](./packages/persistence-mysql) | MySQL adapter for distributed locks | ![npm](https://img.shields.io/npm/v/@go-go-scope/persistence-mysql) |
-| [`@go-go-scope/persistence-sqlite`](./packages/persistence-sqlite) | SQLite adapter for single-node deployments | ![npm](https://img.shields.io/npm/v/@go-go-scope/persistence-sqlite) |
-| [`@go-go-scope/persistence-sqlite-bun`](./packages/persistence-sqlite-bun) | Bun-native SQLite adapter | ![npm](https://img.shields.io/npm/v/@go-go-scope/persistence-sqlite-bun) |
-| [`@go-go-scope/persistence-mongodb`](./packages/persistence-mongodb) | MongoDB adapter for locks and caching | ![npm](https://img.shields.io/npm/v/@go-go-scope/persistence-mongodb) |
-| [`@go-go-scope/persistence-dynamodb`](./packages/persistence-dynamodb) | DynamoDB adapter for AWS deployments | ![npm](https://img.shields.io/npm/v/@go-go-scope/persistence-dynamodb) |
-
-### Framework Adapters
-
-| Package | Description | Version |
-|---------|-------------|---------|
-| [`@go-go-scope/adapter-fastify`](./packages/adapter-fastify) | Fastify plugin for request-scoped concurrency | ![npm](https://img.shields.io/npm/v/@go-go-scope/adapter-fastify) |
-| [`@go-go-scope/adapter-express`](./packages/adapter-express) | Express middleware for request scopes | ![npm](https://img.shields.io/npm/v/@go-go-scope/adapter-express) |
-| [`@go-go-scope/adapter-nestjs`](./packages/adapter-nestjs) | NestJS module with DI integration | ![npm](https://img.shields.io/npm/v/@go-go-scope/adapter-nestjs) |
-| [`@go-go-scope/adapter-hono`](./packages/adapter-hono) | Hono middleware for edge runtimes | ![npm](https://img.shields.io/npm/v/@go-go-scope/adapter-hono) |
-| [`@go-go-scope/adapter-elysia`](./packages/adapter-elysia) | Elysia plugin for Bun-first performance | ![npm](https://img.shields.io/npm/v/@go-go-scope/adapter-elysia) |
-| [`@go-go-scope/adapter-koa`](./packages/adapter-koa) | Koa middleware for modern async apps | ![npm](https://img.shields.io/npm/v/@go-go-scope/adapter-koa) |
-| [`@go-go-scope/adapter-hapi`](./packages/adapter-hapi) | Hapi plugin for enterprise apps | ![npm](https://img.shields.io/npm/v/@go-go-scope/adapter-hapi) |
-
-## Quick Start
-
-### Installation
-
-```bash
-# Core library only
-npm install go-go-scope
-
-# With scheduler
-npm install go-go-scope @go-go-scope/scheduler
-
-# With TUI tools
-npm install -g @go-go-scope/scheduler-tui
-
-# With persistence (choose your database)
-npm install @go-go-scope/persistence-redis
-npm install @go-go-scope/persistence-mongodb
-npm install @go-go-scope/persistence-dynamodb
-
-# With web framework (choose your framework)
-npm install @go-go-scope/adapter-fastify
-npm install @go-go-scope/adapter-express
-npm install @go-go-scope/adapter-nestjs
+const [err, data] = await s.task(() => fetchUser(id));
+if (err) console.error("Failed:", err);
+else console.log("User:", data);
+// ✨ Everything cleaned up automatically
 ```
 
-### Basic Usage
+[📖 Documentation](./docs) • [🚀 Quick Start](./docs/01-quick-start.md) • [📦 Packages](#packages) • [💡 Examples](./examples)
+
+</div>
+
+---
+
+## ✨ Why go-go-scope?
+
+| Feature | Benefit |
+|---------|---------|
+| 🧹 **Automatic Cleanup** | Resources disposed in LIFO order via `using`/`await using` |
+| 🚦 **Cancellation Propagation** | Parent scope cancels all child tasks automatically |
+| 🔄 **Structured Concurrency** | No fire-and-forget, all tasks tracked and awaitable |
+| 🛡️ **Resilience Built-in** | Circuit breakers, retries, timeouts, idempotency |
+| 📊 **Observable** | OpenTelemetry, Prometheus metrics, built-in profiling |
+| 🔌 **Framework Agnostic** | Adapters for Fastify, Express, NestJS, Hono, Koa, Hapi, Elysia |
+| 💾 **Persistence Ready** | Redis, PostgreSQL, MySQL, MongoDB, DynamoDB, SQLite adapters |
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# Install core library
+npm install go-go-scope
+
+# Add scheduler for background jobs
+npm install @go-go-scope/scheduler
+
+# Add persistence adapter (choose one)
+npm install @go-go-scope/persistence-redis
+npm install @go-go-scope/persistence-postgres
+npm install @go-go-scope/persistence-mongodb
+```
 
 ```typescript
 import { scope } from "go-go-scope";
 
+// Create a scope with timeout
 await using s = scope({ timeout: 5000 });
 
-const [err, data] = await s.task(async ({ signal }) => {
-  const response = await fetch("/api/data", { signal });
-  return response.json();
-});
+// Run tasks with automatic error handling
+const [err1, user] = await s.task(() => fetchUser(id));
+const [err2, posts] = await s.task(() => fetchPosts(id));
 
-if (err) {
-  console.error("Failed:", err.message);
-} else {
-  console.log("Data:", data);
-}
+// Run tasks in parallel with concurrency limit
+const [err3, results] = await s.parallel([
+  () => fetchA(),
+  () => fetchB(),
+  () => fetchC(),
+], { concurrency: 2 });
+
+// Use channels for Go-style concurrency
+const ch = s.channel<number>({ capacity: 10 });
+await ch.send(42);
+const [err, value] = await ch.receive();
 ```
 
-## Documentation
+---
 
-Complete documentation is available in the [docs](./docs) directory:
+## 📦 Packages
 
-- [Quick Start](./docs/01-quick-start.md) - Get started in 5 minutes
-- [Core Concepts](./docs/02-concepts.md) - Why structured concurrency matters
-- [API Reference](./docs/03-api-reference.md) - Complete API documentation
-- [Streams](./docs/04-streams.md) - Lazy async streams with 50+ operations
-- [Resilience Patterns](./docs/05-resilience-patterns.md) - Circuit breakers, retry, timeouts
-- [Integrations](./docs/11-integrations.md) - Persistence adapters, framework adapters
-- [Caching](./docs/17-caching-memoization.md) - Distributed caching and memoization
-- [Performance](./docs/18-performance-optimizations.md) - Optimizations for high throughput
+### 🎯 Core
 
-## Development
+| Package | Description | Version |
+|---------|-------------|---------|
+| **[go-go-scope](./packages/go-go-scope)** | Core library with structured concurrency primitives | ![npm](https://img.shields.io/npm/v/go-go-scope) |
+| **[@go-go-scope/scheduler](./packages/scheduler)** | Distributed job scheduler with DLQ, cron, and metrics | ![npm](https://img.shields.io/npm/v/@go-go-scope/scheduler) |
+| **[@go-go-scope/scheduler-tui](./packages/scheduler-tui)** | Interactive TUI and CLI for managing schedules | ![npm](https://img.shields.io/npm/v/@go-go-scope/scheduler-tui) |
+| **[@go-go-scope/stream](./packages/stream)** | Lazy async streams with 50+ operations | ![npm](https://img.shields.io/npm/v/@go-go-scope/stream) |
+| **[@go-go-scope/testing](./packages/testing)** | Mock scopes, spies, and test utilities | ![npm](https://img.shields.io/npm/v/@go-go-scope/testing) |
+
+### 💾 Persistence Adapters
+
+Distributed locks, circuit breaker state, and caching for your database of choice:
+
+| Package | Database | Features |
+|---------|----------|----------|
+| **[@go-go-scope/persistence-redis](./packages/persistence-redis)** | Redis | Locks, caching, circuit breaker |
+| **[@go-go-scope/persistence-postgres](./packages/persistence-postgres)** | PostgreSQL | Advisory locks, table-based storage |
+| **[@go-go-scope/persistence-mysql](./packages/persistence-mysql)** | MySQL | Named locks, table-based storage |
+| **[@go-go-scope/persistence-mongodb](./packages/persistence-mongodb)** | MongoDB | Atomic operations, TTL indexes |
+| **[@go-go-scope/persistence-dynamodb](./packages/persistence-dynamodb)** | DynamoDB | Conditional writes, single-table design |
+| **[@go-go-scope/persistence-sqlite](./packages/persistence-sqlite)** | SQLite | Single-node deployments |
+| **[@go-go-scope/persistence-sqlite-bun](./packages/persistence-sqlite-bun)** | SQLite (Bun) | Bun-native SQLite |
+
+### 🔌 Framework Adapters
+
+Request-scoped structured concurrency for your favorite framework:
+
+| Package | Framework | Install |
+|---------|-----------|---------|
+| **[@go-go-scope/adapter-fastify](./packages/adapter-fastify)** | Fastify | `npm i @go-go-scope/adapter-fastify` |
+| **[@go-go-scope/adapter-express](./packages/adapter-express)** | Express | `npm i @go-go-scope/adapter-express` |
+| **[@go-go-scope/adapter-nestjs](./packages/adapter-nestjs)** | NestJS | `npm i @go-go-scope/adapter-nestjs` |
+| **[@go-go-scope/adapter-hono](./packages/adapter-hono)** | Hono | `npm i @go-go-scope/adapter-hono` |
+| **[@go-go-scope/adapter-elysia](./packages/adapter-elysia)** | Elysia | `npm i @go-go-scope/adapter-elysia` |
+| **[@go-go-scope/adapter-koa](./packages/adapter-koa)** | Koa | `npm i @go-go-scope/adapter-koa` |
+| **[@go-go-scope/adapter-hapi](./packages/adapter-hapi)** | Hapi | `npm i @go-go-scope/adapter-hapi` |
+
+---
+
+## 📖 Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [📚 Quick Start](./docs/01-quick-start.md) | Get up and running in 5 minutes |
+| [🧠 Core Concepts](./docs/02-concepts.md) | Why structured concurrency matters |
+| [📘 API Reference](./docs/03-api-reference.md) | Complete API documentation |
+| [🌊 Streams](./docs/04-streams.md) | Lazy async streams with 50+ operations |
+| [🛡️ Resilience Patterns](./docs/05-resilience-patterns.md) | Circuit breakers, retry, timeouts |
+| [🔧 Integrations](./docs/11-integrations.md) | Persistence and framework adapters |
+| [💾 Caching](./docs/17-caching-memoization.md) | Distributed caching and memoization |
+| [⚡ Performance](./docs/18-performance-optimizations.md) | Optimizations for high throughput |
+
+---
+
+## 🛠️ Development
 
 This monorepo uses pnpm workspaces.
 
@@ -108,48 +150,37 @@ pnpm install
 # Build all packages
 pnpm build
 
-# Build specific package
-pnpm build:core
-pnpm build:scheduler
-pnpm build:tui
-
 # Run tests
 pnpm test
 
+# Type check
+pnpm typecheck
+
 # Lint
 pnpm lint
+
+# Publish all packages
+pnpm publish:all
 ```
 
-## Repository Structure
+---
 
-```
-.
-├── packages/
-│   ├── go-go-scope/           # Core library
-│   ├── scheduler/              # Job scheduler with DLQ
-│   ├── scheduler-tui/          # CLI and TUI tools
-│   ├── stream/                 # Stream API package
-│   ├── testing/                # Test utilities
-│   ├── persistence-redis/      # Redis adapter
-│   ├── persistence-postgres/   # PostgreSQL adapter
-│   ├── persistence-mysql/      # MySQL adapter
-│   ├── persistence-sqlite/     # SQLite adapter
-│   ├── persistence-sqlite-bun/ # Bun SQLite adapter
-│   ├── persistence-mongodb/    # MongoDB adapter
-│   ├── persistence-dynamodb/   # DynamoDB adapter
-│   ├── adapter-fastify/        # Fastify adapter
-│   ├── adapter-express/        # Express adapter
-│   ├── adapter-nestjs/         # NestJS adapter
-│   ├── adapter-hono/           # Hono adapter
-│   ├── adapter-elysia/         # Elysia adapter
-│   ├── adapter-koa/            # Koa adapter
-│   └── adapter-hapi/           # Hapi adapter
-├── docs/                       # Documentation
-├── pnpm-workspace.yaml
-├── tsconfig.base.json
-└── package.json
-```
+## 🤝 Contributing
 
-## License
+Contributions are welcome! Please read our [Contributing Guide](./CONTRIBUTING.md) for details.
+
+---
+
+## 📄 License
 
 MIT © [thelinuxlich](https://github.com/thelinuxlich)
+
+---
+
+<div align="center">
+
+**⭐ Star us on GitHub if you find this useful!**
+
+[🐛 Report Bug](https://github.com/thelinuxlich/go-go-scope/issues) • [💡 Request Feature](https://github.com/thelinuxlich/go-go-scope/issues)
+
+</div>
