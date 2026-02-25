@@ -155,6 +155,28 @@ pnpm test
 npx tsx packages/scheduler-tui/src/tui.ts
 ```
 
+### Bun Compatibility Testing
+
+We support Bun runtime (v1.2.0+). Bun has a built-in test runner compatible with Vitest's API.
+
+```bash
+# Make sure Bun is installed (https://bun.sh)
+bun --version  # Should be v1.2.0+
+
+# Run ALL core tests under Bun (faster than Node.js + Vitest!)
+pnpm test:bun:core
+
+# Run all Bun tests (core + persistence-sqlite-bun)
+pnpm test:bun:all
+```
+
+**Note:** Some tests require optional dependencies (`@go-go-scope/scheduler`, `effect`) and are excluded from `test:bun:core`. Run `pnpm test` for the full Node.js test suite including all optional dependencies.
+
+Bun-specific SQLite tests are in `packages/persistence-sqlite-bun/src/index.test.ts` and test:
+- `sqlite3` package compatibility via Bun's Node.js compat layer
+- `bun:sqlite` native module support
+```
+
 ## Adding a New Package
 
 1. Create a new directory in `packages/`

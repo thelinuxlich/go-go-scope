@@ -14,7 +14,7 @@
   "scripts": {
     "build": "pkgroll --clean-dist",
     "lint": "biome check --write src/",
-    "test": "echo 'Run tests with: bun test src/index.test.ts'",
+    "test": "bun test src/index.test.ts",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit"
   },

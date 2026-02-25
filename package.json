@@ -20,6 +20,8 @@
     "test": "pnpm -r test",
     "test:core": "pnpm --filter go-go-scope test",
     "test:scheduler": "pnpm --filter @go-go-scope/scheduler test",
+    "test:bun:core": "bun test packages/go-go-scope/tests/core.test.ts packages/go-go-scope/tests/concurrency.test.ts packages/go-go-scope/tests/cancellation.test.ts packages/go-go-scope/tests/stream.test.ts packages/go-go-scope/tests/channel-backpressure.test.ts packages/go-go-scope/tests/idempotency.test.ts",
+    "test:bun:all": "bun test packages/go-go-scope/tests/*.test.ts packages/persistence-sqlite-bun/src/index.test.ts",
     "clean": "pnpm -r clean",
     "changeset": "changeset",
     "version-packages": "changeset version",
