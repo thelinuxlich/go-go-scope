@@ -1067,3 +1067,199 @@ describe("Stream - Chaining", () => {
 		expect(results).toEqual([20, 60, 120]);
 	});
 });
+
+
+describe("Stream - collect", () => {
+	test("collect filters and maps with partial function", async () => {
+		await using s = scope();
+		const [err, results] = await new Stream(fromArray([1, 2, 3, 4, 5, 6]), s)
+			.collect((x) => (x % 2 === 0 ? x * 10 : undefined))
+			.toArray();
+
+		expect(err).toBeUndefined();
+		expect(results).toEqual([20, 40, 60]);
+	});
+
+	test("collect with string parsing", async () => {
+		await using s = scope();
+		const [err, results] = await new Stream(
+			fromArray(["1", "a", "2", "b", "3"]),
+			s,
+		)
+			.collect((x) => {
+				const n = Number.parseInt(x, 10);
+				return Number.isNaN(n) ? undefined : n;
+			})
+			.toArray();
+
+		expect(err).toBeUndefined();
+		expect(results).toEqual([1, 2, 3]);
+	});
+
+	test("collect returns empty for no matches", async () => {
+		await using s = scope();
+		const [err, results] = await new Stream(fromArray([1, 3, 5]), s)
+			.collect((x) => (x % 2 === 0 ? x : undefined))
+			.toArray();
+
+		expect(err).toBeUndefined();
+		expect(results).toEqual([]);
+	});
+});
+
+describe("Stream - collectWhile", () => {
+	test("collectWhile stops at first undefined", async () => {
+		await using s = scope();
+		const [err, results] = await new Stream(
+			fromArray(["1", "2", "3", "stop", "4"]),
+			s,
+		)
+			.collectWhile((x) => {
+				if (x === "stop") return undefined;
+				const n = Number.parseInt(x, 10);
+				return Number.isNaN(n) ? undefined : n;
+			})
+			.toArray();
+
+		expect(err).toBeUndefined();
+		expect(results).toEqual([1, 2, 3]);
+	});
+
+	test("collectWhile processes all when all match", async () => {
+		await using s = scope();
+		const [err, results] = await new Stream(fromArray([1, 2, 3, 4, 5]), s)
+			.collectWhile((x) => (x < 10 ? x * 2 : undefined))
+			.toArray();
+
+		expect(err).toBeUndefined();
+		expect(results).toEqual([2, 4, 6, 8, 10]);
+	});
+});
+
+describe("Stream - grouped", () => {
+	test("grouped chunks elements into fixed sizes", async () => {
+		await using s = scope();
+		const [err, results] = await new Stream(
+			fromArray([1, 2, 3, 4, 5, 6, 7]),
+			s,
+		)
+			.grouped(3)
+			.toArray();
+
+		expect(err).toBeUndefined();
+		expect(results).toEqual([[1, 2, 3], [4, 5, 6], [7]]);
+	});
+
+	test("grouped is alias for buffer", async () => {
+		await using s = scope();
+		const [err1, groupedResults] = await new Stream(
+			fromArray([1, 2, 3, 4, 5]),
+			s,
+		)
+			.grouped(2)
+			.toArray();
+
+		const [err2, bufferResults] = await new Stream(
+			fromArray([1, 2, 3, 4, 5]),
+			s,
+		)
+			.buffer(2)
+			.toArray();
+
+		expect(err1).toBeUndefined();
+		expect(err2).toBeUndefined();
+		expect(groupedResults).toEqual(bufferResults);
+	});
+});
+
+describe("Stream - pipe", () => {
+	test("pipe applies transformation functions", async () => {
+		await using s = scope();
+		const [err, results] = await new Stream(fromArray([1, 2, 3, 4, 5]), s)
+			.pipe(
+				(s) => s.filter((x) => x % 2 === 0),
+				(s) => s.map((x) => x * 10),
+				(s) => s.take(2),
+			)
+			.toArray();
+
+		expect(err).toBeUndefined();
+		expect(results).toEqual([20, 40]);
+	});
+
+	test("pipe with no functions returns same stream", async () => {
+		await using s = scope();
+		const [err, results] = await new Stream(fromArray([1, 2, 3]), s).pipe().toArray();
+
+		expect(err).toBeUndefined();
+		expect(results).toEqual([1, 2, 3]);
+	});
+});
+
+describe("Stream - runHead", () => {
+	test("runHead returns first element", async () => {
+		await using s = scope();
+		const [err, result] = await new Stream(fromArray([5, 4, 3, 2, 1]), s).runHead();
+
+		expect(err).toBeUndefined();
+		expect(result).toBe(5);
+	});
+
+	test("runHead is alias for first", async () => {
+		await using s = scope();
+		const [runHeadErr, runHeadResult] = await new Stream(fromArray([1, 2, 3]), s).runHead();
+		const [firstErr, firstResult] = await new Stream(fromArray([1, 2, 3]), s).first();
+
+		expect(runHeadErr).toBeUndefined();
+		expect(firstErr).toBeUndefined();
+		expect(runHeadResult).toBe(firstResult);
+	});
+});
+
+describe("Stream - runLast", () => {
+	test("runLast returns last element", async () => {
+		await using s = scope();
+		const [err, result] = await new Stream(fromArray([1, 2, 3, 4, 5]), s).runLast();
+
+		expect(err).toBeUndefined();
+		expect(result).toBe(5);
+	});
+
+	test("runLast is alias for last", async () => {
+		await using s = scope();
+		const [runLastErr, runLastResult] = await new Stream(fromArray([1, 2, 3]), s).runLast();
+		const [lastErr, lastResult] = await new Stream(fromArray([1, 2, 3]), s).last();
+
+		expect(runLastErr).toBeUndefined();
+		expect(lastErr).toBeUndefined();
+		expect(runLastResult).toBe(lastResult);
+	});
+});
+
+describe("Stream - runSum", () => {
+	test("runSum adds all numeric values", async () => {
+		await using s = scope();
+		const [err, result] = await new Stream(fromArray([1, 2, 3, 4, 5]), s).runSum();
+
+		expect(err).toBeUndefined();
+		expect(result).toBe(15);
+	});
+
+	test("runSum is alias for sum", async () => {
+		await using s = scope();
+		const [runSumErr, runSumResult] = await new Stream(fromArray([1, 2, 3, 4, 5]), s).runSum();
+		const [sumErr, sumResult] = await new Stream(fromArray([1, 2, 3, 4, 5]), s).sum();
+
+		expect(runSumErr).toBeUndefined();
+		expect(sumErr).toBeUndefined();
+		expect(runSumResult).toBe(sumResult);
+	});
+
+	test("runSum with negative numbers", async () => {
+		await using s = scope();
+		const [err, result] = await new Stream(fromArray([10, -5, 3, -2]), s).runSum();
+
+		expect(err).toBeUndefined();
+		expect(result).toBe(6);
+	});
+});

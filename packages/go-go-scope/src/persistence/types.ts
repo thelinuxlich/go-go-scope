@@ -101,6 +101,91 @@ export interface CircuitBreakerPersistedState {
 }
 
 /**
+ * Cache provider interface for distributed caching
+ */
+export interface CacheProvider {
+	/**
+	 * Get a value from the cache
+	 * @param key - Cache key
+	 * @returns The cached value or null if not found/expired
+	 */
+	get<T>(key: string): Promise<T | null>;
+
+	/**
+	 * Set a value in the cache
+	 * @param key - Cache key
+	 * @param value - Value to cache
+	 * @param ttl - Time-to-live in milliseconds (optional)
+	 */
+	set<T>(key: string, value: T, ttl?: number): Promise<void>;
+
+	/**
+	 * Delete a value from the cache
+	 * @param key - Cache key
+	 */
+	delete(key: string): Promise<void>;
+
+	/**
+	 * Check if a key exists in the cache
+	 * @param key - Cache key
+	 * @returns True if the key exists and hasn't expired
+	 */
+	has(key: string): Promise<boolean>;
+
+	/**
+	 * Clear all values from the cache
+	 */
+	clear(): Promise<void>;
+
+	/**
+	 * Get all keys matching a pattern (if supported)
+	 * @param pattern - Optional pattern to filter keys
+	 * @returns Array of keys
+	 */
+	keys(pattern?: string): Promise<string[]>;
+}
+
+/**
+ * Cache statistics for monitoring
+ */
+export interface CacheStats {
+	/** Number of cache hits */
+	hits: number;
+	/** Number of cache misses */
+	misses: number;
+	/** Total number of cached items */
+	size: number;
+	/** Hit ratio (0-1) */
+	hitRatio: number;
+}
+
+/**
+ * Idempotency provider interface for caching task results
+ */
+export interface IdempotencyProvider {
+	/**
+	 * Get a cached value by key
+	 * @param key - Cache key
+	 * @returns Object with value and optional expiry timestamp, or null if not found/expired
+	 */
+	get<T>(key: string): Promise<{ value: T; expiresAt?: number } | null>;
+
+	/**
+	 * Store a value with optional TTL
+	 * @param key - Cache key
+	 * @param value - Value to cache
+	 * @param ttl - Time-to-live in milliseconds (optional)
+	 */
+	set<T>(key: string, value: T, ttl?: number): Promise<void>;
+
+	/**
+	 * Delete a cached value
+	 * @param key - Cache key
+	 */
+	delete(key: string): Promise<void>;
+}
+
+/**
  * Combined persistence providers
  */
 export interface PersistenceProviders {
@@ -108,6 +193,10 @@ export interface PersistenceProviders {
 	lock?: LockProvider;
 	/** Circuit breaker state provider */
 	circuitBreaker?: CircuitBreakerStateProvider;
+	/** Cache provider */
+	cache?: CacheProvider;
+	/** Idempotency provider for caching task results */
+	idempotency?: IdempotencyProvider;
 }
 
 /**

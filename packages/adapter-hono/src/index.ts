@@ -3,14 +3,14 @@
  * Lightweight middleware for Hono applications
  */
 
-import type { Context, MiddlewareHandler, Next } from "hono";
 import { type Scope, scope } from "go-go-scope";
+import type { Context, MiddlewareHandler, Next } from "hono";
 
 // Extend Hono context
 declare module "hono" {
 	interface ContextVariableMap {
-		scope: Scope;
-		rootScope: Scope;
+		scope: Scope<Record<string, unknown>>;
+		rootScope: Scope<Record<string, unknown>>;
 	}
 }
 
@@ -26,7 +26,7 @@ export interface HonoGoGoScopeOptions {
 /**
  * Root scope reference for the Hono application
  */
-let rootScope: Scope | null = null;
+let rootScope: Scope<Record<string, unknown>> | null = null;
 
 /**
  * Hono middleware for go-go-scope integration
@@ -64,7 +64,11 @@ export function goGoScope(
 	}
 
 	return async (c: Context, next: Next) => {
-		const scopeOptions: { parent: Scope; name: string; timeout?: number } = {
+		if (!rootScope) {
+			throw new Error("Root scope not initialized");
+		}
+
+		const scopeOptions: { parent: Scope<Record<string, unknown>>; name: string; timeout?: number } = {
 			parent: rootScope!,
 			name: `request-${c.req.url}`,
 		};
@@ -72,7 +76,7 @@ export function goGoScope(
 
 		const requestScope = scope(scopeOptions);
 		c.set("scope", requestScope);
-		c.set("rootScope", rootScope!);
+		c.set("rootScope", rootScope);
 
 		try {
 			await next();
@@ -85,13 +89,13 @@ export function goGoScope(
 /**
  * Get the request-scoped scope from Hono context
  */
-export function getScope(c: Context): Scope {
+export function getScope(c: Context): Scope<Record<string, unknown>> {
 	return c.get("scope");
 }
 
 /**
  * Get the root application scope from Hono context
  */
-export function getRootScope(c: Context): Scope {
+export function getRootScope(c: Context): Scope<Record<string, unknown>> {
 	return c.get("rootScope");
 }

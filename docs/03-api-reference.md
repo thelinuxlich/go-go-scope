@@ -150,6 +150,34 @@ interface ScopeOptions<ParentServices extends Record<string, unknown> = Record<s
    * @default false
    */
   metrics?: boolean
+  
+  /**
+   * Persistence providers for distributed features.
+   * Enables distributed locks, circuit breaker state sharing,
+   * and idempotency caching across processes.
+   */
+  persistence?: {
+    /** Distributed lock provider */
+    lock?: LockProvider
+    /** Circuit breaker state provider */
+    circuitBreaker?: CircuitBreakerStateProvider
+    /** Idempotency provider for caching task results */
+    idempotency?: IdempotencyProvider
+    /** Cache provider for general caching */
+    cache?: CacheProvider
+  }
+  
+  /**
+   * Idempotency configuration for the scope.
+   */
+  idempotency?: {
+    /**
+     * Default TTL for idempotency keys in milliseconds.
+     * Used when idempotency.key is provided on a task without idempotency.ttl.
+     * Inherited from parent if not specified.
+     */
+    defaultTTL?: number;
+  }
 }
 ```
 
@@ -190,6 +218,22 @@ await using s = scope({
 await using s = scope({ metrics: true })
 const result = await s.task(() => fetchData())
 console.log(s.metrics()) // { tasksSpawned: 1, tasksCompleted: 1, ... }
+
+// With idempotency provider
+import { RedisIdempotencyAdapter } from '@go-go-scope/persistence-redis'
+
+await using s = scope({
+  persistence: {
+    idempotency: new RedisIdempotencyAdapter(redis)
+  },
+  idempotency: { defaultTTL: 60000 }  // Default 1 minute TTL
+})
+
+// Tasks with idempotency key will be cached
+const [err, result] = await s.task(
+  () => processPayment(orderId),
+  { idempotency: { key: `payment:${orderId}` } }  // Uses default TTL
+)
 ```
 
 ---
@@ -310,6 +354,23 @@ interface TaskOptions<E extends Error = Error> {
    * wrapped in `UnknownError` if not specified.
    */
   systemErrorClass?: ErrorConstructor<E>
+  
+  /**
+   * Idempotency key for caching task results across multiple executions.
+   * When provided with a persistence provider, the task result will be
+   * cached and subsequent tasks with the same key will return the cached
+   * result without re-executing.
+   * 
+   * Can be a string or a function that generates the key.
+   * Errors are NOT cached - failed tasks will be retried.
+   */
+  idempotencyKey?: string | ((...args: unknown[]) => string)
+  
+  /**
+   * Time-to-live for the idempotency cache entry in milliseconds.
+   * If not specified, uses the scope's `idempotency.defaultTTL`.
+   */
+  idempotencyTTL?: number
 }
 ```
 
@@ -363,6 +424,37 @@ const [err, user] = await s.task(
   },
   { 
     systemErrorClass: DatabaseError  // Only wraps errors without _tag
+  }
+)
+
+// Idempotency - ensure a task runs only once for a given key
+await using s = scope({
+  persistence: {
+    idempotency: new InMemoryIdempotencyProvider()
+  }
+})
+
+// First call executes and caches
+const [err1, result1] = await s.task(
+  () => processPayment(orderId),
+  { idempotencyKey: `payment:${orderId}`, idempotencyTTL: 60000 }
+)
+
+// Second call with same key returns cached result (within TTL)
+const [err2, result2] = await s.task(
+  () => processPayment(orderId),  // This won't execute!
+  { idempotencyKey: `payment:${orderId}`, idempotencyTTL: 60000 }
+)
+// result2 === result1
+
+// Idempotency with function key
+const [err, user] = await s.task(
+  () => createUser(email),
+  { 
+    idempotency: { 
+      key: () => `create-user:${email}`,
+      ttl: 300000  // 5 minutes
+    }
   }
 )
 ```

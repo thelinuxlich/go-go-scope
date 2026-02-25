@@ -25,9 +25,8 @@
  * ```
  */
 
-// @ts-expect-error pg types may not be installed
-import type { Pool } from "pg";
 import type {
+	CacheProvider,
 	CircuitBreakerPersistedState,
 	CircuitBreakerStateProvider,
 	LockHandle,
@@ -35,12 +34,19 @@ import type {
 	PersistenceAdapter,
 	PersistenceAdapterOptions,
 } from "go-go-scope";
+import type { Pool } from "pg";
+
+export { PostgresCacheAdapter } from "./cache.js";
 
 /**
  * PostgreSQL persistence adapter
  */
 export class PostgresAdapter
-	implements LockProvider, CircuitBreakerStateProvider, PersistenceAdapter
+	implements
+		LockProvider,
+		CircuitBreakerStateProvider,
+		CacheProvider,
+		PersistenceAdapter
 {
 	private readonly pool: Pool;
 	private readonly keyPrefix: string;
@@ -170,7 +176,7 @@ export class PostgresAdapter
 			"UPDATE go_goscope_locks SET expires_at = NOW() + INTERVAL '1 millisecond' * $2 WHERE key = $1 AND owner = $3 AND expires_at > NOW()",
 			[key, ttl, owner],
 		);
-		return result.rowCount > 0;
+		return (result.rowCount ?? 0) > 0;
 	}
 
 	async extend(key: string, ttl: number, owner: string): Promise<boolean> {
@@ -298,6 +304,15 @@ export class PostgresAdapter
         );
         
         CREATE INDEX IF NOT EXISTS idx_circuit_updated ON go_goscope_circuit(updated_at);
+        
+        CREATE TABLE IF NOT EXISTS go_goscope_cache (
+          key TEXT PRIMARY KEY,
+          value JSONB NOT NULL,
+          expires_at TIMESTAMP,
+          accessed_at TIMESTAMP DEFAULT NOW()
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_cache_expires ON go_goscope_cache(expires_at);
       `);
 		} finally {
 			client.release();
@@ -311,4 +326,94 @@ export class PostgresAdapter
 	isConnected(): boolean {
 		return this.pool.totalCount > 0;
 	}
+
+	// ============================================================================
+	// Cache Provider
+	// ============================================================================
+
+	async get<T>(key: string): Promise<T | null> {
+		const fullKey = this.prefix(`cache:${key}`);
+
+		const result = await this.pool.query(
+			`SELECT value FROM go_goscope_cache WHERE key = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
+			[fullKey],
+		);
+
+		if (result.rows.length === 0) {
+			return null;
+		}
+
+		return result.rows[0].value as T;
+	}
+
+	async set<T>(key: string, value: T, ttl?: number): Promise<void> {
+		const fullKey = this.prefix(`cache:${key}`);
+		const expiresAt = ttl ? new Date(Date.now() + ttl).toISOString() : null;
+
+		await this.pool.query(
+			`INSERT INTO go_goscope_cache (key, value, expires_at) VALUES ($1, $2, $3)
+			 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, expires_at = EXCLUDED.expires_at`,
+			[fullKey, JSON.stringify(value), expiresAt],
+		);
+	}
+
+	async delete(key: string): Promise<void> {
+		const fullKey = this.prefix(`cache:${key}`);
+		await this.pool.query(`DELETE FROM go_goscope_cache WHERE key = $1`, [
+			fullKey,
+		]);
+	}
+
+	async has(key: string): Promise<boolean> {
+		const fullKey = this.prefix(`cache:${key}`);
+
+		const result = await this.pool.query(
+			`SELECT 1 FROM go_goscope_cache WHERE key = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
+			[fullKey],
+		);
+
+		return result.rows.length > 0;
+	}
+
+	async clear(): Promise<void> {
+		if (this.keyPrefix) {
+			await this.pool.query(`DELETE FROM go_goscope_cache WHERE key LIKE $1`, [
+				`${this.keyPrefix}cache:%`,
+			]);
+		} else {
+			await this.pool.query(`DELETE FROM go_goscope_cache`);
+		}
+	}
+
+	async keys(pattern?: string): Promise<string[]> {
+		let query = `SELECT key FROM go_goscope_cache WHERE expires_at IS NULL OR expires_at > NOW()`;
+		let params: string[] = [];
+
+		if (this.keyPrefix) {
+			if (pattern) {
+				query = `SELECT key FROM go_goscope_cache WHERE key LIKE $1 AND (expires_at IS NULL OR expires_at > NOW())`;
+				params = [`${this.keyPrefix}cache:${pattern}`];
+			} else {
+				query = `SELECT key FROM go_goscope_cache WHERE key LIKE $1 AND (expires_at IS NULL OR expires_at > NOW())`;
+				params = [`${this.keyPrefix}cache:%`];
+			}
+		} else if (pattern) {
+			query = `SELECT key FROM go_goscope_cache WHERE key LIKE $1 AND (expires_at IS NULL OR expires_at > NOW())`;
+			params = [pattern];
+		}
+
+		const result = await this.pool.query(query, params);
+		const keys = result.rows.map((r) => r.key as string);
+
+		// Remove prefix from returned keys
+		if (this.keyPrefix) {
+			return keys.map((k) =>
+				k.startsWith(`${this.keyPrefix}cache:`)
+					? k.slice(`${this.keyPrefix}cache:`.length)
+					: k,
+			);
+		}
+		return keys;
+	}
 }
+export { PostgresIdempotencyAdapter } from "./idempotency.js";

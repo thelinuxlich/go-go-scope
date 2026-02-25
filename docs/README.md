@@ -32,6 +32,15 @@ Complete guide to structured concurrency in TypeScript.
 | [📊 Observability](./06-observability.md) | Metrics, logging, profiling, tracing |
 | [🧪 Testing](./08-testing.md) | Mock scopes, spies, time travel testing |
 | [🔌 Integrations](./11-integrations.md) | OpenTelemetry, Prometheus, Grafana, Persistence, Framework Adapters |
+| [⚡ Performance](./18-performance-optimizations.md) | Ring buffer, lazy initialization, profiling |
+
+### Advanced Features
+| Doc | What You'll Learn |
+|-----|-------------------|
+| [💾 Caching](./17-caching-memoization.md) | Distributed caching, memoization with tasks |
+| [📅 Scheduler](./15-scheduler.md) | Job scheduling with persistence and DLQ |
+| [🌊 Stream API Design](./15-stream-api-design.md) | Stream architecture and operator design |
+| [⚖️ Effect Comparison](./16-effect-stream-comparison.md) | Detailed comparison with Effect library |
 
 ### Comparisons & Migration
 | Doc | What You'll Learn |
@@ -52,6 +61,8 @@ Complete guide to structured concurrency in TypeScript.
 - ✅ **Retry Logic** - Built-in exponential backoff, jitter strategies
 - ✅ **Timeout Handling** - Built-in timeout with automatic cleanup
 - ✅ **Distributed Locks** - Cross-process locking with automatic TTL expiration
+- ✅ **Idempotency** - Automatic task deduplication with caching
+- ✅ **Backpressure** - Multiple strategies for channel overflow handling
 
 ### Framework Adapters
 - ✅ **Fastify** - Request-scoped concurrency with plugin
@@ -59,6 +70,8 @@ Complete guide to structured concurrency in TypeScript.
 - ✅ **NestJS** - Dependency injection integration
 - ✅ **Hono** - Lightweight edge runtime support
 - ✅ **Elysia** - Bun-first performance optimized
+- ✅ **Koa** - Modern async middleware support
+- ✅ **Hapi** - Enterprise-grade plugin system
 
 ### Concurrency & Streams
 - ✅ **Streams** - Lazy async pipelines with 50+ operations
@@ -71,9 +84,11 @@ Complete guide to structured concurrency in TypeScript.
 - ✅ **Metrics** - Prometheus/JSON export, cross-scope aggregation
 - ✅ **Debug Tools** - `debugTree()` for visualizing scope hierarchies
 - ✅ **OpenTelemetry** - Distributed tracing support
-- ✅ **Distributed Locks** - Redis, PostgreSQL, MySQL, SQLite adapters
+- ✅ **Distributed Locks** - Redis, PostgreSQL, MySQL, SQLite, MongoDB, DynamoDB adapters
 - ✅ **Circuit Breaker State** - Shared state across multiple instances
-- ✅ **Framework Adapters** - Fastify, Express, NestJS, Hono, Elysia
+- ✅ **Framework Adapters** - Fastify, Express, NestJS, Hono, Elysia, Koa, Hapi
+- ✅ **Caching** - In-memory and distributed caching with memoization
+- ✅ **Dead Letter Queue** - Failed job handling and replay for scheduler
 
 ### Testing
 - ✅ **Mock Scopes** - `createMockScope` for isolated testing

@@ -9,7 +9,6 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type {
 	CreateScheduleOptions,
 	Job,
-	JobStatus,
 	JobStorage,
 	Schedule,
 	ScheduleStats,
@@ -910,7 +909,11 @@ export async function createWebUI(options: WebUIOptions): Promise<Server> {
 				path.match(new RegExp(`^${apiPath}/schedules/[^/]+$`)) &&
 				req.method === "DELETE"
 			) {
-				const name = path.split("/").pop()!;
+				const name = path.split("/").pop();
+				if (!name) {
+					jsonResponse(res, 400, { error: "Invalid schedule name" });
+					return;
+				}
 				await options.deleteSchedule(name);
 				jsonResponse(res, 204, null);
 				return;
@@ -922,6 +925,10 @@ export async function createWebUI(options: WebUIOptions): Promise<Server> {
 				req.method === "POST"
 			) {
 				const name = path.split("/")[path.split("/").length - 2];
+				if (!name) {
+					jsonResponse(res, 400, { error: "Schedule name is required" });
+					return;
+				}
 				await options.pauseSchedule(name);
 				jsonResponse(res, 200, { success: true });
 				return;
@@ -933,6 +940,10 @@ export async function createWebUI(options: WebUIOptions): Promise<Server> {
 				req.method === "POST"
 			) {
 				const name = path.split("/")[path.split("/").length - 2];
+				if (!name) {
+					jsonResponse(res, 400, { error: "Schedule name is required" });
+					return;
+				}
 				await options.resumeSchedule(name);
 				jsonResponse(res, 200, { success: true });
 				return;
@@ -944,7 +955,11 @@ export async function createWebUI(options: WebUIOptions): Promise<Server> {
 				req.method === "GET"
 			) {
 				const name = path.split("/")[path.split("/").length - 2];
-				const limit = parseInt(url.searchParams.get("limit") || "20");
+				if (!name) {
+					jsonResponse(res, 400, { error: "Schedule name is required" });
+					return;
+				}
+				const limit = parseInt(url.searchParams.get("limit") || "20", 10);
 				const jobs = await options.getScheduleJobs(name, limit);
 				jsonResponse(res, 200, jobs);
 				return;

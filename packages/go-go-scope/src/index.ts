@@ -7,6 +7,8 @@
 
 // Re-export classes
 export { BroadcastChannel } from "./broadcast-channel.js";
+// Re-export cache utilities
+export { createCache, InMemoryCache } from "./cache.js";
 // Re-export cancellation utilities
 export {
 	abortPromise,
@@ -16,18 +18,38 @@ export {
 export { Channel } from "./channel.js";
 export { CircuitBreaker } from "./circuit-breaker.js";
 export { DeadlockDetector } from "./deadlock-detector.js";
-export { AbortError, UnknownError } from "./errors.js";
+export { AbortError, ChannelFullError, UnknownError } from "./errors.js";
 // Re-export standalone functions
 export { scope } from "./factory.js";
+// Re-export idempotency utilities
+export {
+	createIdempotencyProvider,
+	InMemoryIdempotencyProvider,
+} from "./idempotency.js";
 // Re-export logger
 export { ConsoleLogger, createLogger, NoOpLogger } from "./logger.js";
 // Re-export metrics exporter
 export { exportMetrics, MetricsReporter } from "./metrics-exporter.js";
 export { parallel } from "./parallel.js";
+// Re-export performance utilities
+export {
+	type BenchmarkOptions,
+	type BenchmarkResult,
+	benchmark,
+	MemoryTracker,
+	type PerformanceMetrics,
+	PerformanceMonitor,
+	type PerformanceMonitorOptions,
+	type PerformanceSnapshot,
+	performanceMonitor,
+} from "./performance.js";
 // Persistence types (re-exported from persistence module)
 export type {
+	CacheProvider,
+	CacheStats,
 	CircuitBreakerPersistedState,
 	CircuitBreakerStateProvider,
+	IdempotencyProvider,
 	LockHandle,
 	LockProvider,
 	PersistenceAdapter,
@@ -55,9 +77,11 @@ export type {
 export { AsyncDisposableResource, Scope } from "./scope.js";
 // Semaphore is used internally for concurrency limiting, not exported as public API
 // Stream is available via @go-go-scope/stream package
-export { Task } from "./task.js";
+export { getTaskPoolMetrics, resetTaskPoolMetrics, Task } from "./task.js";
 // Re-export types
 export type {
+	BackpressureStrategy,
+	ChannelOptions,
 	CircuitBreakerOptions,
 	CircuitState,
 	Context,
@@ -90,6 +114,7 @@ export type {
 	Tracer,
 } from "./types.js";
 export { SpanStatusCode } from "./types.js";
+export { type ScopePlugin, installPlugins } from "./plugin.js";
 
 // Testing utilities are available via 'go-go-scope/testing' import
 

@@ -28,29 +28,51 @@
  * Enable with `enableWebUI: true` to serve a management interface at `webUIPort` (default: 8080).
  * Access via `getWebUIUrl()` after starting the scheduler.
  *
+ * **Type-Safe Schedules:**
+ * The scheduler supports typed payloads for compile-time safety:
+ *
  * @example
  * ```typescript
- * import { Scheduler, CronPresets } from 'go-go-scope/scheduler'
+ * import { Scheduler, createScheduler } from '@go-go-scope/scheduler'
  * import { scope } from 'go-go-scope'
  * import { RedisAdapter } from 'go-go-scope/persistence/redis'
  *
+ * // Define your schedules with typed payloads
+ * type AppSchedules = {
+ *   'send-email': { to: string; subject: string; body: string };
+ *   'process-payment': { amount: number; currency: string };
+ *   'cleanup-temp-files': { maxAge: number };
+ * };
+ *
  * await using s = scope()
  *
- * const scheduler = new Scheduler({
+ * // Create typed scheduler using generic parameter
+ * const scheduler = new Scheduler<AppSchedules>({
  *   scope: s,
  *   storage: new RedisJobStorage(redis, redisAdapter),
  *   enableWebUI: true,
  *   webUIPort: 8080
  * })
  *
- * await scheduler.createSchedule('daily-report', {
- *   cron: CronPresets.DAILY,
- *   timezone: 'America/New_York'
+ * // Or use the createScheduler factory function
+ * const scheduler2 = createScheduler<AppSchedules>({
+ *   scope: s,
+ *   storage: new RedisJobStorage(redis, redisAdapter),
  * })
  *
- * scheduler.onSchedule('daily-report', async (job, scope) => {
- *   // Generate report
- * })
+ * // Autocomplete works for schedule names!
+ * scheduler.onSchedule('send-email', async (job) => {
+ *   // job.payload is fully typed as { to: string; subject: string; body: string }
+ *   const { to, subject, body } = job.payload;
+ *   await sendEmail({ to, subject, body });
+ * });
+ *
+ * // Trigger with typed payload - type checking works!
+ * await scheduler.triggerSchedule('send-email', {
+ *   to: 'user@example.com',
+ *   subject: 'Hello',
+ *   body: 'World'
+ * });
  *
  * scheduler.start()
  *
@@ -64,7 +86,7 @@ export {
 	RedisJobStorage,
 	SQLJobStorage,
 } from "./persistence-storage.js";
-export { Scheduler } from "./scheduler.js";
+export { createScheduler, Scheduler } from "./scheduler.js";
 export {
 	type CreateScheduleOptions,
 	type CronExpression,
@@ -78,15 +100,22 @@ export {
 	type MetricsExportOptions,
 	SCHEDULER_VERSION,
 	type Schedule,
+	type ScheduleDefinitions,
 	type ScheduleHandler,
+	type ScheduleJobOptions,
 	type ScheduleJobResult,
+	type SchedulePayload,
 	type SchedulerEvents,
 	type SchedulerHooks,
 	type SchedulerMetrics,
 	type SchedulerOptions,
 	ScheduleState,
 	type ScheduleStats,
+	type SchedulesOf,
 	StaleJobBehavior,
+	type TriggerOptions,
+	type TypedJob,
+	type TypedScheduleHandler,
 	type UpdateScheduleOptions,
 } from "./types.js";
 export {

@@ -1,89 +1,91 @@
 {
-	"name": "@go-go-scope/scheduler",
-	"version": "2.1.0",
-	"description": "Distributed job scheduler for go-go-scope with unified instance API",
-	"type": "module",
-	"main": "./dist/index.mjs",
-	"types": "./dist/index.d.mts",
-	"exports": {
-		".": {
-			"types": "./dist/index.d.mts",
-			"default": "./dist/index.mjs"
-		}
-	},
-	"scripts": {
-		"build": "pkgroll --clean-dist",
-		"lint": "biome check --write src/",
-		"test": "vitest run",
-		"test:watch": "vitest",
-		"test:integration": "vitest run src/scheduler-integration.test.ts",
-		"test:integration:memory": "vitest run src/scheduler-memory-benchmark.test.ts",
-		"test:memory": "node --expose-gc node_modules/vitest/vitest.mjs run src/scheduler-memory-benchmark.test.ts",
-		"test:stress": "vitest run src/scheduler-stress.test.ts",
-		"test:stress:memory": "node --expose-gc node_modules/vitest/vitest.mjs run src/scheduler-stress.test.ts",
-		"test:sql": "vitest run src/scheduler-sql-stress.test.ts",
-		"test:all": "npm run test && npm run test:integration && npm run test:stress && npm run test:sql",
-		"clean": "rm -rf dist"
-	},
-	"keywords": [
-		"scheduler",
-		"cron",
-		"jobs",
-		"distributed",
-		"go-go-scope"
-	],
-	"engines": {
-		"node": ">=24.0.0"
-	},
-	"author": "thelinuxlich",
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/thelinuxlich/go-go-scope.git",
-		"directory": "packages/scheduler"
-	},
-	"files": [
-		"dist/",
-		"README.md"
-	],
-	"dependencies": {
-		"debug": "^4.4.3",
-		"go-go-scope": "workspace:*"
-	},
-	"peerDependencies": {
-		"ioredis": "^5.9.3",
-		"pg": "^8.18.0",
-		"mysql2": "^3.18.0",
-		"sqlite3": "^5.1.7"
-	},
-	"peerDependenciesMeta": {
-		"ioredis": {
-			"optional": true
-		},
-		"pg": {
-			"optional": true
-		},
-		"mysql2": {
-			"optional": true
-		},
-		"sqlite3": {
-			"optional": true
-		}
-	},
-	"devDependencies": {
-		"@biomejs/biome": "^2.4.4",
-		"@go-go-scope/persistence-redis": "workspace:*",
-		"@go-go-scope/persistence-postgres": "workspace:*",
-		"@go-go-scope/persistence-mysql": "workspace:*",
-		"@go-go-scope/persistence-sqlite": "workspace:*",
-		"@types/node": "^24",
-		"ioredis": "^5.9.3",
-		"mysql2": "^3.18.0",
-		"pg": "^8.18.0",
-		"pkgroll": "^2.26.3",
-		"sqlite": "^5.1.1",
-		"sqlite3": "^5.1.7",
-		"typescript": "^5.9.3",
-		"vitest": "^4.0.18"
-	}
+  "name": "@go-go-scope/scheduler",
+  "version": "2.2.0",
+  "description": "Distributed job scheduler for go-go-scope with unified instance API",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "pkgroll --clean-dist",
+    "lint": "biome check --write src/",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run src/scheduler-integration.test.ts",
+    "test:integration:memory": "vitest run src/scheduler-memory-benchmark.test.ts",
+    "test:memory": "node --expose-gc node_modules/vitest/vitest.mjs run src/scheduler-memory-benchmark.test.ts",
+    "test:stress": "vitest run src/scheduler-stress.test.ts",
+    "test:stress:memory": "node --expose-gc node_modules/vitest/vitest.mjs run src/scheduler-stress.test.ts",
+    "test:sql": "vitest run src/scheduler-sql-stress.test.ts",
+    "test:all": "npm run test && npm run test:integration && npm run test:stress && npm run test:sql",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "scheduler",
+    "cron",
+    "jobs",
+    "distributed",
+    "go-go-scope"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "author": "thelinuxlich",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thelinuxlich/go-go-scope.git",
+    "directory": "packages/scheduler"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "dependencies": {
+    "debug": "^4.4.3",
+    "go-go-scope": "workspace:*"
+  },
+  "peerDependencies": {
+    "ioredis": "^5.9.3",
+    "mysql2": "^3.18.0",
+    "pg": "^8.18.0",
+    "sqlite3": "^5.1.7"
+  },
+  "peerDependenciesMeta": {
+    "ioredis": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    },
+    "mysql2": {
+      "optional": true
+    },
+    "sqlite3": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.4",
+    "@go-go-scope/persistence-mysql": "workspace:*",
+    "@go-go-scope/persistence-postgres": "workspace:*",
+    "@go-go-scope/persistence-redis": "workspace:*",
+    "@go-go-scope/persistence-sqlite": "workspace:*",
+    "@types/debug": "^4.1.12",
+    "@types/node": "^24",
+    "ioredis": "^5.9.3",
+    "mysql2": "^3.18.0",
+    "pg": "^8.18.0",
+    "pkgroll": "^2.26.3",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
 }

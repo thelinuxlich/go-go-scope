@@ -26,7 +26,7 @@ export interface ScopePlugin {
 	 * Called when the scope is created.
 	 * Can add methods/properties to the scope.
 	 */
-	install<T extends Scope>(scope: T, options: ScopeOptions): void;
+	install<T extends Scope>(scope: T, options: ScopeOptions<Record<string, never>>): void;
 
 	/**
 	 * Called when the scope is disposed.
@@ -63,7 +63,7 @@ export function registerPlugin(scope: Scope, plugin: ScopePlugin): void {
  */
 export function installPlugins<T extends Scope>(
 	scope: T,
-	options: ScopeOptions,
+	options: ScopeOptions<Record<string, never>>,
 ): void {
 	if (!options.plugins) return;
 
@@ -103,7 +103,9 @@ export type WithPlugins<T extends Scope, Plugins extends ScopePlugin[]> = T & {
 
 // Augment ScopeOptions to include plugins
 declare module "./scope.js" {
-	interface ScopeOptions<Services extends Record<string, unknown>> {
+	interface ScopeOptions<
+		ParentServices extends Record<string, unknown> = Record<string, never>,
+	> {
 		/**
 		 * Plugins to extend scope functionality
 		 * @example

@@ -3,7 +3,7 @@
  * Uses go-go-scope persistence adapters (Redis, PostgreSQL, MySQL, SQLite)
  */
 
-import type { LockProvider } from "go-go-scope/persistence/index.js";
+import type { LockProvider } from "go-go-scope";
 import { parseCron } from "./cron.js";
 import type { Job, JobStatus, JobStorage, Schedule } from "./types.js";
 
@@ -185,7 +185,7 @@ export class RedisJobStorage implements JobStorage {
 
 	async saveJob(job: Job): Promise<void> {
 		const jobData = this.serializeJob(job);
-		await this.redis.hset(this.keyPrefix + "jobs", job.id, jobData);
+		await this.redis.hset(`${this.keyPrefix}jobs`, job.id, jobData);
 
 		// Update status index
 		await this.redis.sadd(this.jobsIndexKey(job.status), job.id);
@@ -207,17 +207,17 @@ export class RedisJobStorage implements JobStorage {
 		// Add to due jobs sorted set if pending
 		if (job.status === "pending" && job.runAt) {
 			await this.redis.zadd(
-				this.keyPrefix + "jobs:due",
+				`${this.keyPrefix}jobs:due`,
 				job.runAt.getTime(),
 				job.id,
 			);
 		} else {
-			await this.redis.zrem(this.keyPrefix + "jobs:due", job.id);
+			await this.redis.zrem(`${this.keyPrefix}jobs:due`, job.id);
 		}
 	}
 
 	async getJob(id: string): Promise<Job | null> {
-		const data = await this.redis.hget(this.keyPrefix + "jobs", id);
+		const data = await this.redis.hget(`${this.keyPrefix}jobs`, id);
 		return data ? this.deserializeJob(data) : null;
 	}
 
@@ -233,7 +233,7 @@ export class RedisJobStorage implements JobStorage {
 
 	async getDueJobs(before: Date): Promise<Job[]> {
 		const ids = await this.redis.zrangebyscore(
-			this.keyPrefix + "jobs:due",
+			`${this.keyPrefix}jobs:due`,
 			0,
 			before.getTime(),
 		);
@@ -251,19 +251,19 @@ export class RedisJobStorage implements JobStorage {
 		const job = await this.getJob(id);
 		if (job) {
 			await this.redis.srem(this.jobsIndexKey(job.status), id);
-			await this.redis.zrem(this.keyPrefix + "jobs:due", id);
+			await this.redis.zrem(`${this.keyPrefix}jobs:due`, id);
 		}
-		await this.redis.hdel(this.keyPrefix + "jobs", id);
+		await this.redis.hdel(`${this.keyPrefix}jobs`, id);
 	}
 
 	async saveSchedule(schedule: Schedule): Promise<void> {
 		const data = this.serializeSchedule(schedule);
-		await this.redis.hset(this.keyPrefix + "schedules", schedule.name, data);
+		await this.redis.hset(`${this.keyPrefix}schedules`, schedule.name, data);
 		await this.redis.sadd(this.schedulesIndexKey(), schedule.name);
 	}
 
 	async getSchedule(name: string): Promise<Schedule | null> {
-		const data = await this.redis.hget(this.keyPrefix + "schedules", name);
+		const data = await this.redis.hget(`${this.keyPrefix}schedules`, name);
 		return data ? this.deserializeSchedule(data) : null;
 	}
 
@@ -278,7 +278,7 @@ export class RedisJobStorage implements JobStorage {
 	}
 
 	async deleteSchedule(name: string): Promise<void> {
-		await this.redis.hdel(this.keyPrefix + "schedules", name);
+		await this.redis.hdel(`${this.keyPrefix}schedules`, name);
 		await this.redis.srem(this.schedulesIndexKey(), name);
 	}
 
@@ -359,8 +359,8 @@ export class RedisJobStorage implements JobStorage {
 		if (this.redis.eval) {
 			const keys = [
 				this.jobsIndexKey("pending"),
-				this.keyPrefix + "jobs",
-				this.keyPrefix + "jobs:due",
+				`${this.keyPrefix}jobs`,
+				`${this.keyPrefix}jobs:due`,
 			];
 			const args = [
 				schedule.name,
@@ -454,14 +454,6 @@ export class SQLJobStorage implements JobStorage {
 		this.keyPrefix = options?.keyPrefix ?? "scheduler:";
 	}
 
-	private get placeholder(): string {
-		return this.dialect === "postgres"
-			? "$"
-			: this.dialect === "sqlite"
-				? ""
-				: "?";
-	}
-
 	private getParamIndex(index: number): string {
 		return this.dialect === "postgres" ? `$${index}` : "?";
 	}
@@ -479,7 +471,7 @@ export class SQLJobStorage implements JobStorage {
 	}
 
 	async saveJob(job: Job): Promise<void> {
-		const table = this.keyPrefix + "jobs";
+		const table = `${this.keyPrefix}jobs`;
 		const data = this.serialize({
 			...job,
 			createdAt: job.createdAt.toISOString(),
@@ -599,7 +591,7 @@ export class SQLJobStorage implements JobStorage {
 	}
 
 	async saveSchedule(schedule: Schedule): Promise<void> {
-		const table = this.keyPrefix + "schedules";
+		const table = `${this.keyPrefix}schedules`;
 		const data = this.serialize({
 			...schedule,
 			createdAt: schedule.createdAt.toISOString(),
@@ -752,7 +744,7 @@ export class SQLJobStorage implements JobStorage {
 			maxRetries: schedule.options?.maxRetries ?? 3,
 		};
 
-		const table = this.keyPrefix + "jobs";
+		const table = `${this.keyPrefix}jobs`;
 
 		// Atomic insert with idempotency check using INSERT WHERE NOT EXISTS pattern
 		// This approach works across PostgreSQL, MySQL, and SQLite
@@ -803,7 +795,7 @@ export class SQLJobStorage implements JobStorage {
 				);
 			}
 			return true;
-		} catch (error) {
+		} catch (_error) {
 			// Duplicate key violation means we already have a pending job
 			return false;
 		}

@@ -25,8 +25,8 @@
  * ```
  */
 
-import type { Redis } from "ioredis";
 import type {
+	CacheProvider,
 	CircuitBreakerPersistedState,
 	CircuitBreakerStateProvider,
 	LockHandle,
@@ -34,12 +34,20 @@ import type {
 	PersistenceAdapter,
 	PersistenceAdapterOptions,
 } from "go-go-scope";
+import type { Redis } from "ioredis";
+
+export { RedisCacheAdapter } from "./cache.js";
+export { RedisIdempotencyAdapter } from "./idempotency.js";
 
 /**
  * Redis persistence adapter
  */
 export class RedisAdapter
-	implements LockProvider, CircuitBreakerStateProvider, PersistenceAdapter
+	implements
+		LockProvider,
+		CircuitBreakerStateProvider,
+		CacheProvider,
+		PersistenceAdapter
 {
 	private readonly redis: Redis;
 	private readonly keyPrefix: string;
@@ -184,5 +192,66 @@ export class RedisAdapter
 
 	isConnected(): boolean {
 		return this.redis.status === "ready";
+	}
+
+	// ============================================================================
+	// Cache Provider
+	// ============================================================================
+
+	async get<T>(key: string): Promise<T | null> {
+		const fullKey = this.prefix(`cache:${key}`);
+		const data = await this.redis.get(fullKey);
+
+		if (!data) {
+			return null;
+		}
+
+		try {
+			return JSON.parse(data) as T;
+		} catch {
+			return null;
+		}
+	}
+
+	async set<T>(key: string, value: T, ttl?: number): Promise<void> {
+		const fullKey = this.prefix(`cache:${key}`);
+		const serialized = JSON.stringify(value);
+
+		if (ttl) {
+			await this.redis.setex(fullKey, Math.ceil(ttl / 1000), serialized);
+		} else {
+			await this.redis.set(fullKey, serialized);
+		}
+	}
+
+	async delete(key: string): Promise<void> {
+		const fullKey = this.prefix(`cache:${key}`);
+		await this.redis.del(fullKey);
+	}
+
+	async has(key: string): Promise<boolean> {
+		const fullKey = this.prefix(`cache:${key}`);
+		const exists = await this.redis.exists(fullKey);
+		return exists === 1;
+	}
+
+	async clear(): Promise<void> {
+		const pattern = this.prefix("cache:*");
+		const keys = await this.redis.keys(pattern);
+		if (keys.length > 0) {
+			await this.redis.del(...keys);
+		}
+	}
+
+	async keys(pattern?: string): Promise<string[]> {
+		const fullPattern = this.prefix(pattern ? `cache:${pattern}` : "cache:*");
+		const keys = await this.redis.keys(fullPattern);
+		// Remove prefix and cache: from returned keys
+		return keys.map((k) => {
+			const withoutPrefix = this.keyPrefix ? k.slice(this.keyPrefix.length) : k;
+			return withoutPrefix.startsWith("cache:")
+				? withoutPrefix.slice(6)
+				: withoutPrefix;
+		});
 	}
 }

@@ -3,7 +3,7 @@
  * Native Bun-first adapter for Elysia applications
  */
 
-import type { Context, Elysia } from "elysia";
+import type { Elysia } from "elysia";
 import { type Scope, scope } from "go-go-scope";
 
 export interface ElysiaGoGoScopeOptions {
@@ -18,7 +18,7 @@ export interface ElysiaGoGoScopeOptions {
 /**
  * Store root scope reference
  */
-let rootScope: Scope | null = null;
+let rootScope: Scope<Record<string, unknown>> | null = null;
 
 /**
  * Symbol for storing scope in Elysia store
@@ -26,15 +26,9 @@ let rootScope: Scope | null = null;
 export const SCOPE_KEY = Symbol("go-go-scope");
 export const ROOT_SCOPE_KEY = Symbol("go-go-root-scope");
 
-// biome-ignore lint/suspicious/noRedeclare: Augmenting Elysia types for plugin
-declare global {
-	namespace Elysia {
-		interface Context {
-			scope: Scope;
-			rootScope: Scope;
-		}
-	}
-}
+// Note: Elysia's Context is a type alias, not an interface,
+// so we cannot use module augmentation. The scope is injected
+// via the .derive() method in the plugin.
 
 /**
  * Elysia plugin for go-go-scope integration
@@ -68,32 +62,37 @@ export function goGoScope(options: ElysiaGoGoScopeOptions = {}) {
 	}
 
 	return (app: Elysia) => {
+		if (!rootScope) {
+			throw new Error("Root scope not initialized");
+		}
+
 		return (
 			app
 				// Use state to store root scope
-				.state("rootScope", rootScope!)
+				.state("rootScope", rootScope)
 				.onRequest(({ store, request }) => {
 					// Create request-scoped child
 					const scopeOptions: {
-						parent: Scope;
+						parent: Scope<Record<string, unknown>>;
 						name: string;
 						timeout?: number;
 					} = {
 						parent: rootScope!,
-						name: `request-${request.url}`,
+						// biome-ignore lint/suspicious/noExplicitAny: Elysia request access
+						name: `request-${(request as any).url || "unknown"}`,
 					};
 					if (timeout) scopeOptions.timeout = timeout;
 
 					// Store request scope using symbol
-					(store as Record<symbol, Scope>)[SCOPE_KEY] = scope(scopeOptions);
+					(store as Record<symbol, Scope<Record<string, unknown>>>)[SCOPE_KEY] = scope(scopeOptions);
 				})
 				.derive(({ store }) => ({
-					scope: (store as Record<symbol, Scope>)[SCOPE_KEY],
-					rootScope: store.rootScope,
+					scope: (store as Record<symbol, Scope<Record<string, unknown>>>)[SCOPE_KEY],
+					rootScope: store.rootScope as Scope<Record<string, unknown>>,
 				}))
 				.onAfterResponse(({ store }) => {
 					// Cleanup request scope
-					const requestScope = (store as Record<symbol, Scope | undefined>)[
+					const requestScope = (store as Record<symbol, Scope<Record<string, unknown>> | undefined>)[
 						SCOPE_KEY
 					];
 					if (requestScope) {
@@ -107,7 +106,7 @@ export function goGoScope(options: ElysiaGoGoScopeOptions = {}) {
 /**
  * Get scope from Elysia context (for use outside of handlers)
  */
-export function getScope(context: Context & { scope?: Scope }): Scope {
+export function getScope(context: { scope?: Scope<Record<string, unknown>> }): Scope<Record<string, unknown>> {
 	if (!context.scope) {
 		throw new Error(
 			"Scope not available. Ensure goGoScope plugin is registered.",
@@ -119,7 +118,7 @@ export function getScope(context: Context & { scope?: Scope }): Scope {
 /**
  * Get root scope from Elysia context
  */
-export function getRootScope(context: Context & { rootScope?: Scope }): Scope {
+export function getRootScope(context: { rootScope?: Scope<Record<string, unknown>> }): Scope<Record<string, unknown>> {
 	if (!context.rootScope) {
 		throw new Error(
 			"Root scope not available. Ensure goGoScope plugin is registered.",

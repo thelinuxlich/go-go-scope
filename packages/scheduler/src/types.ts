@@ -65,6 +65,14 @@ export interface Job {
 }
 
 /**
+ * Typed job definition with specific payload type
+ */
+export type TypedJob<Payload extends JobPayload> = Omit<Job, "payload"> & {
+	/** Job payload data with specific type */
+	payload: Payload;
+};
+
+/**
  * Schedule state
  */
 export enum ScheduleState {
@@ -167,7 +175,15 @@ export interface UpdateScheduleOptions {
 /**
  * Handler function for a schedule (provided by workers at runtime)
  */
-export type ScheduleHandler = (job: Job, scope: Scope) => Promise<void>;
+export type ScheduleHandler = (job: Job, scope: Scope<Record<string, unknown>>) => Promise<void>;
+
+/**
+ * Typed handler function for a schedule with specific payload type
+ */
+export type TypedScheduleHandler<Payload extends JobPayload> = (
+	job: TypedJob<Payload>,
+	scope: Scope<Record<string, unknown>>,
+) => Promise<void>;
 
 /**
  * Result of scheduling a job
@@ -269,7 +285,7 @@ export interface JobStorage {
 	/**
 	 * Mark a job as completed and trigger next occurrence scheduling.
 	 * When the database handles scheduling, this method should:
-	 * 1. Mark the job complete
+	 * 1. Mark job complete
 	 * 2. Calculate and schedule the next occurrence automatically
 	 *
 	 * Returns true if next occurrence was scheduled, false otherwise.
@@ -283,6 +299,19 @@ export interface JobStorage {
 	 * Must return true for all storage implementations.
 	 */
 	supportsAutoScheduling(): boolean;
+
+	// Dead Letter Queue methods (optional, required for DLQ support)
+	/** Add a job to the dead letter queue */
+	addToDLQ?(job: DeadLetterJob): Promise<void>;
+	/** Get jobs from the dead letter queue */
+	getDLQJobs?(
+		scheduleName?: string,
+		options?: { limit?: number; offset?: number },
+	): Promise<DeadLetterJob[]>;
+	/** Replay a job from the DLQ back to pending status */
+	replayFromDLQ?(jobId: string): Promise<boolean>;
+	/** Purge jobs from the DLQ. Returns number of jobs purged. */
+	purgeDLQ?(scheduleName?: string, maxAge?: number): Promise<number>;
 }
 
 /**
@@ -291,6 +320,7 @@ export interface JobStorage {
 export class InMemoryJobStorage implements JobStorage {
 	private jobs = new Map<string, Job>();
 	private schedules = new Map<string, Schedule>();
+	private dlq = new Map<string, DeadLetterJob>();
 
 	async saveJob(job: Job): Promise<void> {
 		this.jobs.set(job.id, { ...job });
@@ -459,6 +489,84 @@ export class InMemoryJobStorage implements JobStorage {
 
 		return nextRun;
 	}
+
+	// Dead Letter Queue methods
+	async addToDLQ(job: DeadLetterJob): Promise<void> {
+		this.dlq.set(job.id, { ...job });
+	}
+
+	async getDLQJobs(
+		scheduleName?: string,
+		options?: { limit?: number; offset?: number },
+	): Promise<DeadLetterJob[]> {
+		let jobs = Array.from(this.dlq.values());
+
+		if (scheduleName) {
+			jobs = jobs.filter((j) => j.scheduleName === scheduleName);
+		}
+
+		// Sort by deadLetteredAt descending (most recent first)
+		jobs.sort(
+			(a, b) =>
+				new Date(b.deadLetteredAt).getTime() -
+				new Date(a.deadLetteredAt).getTime(),
+		);
+
+		const offset = options?.offset ?? 0;
+		const limit = options?.limit ?? jobs.length;
+
+		return jobs.slice(offset, offset + limit).map((j) => ({ ...j }));
+	}
+
+	async replayFromDLQ(jobId: string): Promise<boolean> {
+		const dlqJob = this.dlq.get(jobId);
+		if (!dlqJob) {
+			return false;
+		}
+
+		// Remove from DLQ
+		this.dlq.delete(jobId);
+
+		// Reset job to pending state
+		const replayedJob: Job = {
+			...dlqJob,
+			status: "pending",
+			retryCount: 0,
+			error: undefined,
+			completedAt: undefined,
+			lastExecutedAt: undefined,
+			lockExpiresAt: undefined,
+			runAt: new Date(),
+		};
+
+		this.jobs.set(jobId, replayedJob);
+		return true;
+	}
+
+	async purgeDLQ(scheduleName?: string, maxAge?: number): Promise<number> {
+		const now = Date.now();
+		let count = 0;
+
+		for (const [id, job] of this.dlq.entries()) {
+			// Filter by schedule name if specified
+			if (scheduleName && job.scheduleName !== scheduleName) {
+				continue;
+			}
+
+			// Filter by max age if specified
+			if (maxAge) {
+				const age = now - new Date(job.deadLetteredAt).getTime();
+				if (age < maxAge) {
+					continue;
+				}
+			}
+
+			this.dlq.delete(id);
+			count++;
+		}
+
+		return count;
+	}
 }
 
 /**
@@ -482,6 +590,10 @@ export interface SchedulerEvents {
 	scheduleDeleted: (event: { scheduleName: string }) => void;
 	/** Emitted when schedules are loaded from storage */
 	schedulesLoaded: (event: { count: number; names: string[] }) => void;
+	/** Emitted when a handler is registered */
+	handlerRegistered: (event: { scheduleName: string }) => void;
+	/** Emitted when a handler is removed */
+	handlerRemoved: (event: { scheduleName: string }) => void;
 	/** Emitted when a job is scheduled */
 	jobScheduled: (event: { job: Job }) => void;
 	/** Emitted when a job starts execution */
@@ -500,10 +612,38 @@ export interface SchedulerEvents {
 	jobCancelled: (event: { job: Job }) => void;
 	/** Emitted when a stale job is skipped (staleJobBehavior: SKIP) */
 	jobSkipped: (event: { job: Job; reason: "stale"; staleness: number }) => void;
+	/** Emitted when a job is moved to the dead letter queue */
+	jobDeadLettered: (event: { job: DeadLetterJob; error: Error }) => void;
 	/** Emitted when this admin instance becomes the leader (HA mode) */
 	becameLeader: (event: { instanceId: string }) => void;
 	/** Emitted when this admin instance steps down from leader role (HA mode) */
 	steppedDown: (event: { instanceId: string }) => void;
+}
+
+/**
+ * Dead Letter Queue job - contains additional metadata for failed jobs
+ */
+export interface DeadLetterJob extends Job {
+	/** When the job was moved to the DLQ */
+	deadLetteredAt: Date;
+	/** The final error message that caused the job to be dead lettered */
+	finalError: string;
+	/** History of retry attempts with errors */
+	retryHistory: Array<{ attemptedAt: Date; error: string }>;
+}
+
+/**
+ * Dead Letter Queue configuration options
+ */
+export interface DeadLetterQueueOptions {
+	/** Enable the dead letter queue (default: false) */
+	enabled: boolean;
+	/** Maximum retry attempts before moving to DLQ (defaults to schedule's maxRetries) */
+	maxRetries?: number;
+	/** Separate storage for DLQ jobs (defaults to main storage) */
+	storage?: JobStorage;
+	/** Callback invoked when a job is moved to the DLQ */
+	onDeadLetter?: (job: DeadLetterJob, error: Error) => void | Promise<void>;
 }
 
 /**
@@ -589,13 +729,19 @@ export interface SchedulerOptions {
 	 * Parent scope for structured concurrency.
 	 * If not provided, a new scope will be created automatically.
 	 */
-	scope?: Scope;
+	scope?: Scope<Record<string, unknown>>;
 	/** Storage backend (default: InMemoryJobStorage) */
 	storage?: JobStorage;
 	/** Poll interval in milliseconds (default: 1000) */
 	checkInterval?: number;
 	/** Auto-start scheduler on creation (default: true) */
 	autoStart?: boolean;
+	/**
+	 * Dead Letter Queue configuration.
+	 * When enabled, jobs that fail after maxRetries are moved to the DLQ
+	 * instead of just being marked as failed.
+	 */
+	deadLetterQueue?: DeadLetterQueueOptions;
 	/**
 	 * Stale job threshold in milliseconds.
 	 * Jobs that are past their scheduled time by more than this threshold
@@ -724,3 +870,293 @@ export interface JobProfile {
 		duration?: number;
 	}>;
 }
+
+// ============================================================================
+// Type-safe schedule definitions
+// ============================================================================
+
+/**
+ * Helper type to define schedules with typed payloads
+ *
+ * @example
+ * ```typescript
+ * type AppSchedules = {
+ *   'send-email': { to: string; subject: string; body: string };
+ *   'process-payment': { amount: number; currency: string };
+ * };
+ *
+ * const scheduler = new Scheduler<AppSchedules>({ storage });
+ * ```
+ */
+export type ScheduleDefinitions = Record<string, JobPayload>;
+
+/**
+ * Helper type to extract the payload type for a specific schedule
+ */
+export type SchedulePayload<
+	Schedules extends ScheduleDefinitions,
+	Name extends keyof Schedules,
+> = Schedules[Name];
+
+/**
+ * Helper type to extract schedule types from a scheduler instance
+ *
+ * @example
+ * ```typescript
+ * const scheduler = new Scheduler<AppSchedules>({ storage });
+ * type MySchedules = SchedulesOf<typeof scheduler>;
+ * // MySchedules = AppSchedules
+ * ```
+ */
+export type SchedulesOf<T> = T extends Scheduler<infer S> ? S : never;
+
+/**
+ * Options for triggering a schedule
+ */
+export interface TriggerOptions {
+	/** Delay before running in milliseconds */
+	delay?: number;
+	/** Override schedule's default payload */
+	payload?: JobPayload;
+}
+
+/**
+ * Options for scheduling a job
+ */
+export interface ScheduleJobOptions {
+	/** Delay before running in milliseconds */
+	delay?: number;
+	/** Job priority (higher = runs first) */
+	priority?: number;
+}
+
+/**
+ * Scheduler class with typed schedules
+ *
+ * @template Schedules - Record mapping schedule names to their payload types
+ *
+ * @example
+ * ```typescript
+ * type AppSchedules = {
+ *   'send-email': { to: string; subject: string; body: string };
+ *   'process-payment': { amount: number; currency: string };
+ * };
+ *
+ * const scheduler = new Scheduler<AppSchedules>({ storage });
+ *
+ * // Type-safe handler registration
+ * scheduler.onSchedule('send-email', async (job) => {
+ *   // job.payload is typed as { to: string; subject: string; body: string }
+ *   const { to, subject, body } = job.payload;
+ * });
+ *
+ * // Type-safe trigger
+ * await scheduler.triggerSchedule('send-email', {
+ *   to: 'user@example.com',
+ *   subject: 'Hello',
+ *   body: 'World'
+ * });
+ * ```
+ */
+export declare class Scheduler<
+	Schedules extends ScheduleDefinitions = Record<string, JobPayload>,
+> implements AsyncDisposable
+{
+	readonly version: string;
+
+	constructor(options: SchedulerOptions);
+
+	/**
+	 * Register a typed handler for a schedule.
+	 * The handler will be called when jobs for this schedule become available.
+	 *
+	 * @param name - Schedule name (must be a key of Schedules)
+	 * @param handler - Handler function with typed payload
+	 */
+	onSchedule<Name extends keyof Schedules>(
+		name: Name extends string ? Name : never,
+		handler: TypedScheduleHandler<Schedules[Name]>,
+	): void;
+
+	/**
+	 * Trigger a schedule to run immediately.
+	 * Creates a job that will execute as soon as a worker picks it up.
+	 *
+	 * @param name - Schedule name (must be a key of Schedules)
+	 * @param payload - Typed payload for the job
+	 * @param options - Optional trigger options
+	 */
+	triggerSchedule<Name extends keyof Schedules>(
+		name: Name extends string ? Name : never,
+		payload?: Schedules[Name],
+		options?: ScheduleJobOptions,
+	): Promise<import("go-go-scope").Result<Error, ScheduleJobResult>>;
+
+	/**
+	 * Schedule a one-time job.
+	 *
+	 * @param scheduleName - Schedule name (must be a key of Schedules)
+	 * @param payload - Typed payload for the job
+	 * @param options - Optional scheduling options
+	 */
+	scheduleJob<Name extends keyof Schedules>(
+		scheduleName: Name extends string ? Name : never,
+		payload?: Schedules[Name],
+		options?: ScheduleJobOptions,
+	): Promise<import("go-go-scope").Result<Error, ScheduleJobResult>>;
+
+	/**
+	 * Create a schedule for recurring job execution.
+	 *
+	 * @param name - Unique schedule name
+	 * @param options - Schedule configuration
+	 */
+	createSchedule<Name extends string>(
+		name: Name,
+		options: CreateScheduleOptions,
+	): Promise<Schedule>;
+
+	/**
+	 * Remove a handler for a schedule.
+	 */
+	offSchedule(name: string): boolean;
+
+	/**
+	 * Delete a schedule by name.
+	 */
+	deleteSchedule(name: string): Promise<boolean>;
+
+	/**
+	 * List all schedules.
+	 */
+	listSchedules(): Promise<Schedule[]>;
+
+	/**
+	 * Get a schedule by name.
+	 */
+	getSchedule(name: string): Promise<Schedule | null>;
+
+	/**
+	 * Update an existing schedule.
+	 */
+	updateSchedule(
+		name: string,
+		options: UpdateScheduleOptions,
+	): Promise<Schedule>;
+
+	/**
+	 * Pause a schedule. No new jobs will be created until resumed.
+	 */
+	pauseSchedule(name: string): Promise<Schedule>;
+
+	/**
+	 * Resume a paused schedule.
+	 */
+	resumeSchedule(name: string): Promise<Schedule>;
+
+	/**
+	 * Disable a schedule. Workers will skip disabled schedules.
+	 */
+	disableSchedule(name: string): Promise<Schedule>;
+
+	/**
+	 * Get statistics for a schedule.
+	 */
+	getScheduleStats(name: string): Promise<ScheduleStats>;
+
+	/**
+	 * Get all schedules with their statistics.
+	 */
+	getAllScheduleStats(): Promise<ScheduleStats[]>;
+
+	/**
+	 * Cancel a pending job.
+	 */
+	cancelJob(jobId: string): Promise<boolean>;
+
+	/**
+	 * Get a job by ID.
+	 */
+	getJob(jobId: string): Promise<Job | null>;
+
+	/**
+	 * Get jobs by status.
+	 */
+	getJobsByStatus(status: JobStatus): Promise<Job[]>;
+
+	/**
+	 * Start the scheduler polling loop.
+	 */
+	start(): void;
+
+	/**
+	 * Stop the scheduler and cancel all running jobs.
+	 */
+	stop(): Promise<void>;
+
+	/**
+	 * Get scheduler status.
+	 */
+	getStatus(): {
+		isRunning: boolean;
+		runningJobs: number;
+		scheduledJobs: number;
+		instanceId: string;
+	};
+
+	/**
+	 * Get the web UI URL if enabled.
+	 */
+	getWebUIUrl(): string | null;
+
+	/**
+	 * Event emitter for scheduler lifecycle events.
+	 */
+	on: <K extends keyof SchedulerEvents>(
+		event: K,
+		listener: SchedulerEvents[K],
+	) => () => void;
+
+	/**
+	 * Collect current metrics from the scheduler.
+	 */
+	collectMetrics(): Promise<SchedulerMetrics>;
+
+	/**
+	 * Export metrics in various formats.
+	 */
+	exportMetrics(options?: MetricsExportOptions): Promise<string>;
+
+	/**
+	 * Get job profile for detailed execution analysis.
+	 */
+	getJobProfile(jobId: string): JobProfile | undefined;
+
+	/**
+	 * Get all job profiles.
+	 */
+	getAllJobProfiles(): JobProfile[];
+
+	/**
+	 * Clear old job profiles.
+	 */
+	clearJobProfiles(olderThanMs?: number): void;
+
+	/**
+	 * Async dispose the scheduler.
+	 */
+	[Symbol.asyncDispose](): Promise<void>;
+}
+
+/**
+ * Create a typed scheduler instance.
+ *
+ * @example
+ * ```typescript
+ * const scheduler = createScheduler<{
+ *   'send-email': { to: string; subject: string };
+ *   'cleanup': { maxAge: number };
+ * }>({ storage });
+ * ```
+ */
+// createScheduler is implemented in scheduler.ts and re-exported from there

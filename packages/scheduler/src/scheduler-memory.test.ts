@@ -34,7 +34,7 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const storage = new InMemoryJobStorage();
 			const scheduler = new Scheduler({
 				scope: s,
@@ -45,9 +45,9 @@ describe("Scheduler Memory Management", () => {
 
 			await scheduler.createSchedule("memory-test", {
 				cron: "* * * * *",
-				handler: async () => {
-					// Quick handler
-				},
+			});
+			scheduler.onSchedule("memory-test", async () => {
+				// Quick handler
 			});
 
 			// Create 100 jobs
@@ -87,7 +87,7 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const storage = new InMemoryJobStorage();
 			const scheduler = new Scheduler({
 				scope: s,
@@ -98,11 +98,11 @@ describe("Scheduler Memory Management", () => {
 
 			await scheduler.createSchedule("failing-job", {
 				cron: "* * * * *",
-				handler: async () => {
-					throw new Error("Always fails");
-				},
 				maxRetries: 2,
 				retryDelay: 10,
+			});
+			scheduler.onSchedule("failing-job", async () => {
+				throw new Error("Always fails");
 			});
 
 			// Create multiple failing jobs
@@ -138,7 +138,7 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const storage = new InMemoryJobStorage();
 			const scheduler = new Scheduler({
 				scope: s,
@@ -148,8 +148,8 @@ describe("Scheduler Memory Management", () => {
 
 			await scheduler.createSchedule("cancellable", {
 				cron: "* * * * *",
-				handler: async () => {},
 			});
+			scheduler.onSchedule("cancellable", async () => {});
 
 			// Create and immediately cancel jobs
 			for (let i = 0; i < 50; i++) {
@@ -185,7 +185,7 @@ describe("Scheduler Memory Management", () => {
 
 	describe("Running Jobs Cleanup", () => {
 		test.skip("running jobs map is cleared after completion", async () => {
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -199,9 +199,9 @@ describe("Scheduler Memory Management", () => {
 
 			await scheduler.createSchedule("long-running", {
 				cron: "* * * * *",
-				handler: async () => {
-					await handlerPromise;
-				},
+			});
+			scheduler.onSchedule("long-running", async () => {
+				await handlerPromise;
 			});
 
 			// Start a job
@@ -216,7 +216,7 @@ describe("Scheduler Memory Management", () => {
 			expect(status.runningJobs).toBeGreaterThanOrEqual(1);
 
 			// Complete the job
-			resolveHandler!();
+			(resolveHandler as (() => void) | null)?.();
 			await new Promise((r) => setTimeout(r, 200));
 
 			// Running jobs should be cleared
@@ -227,7 +227,7 @@ describe("Scheduler Memory Management", () => {
 		});
 
 		test.skip("running jobs are cancelled and cleaned on scheduler stop", async () => {
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -238,19 +238,19 @@ describe("Scheduler Memory Management", () => {
 
 			await scheduler.createSchedule("stoppable", {
 				cron: "* * * * *",
-				handler: async (job, jobScope) => {
-					try {
-						await new Promise((_, reject) => {
-							jobScope.signal.addEventListener("abort", () => {
-								cancelled = true;
-								reject(new Error("Cancelled"));
-							});
-							// Never resolves
+			});
+			scheduler.onSchedule("stoppable", async (_job, jobScope) => {
+				try {
+					await new Promise((_, reject) => {
+						jobScope.signal.addEventListener("abort", () => {
+							cancelled = true;
+							reject(new Error("Cancelled"));
 						});
-					} catch {
-						// Expected
-					}
-				},
+						// Never resolves
+					});
+				} catch {
+					// Expected
+				}
 			});
 
 			await scheduler.scheduleJob("stoppable", {});
@@ -275,7 +275,7 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -285,8 +285,8 @@ describe("Scheduler Memory Management", () => {
 			for (let i = 0; i < 50; i++) {
 				await scheduler.createSchedule(`temp-schedule-${i}`, {
 					cron: "* * * * *",
-					handler: async () => {},
 				});
+				scheduler.onSchedule(`temp-schedule-${i}`, async () => {});
 			}
 
 			expect(scheduler.getStatus().scheduledJobs).toBe(50);
@@ -316,19 +316,23 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: false,
 			});
 
-			// Create and replace same schedule multiple times
+			// Create schedule once (onConflict not supported, delete first if exists)
 			for (let i = 0; i < 100; i++) {
+				try {
+					await scheduler.deleteSchedule("replaced-schedule");
+				} catch {
+					// Ignore if doesn't exist
+				}
 				await scheduler.createSchedule("replaced-schedule", {
 					cron: `*/${(i % 60) + 1} * * * *`, // Different cron each time
-					handler: async () => {},
-					onConflict: 0, // REPLACE
 				});
+				scheduler.onSchedule("replaced-schedule", async () => {});
 			}
 
 			// Should only have 1 schedule
@@ -354,7 +358,7 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -373,8 +377,8 @@ describe("Scheduler Memory Management", () => {
 
 			await scheduler.createSchedule("event-test", {
 				cron: "* * * * *",
-				handler: async () => {},
 			});
+			scheduler.onSchedule("event-test", async () => {});
 
 			await scheduler.scheduleJob("event-test", {});
 			scheduler.start();
@@ -411,7 +415,7 @@ describe("Scheduler Memory Management", () => {
 
 	describe("Timer Cleanup", () => {
 		test("poll timer is cleared on stop", async () => {
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 			const scheduler = new Scheduler({
 				scope: s,
@@ -437,7 +441,7 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -511,7 +515,7 @@ describe("Scheduler Memory Management", () => {
 			const locks: Array<{ jobId: string; acquired: boolean }> = [];
 
 			for (let i = 0; i < 20; i++) {
-				const acquired = await storage.acquireJobLock!(
+				const acquired = await storage.acquireJobLock?.(
 					`job-${i}`,
 					"instance-1",
 					5000,
@@ -524,12 +528,12 @@ describe("Scheduler Memory Management", () => {
 
 			// Release all
 			for (const { jobId } of locks) {
-				await storage.releaseJobLock!(jobId, "instance-1");
+				await storage.releaseJobLock?.(jobId, "instance-1");
 			}
 
 			// Should be able to reacquire
 			for (let i = 0; i < 20; i++) {
-				const acquired = await storage.acquireJobLock!(
+				const acquired = await storage.acquireJobLock?.(
 					`job-${i}`,
 					"instance-2",
 					5000,
@@ -545,7 +549,7 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const storage = new InMemoryJobStorage();
 			const scheduler = new Scheduler({
 				scope: s,
@@ -555,8 +559,8 @@ describe("Scheduler Memory Management", () => {
 
 			await scheduler.createSchedule("high-volume", {
 				cron: "* * * * *",
-				handler: async () => {},
 			});
+			scheduler.onSchedule("high-volume", async () => {});
 
 			// Create 1000 jobs
 			const jobIds: string[] = [];
@@ -603,7 +607,7 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: true,
@@ -614,8 +618,8 @@ describe("Scheduler Memory Management", () => {
 			for (let i = 0; i < 10; i++) {
 				await scheduler.createSchedule(`schedule-${i}`, {
 					cron: "* * * * *",
-					handler: async () => {},
 				});
+				scheduler.onSchedule(`schedule-${i}`, async () => {});
 			}
 
 			// Create jobs
@@ -650,7 +654,7 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const storage = new InMemoryJobStorage();
 			const scheduler = new Scheduler({
 				scope: s,
@@ -661,10 +665,10 @@ describe("Scheduler Memory Management", () => {
 
 			await scheduler.createSchedule("memory-test", {
 				cron: "* * * * *",
-				handler: async () => {
-					// Simulate some work
-					await new Promise((r) => setTimeout(r, 10));
-				},
+			});
+			scheduler.onSchedule("memory-test", async () => {
+				// Simulate some work
+				await new Promise((r) => setTimeout(r, 10));
 			});
 
 			const measurements: number[] = [];
@@ -697,8 +701,8 @@ describe("Scheduler Memory Management", () => {
 			const finalMemory = getMemoryMB();
 
 			// Memory should not grow unbounded
-			const first = measurements[0];
-			const last = measurements[measurements.length - 1];
+			const first = measurements[0]!;
+			const last = measurements[measurements.length - 1]!;
 			const growthRatio = last / first || 1;
 
 			console.log(

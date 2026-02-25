@@ -51,6 +51,39 @@ services:
       timeout: 3s
       retries: 5
 
+  mongodb:
+    image: mongo:7
+    container_name: go-go-scope-mongodb
+    ports:
+      - "27018:27017" # MongoDB (mapped to 27018 to avoid conflicts)
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: test
+      MONGO_INITDB_ROOT_PASSWORD: test
+      MONGO_INITDB_DATABASE: test
+    restart: unless-stopped
+    networks:
+      - go-go-scope
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: go-go-scope-dynamodb
+    ports:
+      - "8001:8000" # DynamoDB (mapped to 8001 to avoid conflicts)
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb"]
+    restart: unless-stopped
+    networks:
+      - go-go-scope
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/shell/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   # === Observability Services ===
   jaeger:
     image: jaegertracing/all-in-one:1.76.0
@@ -108,7 +141,6 @@ services:
     restart: unless-stopped
     networks:
       - go-go-scope
-
 volumes:
   prometheus-data:
   grafana-data:

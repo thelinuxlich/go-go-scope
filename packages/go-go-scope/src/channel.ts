@@ -1,11 +1,120 @@
 /**
  * Channel class for go-go-scope - Go-style concurrent communication
+ * Optimized version with ring buffer and fast paths
  */
+
+import { ChannelFullError } from "./errors.js";
+import { RESOLVED_FALSE, RESOLVED_TRUE, RESOLVED_UNDEFINED } from "./task.js";
+import type { BackpressureStrategy, ChannelOptions } from "./types.js";
+
+// Ring buffer implementation for O(1) enqueue/dequeue
+class RingBuffer<T> {
+	private buffer: (T | undefined)[];
+	private head = 0;
+	private tail = 0;
+	private count = 0;
+	private capacity: number;
+
+	constructor(capacity: number) {
+		this.capacity = capacity;
+		this.buffer = new Array(capacity);
+	}
+
+	get size(): number {
+		return this.count;
+	}
+
+	get cap(): number {
+		return this.capacity;
+	}
+
+	isEmpty(): boolean {
+		return this.count === 0;
+	}
+
+	isFull(): boolean {
+		return this.count === this.capacity;
+	}
+
+	enqueue(value: T): boolean {
+		if (this.isFull()) {
+			return false;
+		}
+		this.buffer[this.tail] = value;
+		this.tail = (this.tail + 1) % this.capacity;
+		this.count++;
+		return true;
+	}
+
+	dequeue(): T | undefined {
+		if (this.isEmpty()) {
+			return undefined;
+		}
+		const value = this.buffer[this.head];
+		this.buffer[this.head] = undefined; // Help GC
+		this.head = (this.head + 1) % this.capacity;
+		this.count--;
+		return value;
+	}
+
+	peek(): T | undefined {
+		if (this.isEmpty()) {
+			return undefined;
+		}
+		return this.buffer[this.head];
+	}
+
+	clear(): void {
+		// Help GC by clearing references
+		for (let i = 0; i < this.capacity; i++) {
+			this.buffer[i] = undefined;
+		}
+		this.head = 0;
+		this.tail = 0;
+		this.count = 0;
+	}
+
+	// Resize the buffer (creates new buffer, copies data)
+	resize(newCapacity: number): void {
+		const newBuffer = new Array(newCapacity);
+		for (let i = 0; i < this.count; i++) {
+			newBuffer[i] = this.buffer[(this.head + i) % this.capacity];
+		}
+		this.buffer = newBuffer;
+		this.head = 0;
+		this.tail = this.count;
+		this.capacity = newCapacity;
+	}
+}
+
+// Queue item types for type safety
+interface SendQueueItem {
+	resolve: () => void;
+	reject: (reason: unknown) => void;
+	value: unknown;
+}
+
+interface ReceiveQueueItem {
+	resolve: (value: unknown) => void;
+	reject: (reason: unknown) => void;
+}
+
+// Sample buffer entry for sample backpressure strategy
+interface SampleEntry<T> {
+	value: T;
+	timestamp: number;
+}
 
 /**
  * A Channel for Go-style concurrent communication.
- * Supports multiple producers/consumers with backpressure.
+ * Supports multiple producers/consumers with configurable backpressure strategies.
  * Automatically closes when the parent scope is disposed.
+ *
+ * Optimizations:
+ * - Ring buffer for O(1) operations
+ * - Fast paths for common cases (buffer has space/data)
+ * - Batched notification to reduce event loop pressure
+ * - Reduced object allocations
  *
  * @example
  * ```typescript
@@ -15,7 +124,7 @@
  * // Producer
  * s.spawn(async () => {
  *   for (const item of items) {
- *     await ch.send(item)  // Blocks if buffer full
+ *     await ch.send(item)  // Blocks if buffer full (default strategy)
  *   }
  *   ch.close()
  * })
@@ -28,26 +137,49 @@
  */
 /* #__PURE__ */
 export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
-	private buffer: T[] = [];
-	private bufferHead = 0; // Index of first valid element (avoids O(n) shift)
-	private sendQueue: Array<{
-		resolve: () => void;
-		reject: (reason: unknown) => void;
-	}> = [];
-	private sendQueueHead = 0; // Index of first valid sender (avoids O(n) shift)
-	private receiveQueue: Array<{
-		resolve: (value: T | undefined) => void;
-		reject: (reason: unknown) => void;
-	}> = [];
-	private receiveQueueHead = 0; // Index of first valid receiver (avoids O(n) shift)
+	private buffer: RingBuffer<T>;
+	private sendQueue: SendQueueItem[] = [];
+	private sendQueueHead = 0;
+	private receiveQueue: ReceiveQueueItem[] = [];
+	private receiveQueueHead = 0;
 	private closed = false;
 	private aborted = false;
 	private abortReason: unknown;
 
+	// Backpressure-related properties
+	private backpressure: BackpressureStrategy;
+	private onDrop?: (value: T) => void;
+	private sampleWindow: number;
+	private sampleBuffer: SampleEntry<T>[] = [];
+	private capacity: number;
+
+	// Batch notification support
+	private notifyScheduled = false;
+
 	constructor(
-		private capacity: number,
+		capacityOrOptions?: number | ChannelOptions<T>,
 		parentSignal?: AbortSignal,
 	) {
+		// Parse options
+		let capacity = 0;
+		if (typeof capacityOrOptions === "number") {
+			capacity = capacityOrOptions;
+			this.backpressure = "block";
+			this.onDrop = undefined;
+			this.sampleWindow = 1000;
+		} else if (capacityOrOptions !== undefined) {
+			capacity = capacityOrOptions.capacity ?? 0;
+			this.backpressure = capacityOrOptions.backpressure ?? "block";
+			this.onDrop = capacityOrOptions.onDrop;
+			this.sampleWindow = capacityOrOptions.sampleWindow ?? 1000;
+		} else {
+			this.backpressure = "block";
+			this.onDrop = undefined;
+			this.sampleWindow = 1000;
+		}
+		this.capacity = capacity;
+		this.buffer = new RingBuffer<T>(capacity);
+
 		if (parentSignal) {
 			parentSignal.addEventListener(
 				"abort",
@@ -62,57 +194,231 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 	}
 
 	/**
-	 * Get effective buffer size (accounting for head offset).
+	 * Get effective buffer size.
 	 */
 	private get bufferSize(): number {
-		return this.buffer.length - this.bufferHead;
+		if (this.backpressure === "sample") {
+			return this.sampleBuffer.length;
+		}
+		return this.buffer.size;
+	}
+
+	/**
+	 * Clean up expired sample buffer entries.
+	 */
+	private cleanupSampleBuffer(): void {
+		if (this.backpressure !== "sample") return;
+		const now = Date.now();
+		const cutoff = now - this.sampleWindow;
+		// Remove entries older than the window
+		while (
+			this.sampleBuffer.length > 0 &&
+			this.sampleBuffer[0]!.timestamp < cutoff
+		) {
+			const dropped = this.sampleBuffer.shift();
+			if (dropped) {
+				this.onDrop?.(dropped.value);
+			}
+		}
+	}
+
+	/**
+	 * Process pending notifications in a batch.
+	 * Reduces event loop pressure by batching resolve calls.
+	 */
+	private scheduleNotifications(): void {
+		if (this.notifyScheduled) return;
+		this.notifyScheduled = true;
+
+		// Use queueMicrotask for faster scheduling than setImmediate
+		queueMicrotask(() => {
+			this.notifyScheduled = false;
+			this.processNotifications();
+		});
+	}
+
+	/**
+	 * Process pending send and receive notifications.
+	 */
+	private processNotifications(): void {
+		// Unblock waiting receivers first
+		while (
+			this.receiveQueueHead < this.receiveQueue.length &&
+			this.bufferSize > 0
+		) {
+			const receiver = this.receiveQueue[this.receiveQueueHead++];
+			if (receiver) {
+				const value = this.dequeueInternal();
+				receiver.resolve(value);
+			}
+		}
+
+		// Unblock waiting senders
+		while (
+			this.sendQueueHead < this.sendQueue.length &&
+			!this.buffer.isFull()
+		) {
+			const sender = this.sendQueue[this.sendQueueHead++];
+			if (sender) {
+				this.buffer.enqueue(sender.value as T);
+				sender.resolve();
+			}
+		}
+
+		// Compact queues occasionally to prevent unbounded growth
+		if (
+			this.sendQueueHead > 100 &&
+			this.sendQueueHead > this.sendQueue.length / 2
+		) {
+			this.sendQueue = this.sendQueue.slice(this.sendQueueHead);
+			this.sendQueueHead = 0;
+		}
+		if (
+			this.receiveQueueHead > 100 &&
+			this.receiveQueueHead > this.receiveQueue.length / 2
+		) {
+			this.receiveQueue = this.receiveQueue.slice(this.receiveQueueHead);
+			this.receiveQueueHead = 0;
+		}
+	}
+
+	/**
+	 * Internal dequeue that handles different backpressure strategies.
+	 */
+	private dequeueInternal(): T | undefined {
+		if (this.backpressure === "sample") {
+			const entry = this.sampleBuffer.shift();
+			if (entry) {
+				// Also remove from regular buffer if present
+				if (this.buffer.size > 0) {
+					this.buffer.dequeue();
+				}
+				return entry.value;
+			}
+			return undefined;
+		}
+		return this.buffer.dequeue();
 	}
 
 	/**
 	 * Send a value to the channel.
-	 * Blocks if the buffer is full until space is available.
-	 * Resolves to false if the channel is closed.
-	 * Throws if the scope is aborted.
+	 * Behavior depends on backpressure strategy:
+	 * - 'block': Blocks if buffer full until space is available
+	 * - 'drop-oldest': Removes oldest item to make room
+	 * - 'drop-latest': Drops the new item when buffer full
+	 * - 'error': Throws ChannelFullError when buffer full
+	 * - 'sample': Keeps only values within time window
+	 *
+	 * Returns false if channel is closed.
+	 * Throws if scope is aborted.
 	 */
 	send(value: T): Promise<boolean> {
 		if (this.closed) {
-			return Promise.resolve(false);
+			return RESOLVED_FALSE as Promise<boolean>;
 		}
 
 		if (this.aborted) {
 			return Promise.reject(this.abortReason);
 		}
 
-		// If there's a waiting receiver, give directly
+		// Fast path: there's a waiting receiver - give directly
 		while (this.receiveQueueHead < this.receiveQueue.length) {
 			const receiver = this.receiveQueue[this.receiveQueueHead++];
 			if (receiver) {
 				receiver.resolve(value);
-				return Promise.resolve(true);
+				return RESOLVED_TRUE as Promise<boolean>;
 			}
 		}
 
-		// If buffer has space, add to buffer
-		if (this.bufferSize < this.capacity) {
-			this.buffer.push(value);
-			return Promise.resolve(true);
-		}
+		// Handle based on backpressure strategy
+		switch (this.backpressure) {
+			case "sample": {
+				// Clean up expired entries first
+				this.cleanupSampleBuffer();
 
-		// Otherwise, wait for space
-		let resolveSend!: (value: boolean) => void;
-		let rejectSend!: (reason: unknown) => void;
-		const promise = new Promise<boolean>((res, rej) => {
-			resolveSend = res;
-			rejectSend = rej;
-		});
-		this.sendQueue.push({
-			resolve: () => {
-				this.buffer.push(value);
-				resolveSend(true);
-			},
-			reject: rejectSend,
-		});
-		return promise;
+				// Add new value with timestamp
+				this.sampleBuffer.push({ value, timestamp: Date.now() });
+
+				// If we have space in capacity, also add to regular buffer
+				if (this.bufferSize <= this.capacity) {
+					this.buffer.enqueue(value);
+				}
+				return RESOLVED_TRUE as Promise<boolean>;
+			}
+
+			case "drop-oldest": {
+				// If buffer is full, drop the oldest item
+				if (this.buffer.isFull() && this.capacity > 0) {
+					const dropped = this.buffer.dequeue();
+					if (dropped !== undefined) {
+						this.onDrop?.(dropped);
+					}
+				}
+				this.buffer.enqueue(value);
+
+				// Schedule notifications for waiting receivers
+				if (this.receiveQueueHead < this.receiveQueue.length) {
+					this.scheduleNotifications();
+				}
+				return RESOLVED_TRUE as Promise<boolean>;
+			}
+
+			case "drop-latest": {
+				// If buffer is full, drop the new item
+				if (this.buffer.isFull() && this.capacity > 0) {
+					this.onDrop?.(value);
+					return RESOLVED_TRUE as Promise<boolean>;
+				}
+				this.buffer.enqueue(value);
+
+				// Schedule notifications for waiting receivers
+				if (this.receiveQueueHead < this.receiveQueue.length) {
+					this.scheduleNotifications();
+				}
+				return RESOLVED_TRUE as Promise<boolean>;
+			}
+
+			case "error": {
+				// If buffer is full, throw error
+				if (this.buffer.isFull() && this.capacity > 0) {
+					return Promise.reject(new ChannelFullError());
+				}
+				this.buffer.enqueue(value);
+
+				// Schedule notifications for waiting receivers
+				if (this.receiveQueueHead < this.receiveQueue.length) {
+					this.scheduleNotifications();
+				}
+				return RESOLVED_TRUE as Promise<boolean>;
+			}
+
+			default: {
+				// Default behavior: block if buffer full
+				if (!this.buffer.isFull()) {
+					this.buffer.enqueue(value);
+
+					// Schedule notifications for waiting receivers
+					if (this.receiveQueueHead < this.receiveQueue.length) {
+						this.scheduleNotifications();
+					}
+					return RESOLVED_TRUE as Promise<boolean>;
+				}
+
+				// Otherwise, wait for space
+				let resolveSend!: () => void;
+				let rejectSend!: (reason: unknown) => void;
+				const promise = new Promise<void>((res, rej) => {
+					resolveSend = res;
+					rejectSend = rej;
+				});
+				this.sendQueue.push({
+					resolve: resolveSend,
+					reject: rejectSend,
+					value,
+				});
+				return promise.then(() => true);
+			}
+		}
 	}
 
 	/**
@@ -125,23 +431,43 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 			return Promise.reject(this.abortReason);
 		}
 
-		// If buffer has items, return from buffer
-		if (this.bufferSize > 0) {
-			const value = this.buffer[this.bufferHead++];
-
-			// Compact buffer occasionally to prevent unbounded growth
-			if (this.bufferHead > 100 && this.bufferHead > this.buffer.length / 2) {
-				this.buffer = this.buffer.slice(this.bufferHead);
-				this.bufferHead = 0;
+		// For sample strategy, clean up and get latest
+		if (this.backpressure === "sample") {
+			this.cleanupSampleBuffer();
+			if (this.sampleBuffer.length > 0) {
+				const entry = this.sampleBuffer.shift();
+				if (entry) {
+					// Also remove from regular buffer if present
+					if (this.buffer.size > 0) {
+						this.buffer.dequeue();
+					}
+					return Promise.resolve(entry.value);
+				}
 			}
 
-			// Unblock a waiting sender if any
-			while (this.sendQueueHead < this.sendQueue.length) {
-				const sender = this.sendQueue[this.sendQueueHead++];
-				if (sender) {
-					sender.resolve();
-					break;
-				}
+			// If closed and empty, return undefined
+			if (this.closed) {
+				return RESOLVED_UNDEFINED as Promise<undefined>;
+			}
+
+			// Otherwise, wait for a value
+			let resolveRecv!: (value: T | undefined) => void;
+			let rejectRecv!: (reason: unknown) => void;
+			const promise = new Promise<T | undefined>((res, rej) => {
+				resolveRecv = res;
+				rejectRecv = rej;
+			});
+			this.receiveQueue.push({ resolve: resolveRecv as (value: unknown) => void, reject: rejectRecv });
+			return promise;
+		}
+
+		// Fast path: buffer has items, return from buffer
+		if (!this.buffer.isEmpty()) {
+			const value = this.buffer.dequeue();
+
+			// Schedule notifications for waiting senders
+			if (this.sendQueueHead < this.sendQueue.length) {
+				this.scheduleNotifications();
 			}
 
 			return Promise.resolve(value);
@@ -149,7 +475,7 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 
 		// If closed and empty, return undefined
 		if (this.closed) {
-			return Promise.resolve(undefined);
+			return RESOLVED_UNDEFINED as Promise<undefined>;
 		}
 
 		// Otherwise, wait for a value
@@ -159,7 +485,7 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 			resolveRecv = res;
 			rejectRecv = rej;
 		});
-		this.receiveQueue.push({ resolve: resolveRecv, reject: rejectRecv });
+		this.receiveQueue.push({ resolve: resolveRecv as (value: unknown) => void, reject: rejectRecv });
 		return promise;
 	}
 
@@ -192,6 +518,13 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 	 */
 	get cap(): number {
 		return this.capacity;
+	}
+
+	/**
+	 * Get the current backpressure strategy.
+	 */
+	get strategy(): BackpressureStrategy {
+		return this.backpressure;
 	}
 
 	/**
@@ -239,6 +572,14 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 		}
 		this.receiveQueue.length = 0;
 		this.receiveQueueHead = 0;
+
+		// Clear sample buffer and call onDrop for remaining items
+		if (this.backpressure === "sample") {
+			for (const entry of this.sampleBuffer) {
+				this.onDrop?.(entry.value);
+			}
+			this.sampleBuffer.length = 0;
+		}
 	}
 
 	/**
@@ -382,3 +723,5 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 		return taken;
 	}
 }
+
+// RingBuffer is for internal use only

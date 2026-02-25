@@ -636,6 +636,8 @@ Distributed locks and circuit breaker state persistence across multiple database
 | **PostgreSQL** | `PostgresAdapter` | ✅ App-level | Uses advisory locks + TTL table |
 | **MySQL** | `MySQLAdapter` | ✅ App-level | Uses named locks + TTL table |
 | **SQLite** | `SQLiteAdapter` | ✅ App-level | Single-node, file-based |
+| **MongoDB** | `MongoDBAdapter` | ✅ Native | Document-based with TTL indexes |
+| **DynamoDB** | `DynamoDBAdapter` | ✅ Native | AWS DynamoDB with conditional writes |
 
 ### Installation
 
@@ -656,24 +658,32 @@ npm install sqlite3
 
 # SQLite (Bun native - built-in)
 # No install needed, use bun:sqlite
+
+# MongoDB
+npm install mongodb
+
+# DynamoDB
+npm install @aws-sdk/client-dynamodb @aws-sdk/lib-dynamodb
 ```
 
 ### Quick Start
 
 ```typescript
 import { scope } from 'go-go-scope'
-import { RedisAdapter } from '@go-go-scope/persistence-redis'
+import { RedisAdapter, RedisIdempotencyAdapter } from '@go-go-scope/persistence-redis'
 import { Pool } from 'pg'
 
 // Redis example
 import Redis from 'ioredis'
 const redis = new Redis(process.env.REDIS_URL)
 const redisAdapter = new RedisAdapter(redis)
+const redisIdempotency = new RedisIdempotencyAdapter(redis)
 
 await using s = scope({
   persistence: {
     lock: redisAdapter,
-    circuitBreaker: redisAdapter
+    circuitBreaker: redisAdapter,
+    idempotency: redisIdempotency
   }
 })
 
@@ -788,6 +798,58 @@ await using s = scope({
 - Uses in-memory Map for locks
 - Great for development/testing
 
+#### MongoDB
+- Document-based storage with native TTL indexes
+- Best for applications already using MongoDB
+- Supports replica sets for high availability
+
+```typescript
+import { MongoClient } from 'mongodb'
+import { MongoDBAdapter, MongoDBIdempotencyAdapter } from '@go-go-scope/persistence-mongodb'
+
+const client = new MongoClient(process.env.MONGODB_URL)
+const db = client.db('myapp')
+const adapter = new MongoDBAdapter(db)
+const idempotency = new MongoDBIdempotencyAdapter(db)
+await adapter.connect()
+await idempotency.connect()
+
+await using s = scope({
+  persistence: { 
+    lock: adapter,
+    circuitBreaker: adapter,
+    cache: adapter,
+    idempotency: idempotency
+  }
+})
+```
+
+#### DynamoDB
+- AWS DynamoDB with conditional writes for atomic operations
+- Serverless-friendly with pay-per-request pricing
+- Uses DynamoDB's native TTL feature
+
+```typescript
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb'
+import { DynamoDBAdapter, DynamoDBIdempotencyAdapter } from '@go-go-scope/persistence-dynamodb'
+
+const client = new DynamoDBClient({ region: 'us-east-1' })
+const docClient = DynamoDBDocumentClient.from(client)
+const adapter = new DynamoDBAdapter(docClient, 'my-table')
+const idempotency = new DynamoDBIdempotencyAdapter(docClient, { tableName: 'my-table' })
+await adapter.connect()
+
+await using s = scope({
+  persistence: { 
+    lock: adapter,
+    circuitBreaker: adapter,
+    cache: adapter,
+    idempotency: idempotency
+  }
+})
+```
+
 ### Bun Compatibility
 
 All persistence adapters work with Bun:
@@ -828,6 +890,53 @@ The `BunSQLiteAdapter` uses Bun's built-in `bun:sqlite` module for better perfor
 
 ---
 
+## Caching & Idempotency
+
+Distributed caching and idempotency with TTL support across all persistence adapters.
+
+### Basic Usage
+
+```typescript
+import { scope, InMemoryCache, InMemoryIdempotencyProvider } from 'go-go-scope'
+
+// In-memory providers (development/testing)
+const cache = new InMemoryCache({ maxSize: 1000 })
+const idempotency = new InMemoryIdempotencyProvider({ maxSize: 1000 })
+
+// Or use persistence adapters for distributed caching/idempotency
+import { RedisAdapter, RedisIdempotencyAdapter } from '@go-go-scope/persistence-redis'
+const redisCache = new RedisAdapter(redis)
+const redisIdempotency = new RedisIdempotencyAdapter(redis)
+
+await using s = scope({
+  persistence: { cache: redisCache, idempotency: redisIdempotency }
+})
+
+// Cache operations
+await s.persistence.cache.set('user:123', userData, 60000) // 60s TTL
+const user = await s.persistence.cache.get('user:123')
+await s.persistence.cache.delete('user:123')
+
+// Idempotency operations (used automatically by tasks with idempotency key)
+await s.persistence.idempotency.set('payment:123', result, 300000)
+const cached = await s.persistence.idempotency.get('payment:123')
+```
+
+### Cache with Scope
+
+Use cache within tasks for automatic result caching:
+
+```typescript
+const [err, data] = await s.task(
+  () => fetchExpensiveData(id),
+  { 
+    idempotency: { key: `data:${id}`, ttl: 60000 }
+  }
+)
+```
+
+---
+
 ## Framework Adapters
 
 `go-go-scope` provides first-class adapters for popular web frameworks, enabling request-scoped structured concurrency with automatic cleanup.
@@ -841,6 +950,8 @@ The `BunSQLiteAdapter` uses Bun's built-in `bun:sqlite` module for better perfor
 | **NestJS** | `GoGoScopeModule` | ✅ Per request (DI) | ✅ App lifecycle |
 | **Hono** | `goGoScope` | ✅ Per request | ✅ App lifecycle |
 | **Elysia** | `goGoScope` | ✅ Per request | ✅ App lifecycle |
+| **Koa** | `koaGoGoScope` | ✅ Per request | ✅ App lifecycle |
+| **Hapi** | `hapiGoGoScope` | ✅ Per request | ✅ App lifecycle |
 
 ### Fastify
 
@@ -1036,6 +1147,88 @@ const app = new Elysia()
 - `getScope(context)` - Get request scope from context
 - `getRootScope(context)` - Get root scope from context
 
+### Koa
+
+```typescript
+import Koa from 'koa'
+import Router from '@koa/router'
+import { koaGoGoScope, getScope } from '@go-go-scope/adapter-koa'
+
+const app = new Koa()
+const router = new Router()
+
+// Use middleware
+app.use(koaGoGoScope({ name: 'koa-app', metrics: true }))
+
+// Access scope in routes
+router.get('/users/:id', async (ctx) => {
+  const scope = getScope(ctx)
+  
+  const [err, user] = await scope.task(
+    () => fetchUser(ctx.params.id),
+    { retry: 'exponential', timeout: 5000 }
+  )
+  
+  if (err) {
+    ctx.status = 500
+    ctx.body = { error: err.message }
+    return
+  }
+  
+  ctx.body = user
+})
+
+app.use(router.routes())
+app.listen(3000)
+```
+
+**Exports:**
+- `koaGoGoScope(options?)` - Koa middleware
+- `getScope(ctx)` - Get request scope from context
+- `getRootScope(ctx)` - Get root scope from context
+- `closeKoaScope()` - Cleanup helper for graceful shutdown
+
+### Hapi
+
+```typescript
+import Hapi from '@hapi/hapi'
+import { hapiGoGoScope } from '@go-go-scope/adapter-hapi'
+
+const server = Hapi.server({ port: 3000 })
+
+// Register plugin
+await server.register({
+  plugin: hapiGoGoScope,
+  options: { name: 'hapi-app', metrics: true }
+})
+
+// Use scope in routes
+server.route({
+  method: 'GET',
+  path: '/users/{id}',
+  handler: async (request) => {
+    const [err, user] = await request.scope.task(
+      () => fetchUser(request.params.id),
+      { retry: 'exponential', timeout: 5000 }
+    )
+    
+    if (err) {
+      return { error: err.message }
+    }
+    
+    return user
+  }
+})
+
+await server.start()
+```
+
+**Exports:**
+- `hapiGoGoScope` - Hapi plugin
+- `getScope(request)` - Get request scope from request
+- `getRootScope(server)` - Get root scope from server
+- `closeHapiScope(server)` - Cleanup helper for graceful shutdown
+
 ### Common Patterns
 
 #### Request Timeout
@@ -1057,6 +1250,15 @@ app.use(goGoScope({ timeout: 30000 }))
 
 // Elysia
 app.use(goGoScope({ timeout: 30000 }))
+
+// Koa
+app.use(koaGoGoScope({ timeout: 30000 }))
+
+// Hapi
+await server.register({
+  plugin: hapiGoGoScope,
+  options: { timeout: 30000 }
+})
 ```
 
 #### Metrics Collection
@@ -1068,8 +1270,16 @@ Enable metrics to track task execution:
 { metrics: true }
 
 // Access metrics
-app.scope.metrics() // Root metrics
+app.scope.metrics() // Root metrics (Fastify, Express)
 request.scope.metrics() // Request metrics
+
+// Koa
+const rootScope = getRootScope(ctx)
+rootScope.metrics()
+
+// Hapi
+const rootScope = getRootScope(server)
+rootScope.metrics()
 ```
 
 #### Error Handling
@@ -1097,7 +1307,6 @@ app.get('/data', async (req, res) => {
 })
 ```
 
----
 
 ## Next Steps
 

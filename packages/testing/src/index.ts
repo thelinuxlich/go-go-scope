@@ -461,13 +461,14 @@ export function createMockChannel<T>(): MockChannel<T> {
 				closed = true;
 			},
 			[Symbol.asyncIterator]: () => ({
-				async next() {
+				async next(): Promise<IteratorResult<T>> {
 					if (closed || receiveIndex >= receiveValues.length) {
 						return { done: true, value: undefined };
 					}
-					return { done: false, value: receiveValues[receiveIndex++] };
+					const value = receiveValues[receiveIndex++];
+					return { done: false, value: value as T };
 				},
-				async return() {
+				async return(): Promise<IteratorResult<T>> {
 					return { done: true, value: undefined };
 				},
 			}),

@@ -21,30 +21,6 @@ const importSQLiteAdapter = () =>
 		.then((m) => m.SQLiteAdapter)
 		.catch(() => null);
 
-function forceGC(): void {
-	if (global.gc) {
-		global.gc();
-	}
-}
-
-function getMemoryMB(): number {
-	const usage = process.memoryUsage();
-	return Math.round((usage.heapUsed / 1024 / 1024) * 100) / 100;
-}
-
-async function waitFor(
-	condition: () => boolean | Promise<boolean>,
-	timeout = 30000,
-	interval = 50,
-): Promise<void> {
-	const start = Date.now();
-	while (Date.now() - start < timeout) {
-		if (await condition()) return;
-		await new Promise((r) => setTimeout(r, interval));
-	}
-	throw new Error(`Timeout waiting for condition after ${timeout}ms`);
-}
-
 // Create SQLite storage for testing
 async function createSQLiteStorage(): Promise<{
 	storage: JobStorage;
@@ -97,7 +73,7 @@ async function createSQLiteStorage(): Promise<{
 describe("SQL Stress Tests - Connection & Concurrency", () => {
 	test("handles concurrent schedule creation", async () => {
 		const { storage, cleanup } = await createSQLiteStorage();
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -145,7 +121,7 @@ describe("SQL Stress Tests - Connection & Concurrency", () => {
 
 	test("handles rapid job state transitions", async () => {
 		const { storage, cleanup } = await createSQLiteStorage();
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -196,7 +172,7 @@ describe("SQL Stress Tests - Connection & Concurrency", () => {
 
 	test("database size stays bounded with job cleanup", async () => {
 		const { storage, cleanup } = await createSQLiteStorage();
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		// Track "database size" by counting rows
 		const getRowCount = async () => {
@@ -224,7 +200,7 @@ describe("SQL Stress Tests - Connection & Concurrency", () => {
 		});
 
 		let jobCount = 0;
-		worker.onSchedule("cleanup-test", async (job) => {
+		worker.onSchedule("cleanup-test", async (_job) => {
 			jobCount++;
 			// Clean up old completed jobs after every 10 jobs
 			if (jobCount % 10 === 0) {
@@ -258,7 +234,7 @@ describe("SQL Stress Tests - Connection & Concurrency", () => {
 describe("SQL Stress Tests - Locking & Consistency", () => {
 	test("maintains consistency with multiple concurrent workers", async () => {
 		const { storage, cleanup } = await createSQLiteStorage();
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -298,7 +274,9 @@ describe("SQL Stress Tests - Locking & Consistency", () => {
 		}
 
 		// Start all workers
-		workers.forEach((w) => w.start());
+		workers.forEach((w) => {
+			w.start();
+		});
 
 		// Run for 2 seconds
 		await new Promise((r) => setTimeout(r, 2000));
@@ -337,7 +315,7 @@ describe("SQL Stress Tests - Locking & Consistency", () => {
 
 	test("recovers from database lock timeout", async () => {
 		const { storage, cleanup } = await createSQLiteStorage();
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -391,7 +369,7 @@ describe("SQL Stress Tests - Locking & Consistency", () => {
 describe("SQL Stress Tests - Real-World Scenarios", () => {
 	test("handles batch job processing", async () => {
 		const { storage, cleanup } = await createSQLiteStorage();
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -424,7 +402,7 @@ describe("SQL Stress Tests - Real-World Scenarios", () => {
 			await new Promise((r) => setTimeout(r, batchSize * 5));
 
 			batchResults.push({
-				batchId: parseInt(job.id.split("-")[1] || "0"),
+				batchId: parseInt(job.id.split("-")[1] || "0", 10),
 				items: batchSize,
 				duration: Date.now() - start,
 			});
@@ -455,7 +433,7 @@ describe("SQL Stress Tests - Real-World Scenarios", () => {
 
 	test("handles priority job scheduling", async () => {
 		const { storage, cleanup } = await createSQLiteStorage();
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,

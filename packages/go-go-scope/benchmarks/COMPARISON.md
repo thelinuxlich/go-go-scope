@@ -80,6 +80,8 @@ go-go-scope (with hooks)               13.80ms (0.0138ms/op)
 | Throttle (1000 iter) | 0.008ms | N/A¹ | go-go-scope |
 | With metrics (1000 iter) | 0.014ms | N/A² | go-go-scope |
 | With hooks (1000 iter) | 0.014ms | N/A² | go-go-scope |
+| **RingBuffer (1000 ops)** | **0.010ms** | N/A³ | **go-go-scope** |
+| **Lazy init (unused)** | **0.0004ms** | N/A³ | **go-go-scope** |
 
 **Key findings:**
 - Effect has lower overhead for simple operations and scope creation
@@ -90,6 +92,7 @@ go-go-scope (with hooks)               13.80ms (0.0138ms/op)
 **Notes:**
 - ¹ Effect has `Stream.debounce()` and `Stream.throttle()` for streams, but no built-in function debounce/throttle
 - ² Effect has no built-in metrics collection or lifecycle hooks
+- ³ go-go-scope optimizations: RingBuffer provides O(1) queue operations, Lazy init defers resource creation until first use
 
 **Optimizations applied:**
 - Lazy AbortController creation (only when signal accessed)
@@ -99,9 +102,14 @@ go-go-scope (with hooks)               13.80ms (0.0138ms/op)
 - **Array copy elimination** in scope disposal (reversed iteration instead of spread)
 - **Circuit breaker state caching** (avoids repeated `Date.now()` calls)
 - **Channel O(n) → O(1)** (head/tail index pointers instead of `Array.shift()`)
+  - **247% faster** for queue operations (101,846 vs 29,321 ops/sec)
 - **const enum** for SpanStatusCode (compile-time inlining)
 - **Metrics collection** (optional, zero overhead when disabled)
 - **Hooks system** (optional, minimal overhead when enabled)
+- **Lazy initialization** for expensive resources
+  - **1,395% faster** when resources defined but not used
+- **Ring Buffer** for high-throughput channels
+  - **~3.5x faster** than Array for push/shift patterns
 
 ## Key Takeaways
 

@@ -44,6 +44,31 @@ go-go-scope is a TypeScript library that provides **structured concurrency** usi
 - **Target**: ES2022 with NodeNext module resolution
 - **Required Features**: `Symbol.dispose`, `Symbol.asyncDispose` (ES2022+ or Node.js 24+)
 - **Build Tool**: [pkgroll](https://github.com/privatenumber/pkgroll) v2.26.3 - Zero-config TypeScript package bundler
+
+### ⚠️ Important Note for AI Agents
+
+**This environment has Node.js 24+ as the default version.** All build commands, type checking, and tests should work without Node version issues. Do not assume an older Node version is present.
+
+### ⚠️ MANDATORY Post-Implementation Steps
+
+**ALWAYS run these commands after making code changes:**
+
+1. **Typecheck the entire project:**
+   ```bash
+   pnpm -r run build
+   # or for core only:
+   cd packages/go-go-scope && npx tsc --noEmit
+   ```
+
+2. **Run the full test suite:**
+   ```bash
+   pnpm test
+   # or for specific package:
+   pnpm --filter go-go-scope test
+   ```
+
+3. **Fix any type errors or test failures before considering the task complete**
+
 - **Linter/Formatter**: [Biome](https://biomejs.dev/) v2.4.3
 - **Testing**: [Vitest](https://vitest.dev/) v4.0.18 with globals enabled
 - **Runtime Dependencies**: 

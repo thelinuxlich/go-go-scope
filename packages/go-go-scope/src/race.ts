@@ -236,7 +236,9 @@ export async function race<T>(
 		// Start initial batch
 		const initialBatch = Math.min(concurrency, totalTasks);
 		for (let i = 0; i < initialBatch; i++) {
-			const task = processTask(factories[currentIndex]!, currentIndex);
+			const factory = factories[currentIndex];
+			if (!factory) break;
+			const task = processTask(factory, currentIndex);
 			runningTasks.push(task);
 			taskIdxMap.set(task, currentIndex);
 			currentIndex++;
@@ -264,9 +266,11 @@ export async function race<T>(
 				(t) => taskIdxMap.get(t) === winner.idx,
 			);
 			if (finishedTaskIdx >= 0) {
-				const finishedTask = runningTasks[finishedTaskIdx]!;
-				runningTasks.splice(finishedTaskIdx, 1);
-				taskIdxMap.delete(finishedTask);
+				const finishedTask = runningTasks[finishedTaskIdx];
+				if (finishedTask) {
+					runningTasks.splice(finishedTaskIdx, 1);
+					taskIdxMap.delete(finishedTask);
+				}
 			}
 
 			// Check if this is a valid winner
@@ -292,10 +296,13 @@ export async function race<T>(
 
 			// Start next task if available
 			if (currentIndex < totalTasks) {
-				const nextTask = processTask(factories[currentIndex]!, currentIndex);
-				runningTasks.push(nextTask);
-				taskIdxMap.set(nextTask, currentIndex);
-				currentIndex++;
+				const factory = factories[currentIndex];
+				if (factory) {
+					const nextTask = processTask(factory, currentIndex);
+					runningTasks.push(nextTask);
+					taskIdxMap.set(nextTask, currentIndex);
+					currentIndex++;
+				}
 			} else if (runningTasks.length === 0) {
 				// No more tasks to start and none running - all failed
 				if (debugEnabled) {

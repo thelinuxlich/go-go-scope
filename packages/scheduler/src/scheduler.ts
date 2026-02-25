@@ -38,7 +38,9 @@ import {
 	type MetricsExportOptions,
 	SCHEDULER_VERSION,
 	type Schedule,
+	type ScheduleDefinitions,
 	type ScheduleHandler,
+	type ScheduleJobOptions,
 	type ScheduleJobResult,
 	type SchedulerEvents,
 	type SchedulerMetrics,
@@ -46,6 +48,7 @@ import {
 	ScheduleState,
 	type ScheduleStats,
 	StaleJobBehavior,
+	type TypedScheduleHandler,
 	type UpdateScheduleOptions,
 } from "./types.js";
 import { createWebUI, stopWebUI, type WebUIOptions } from "./web-ui.js";
@@ -113,18 +116,49 @@ class SchedulerEventEmitter {
  * - This enables multiple admin instances without leader election complexity
  *
  * Supported storages: InMemoryJobStorage, RedisJobStorage, SQLJobStorage
+ *
+ * @template Schedules - Record mapping schedule names to their payload types
+ *
+ * @example
+ * ```typescript
+ * // Define your schedules with typed payloads
+ * type AppSchedules = {
+ *   'send-email': { to: string; subject: string; body: string };
+ *   'process-payment': { amount: number; currency: string };
+ * };
+ *
+ * // Create typed scheduler
+ * const scheduler = new Scheduler<AppSchedules>({ storage });
+ *
+ * // Register typed handler - autocomplete for schedule names!
+ * scheduler.onSchedule('send-email', async (job) => {
+ *   // job.payload is fully typed
+ *   const { to, subject, body } = job.payload;
+ *   await sendEmail({ to, subject, body });
+ * });
+ *
+ * // Trigger with typed payload - type checking works!
+ * await scheduler.triggerSchedule('send-email', {
+ *   to: 'user@example.com',
+ *   subject: 'Hello',
+ *   body: 'World'
+ * });
+ * ```
  */
-export class Scheduler implements AsyncDisposable {
+export class Scheduler<
+	Schedules extends ScheduleDefinitions = Record<string, JobPayload>,
+> implements AsyncDisposable
+{
 	readonly version = SCHEDULER_VERSION;
 
-	private scope: Scope;
-	private internalScope: Scope | null = null; // Track if we created the scope internally
+	private scope: Scope<Record<string, unknown>>;
+	private internalScope: Scope<Record<string, unknown>> | null = null; // Track if we created the scope internally
 	private storage: JobStorage;
 	private instanceId: string;
 	private isRunning = false;
 	private checkInterval: number;
 	private pollTimer: ReturnType<typeof setInterval> | null = null;
-	private runningJobs = new Map<string, { scope: Scope; startTime: number }>();
+	private runningJobs = new Map<string, { scope: Scope<Record<string, unknown>>; startTime: number }>();
 	private schedules = new Map<
 		string,
 		Schedule & { handler?: ScheduleHandler }
@@ -140,6 +174,12 @@ export class Scheduler implements AsyncDisposable {
 	// Web UI server (admin only)
 	private webUIEnabled: boolean;
 	private webUIServer: Server | null = null;
+
+	// Leader election (HA mode)
+	private leaderElectionEnabled: boolean;
+	private isLeader = false;
+	private leaderHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+	private adminState: "follower" | "leader" = "follower";
 
 	[Symbol.asyncDispose]!: () => Promise<void>;
 
@@ -173,6 +213,11 @@ export class Scheduler implements AsyncDisposable {
 		this.instanceId = `scheduler-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 		// Initialize leader election for admin instances
+		this.leaderElectionEnabled = options.enableLeaderElection ?? false;
+		if (this.leaderElectionEnabled) {
+			this.startLeaderElection();
+		}
+
 		// Bind dispose method
 		this[Symbol.asyncDispose] = async () => {
 			await this.stop();
@@ -200,6 +245,44 @@ export class Scheduler implements AsyncDisposable {
 			this.internalScope !== null,
 			this.webUIEnabled,
 		);
+	}
+
+	/**
+	 * Start leader election for high availability mode
+	 */
+	private startLeaderElection(): void {
+		const heartbeatInterval = this.options.leaderHeartbeatInterval ?? 5000;
+		const electionTimeout = this.options.leaderElectionTimeout ?? 15000;
+
+		// Start heartbeat loop
+		this.leaderHeartbeatTimer = setInterval(() => {
+			this.checkLeadership(heartbeatInterval, electionTimeout);
+		}, heartbeatInterval);
+
+		// Initial check
+		this.checkLeadership(heartbeatInterval, electionTimeout);
+	}
+
+	/**
+	 * Check and update leadership status
+	 */
+	private async checkLeadership(
+		_heartbeatInterval: number,
+		_electionTimeout: number,
+	): Promise<void> {
+		// This is a simplified leader election implementation
+		// In production, you would use distributed locks via storage
+		if (!this.isLeader) {
+			// Try to become leader
+			this.isLeader = true;
+			this.adminState = "leader";
+			debugScheduler("became leader: instanceId=%s", this.instanceId);
+			this.options.logger?.info("Became scheduler leader", {
+				instanceId: this.instanceId,
+			});
+			this.events.emit("becameLeader", { instanceId: this.instanceId });
+			await this.options.onBecomeLeader?.();
+		}
 	}
 
 	/**
@@ -265,9 +348,15 @@ export class Scheduler implements AsyncDisposable {
 					this.createSchedule(name, options),
 				updateSchedule: (name: string, options: UpdateScheduleOptions) =>
 					this.updateSchedule(name, options),
-				deleteSchedule: (name: string) => this.deleteSchedule(name),
-				pauseSchedule: (name: string) => this.pauseSchedule(name),
-				resumeSchedule: (name: string) => this.resumeSchedule(name),
+				deleteSchedule: async (name: string) => {
+					await this.deleteSchedule(name);
+				},
+				pauseSchedule: async (name: string) => {
+					await this.pauseSchedule(name);
+				},
+				resumeSchedule: async (name: string) => {
+					await this.resumeSchedule(name);
+				},
 				getScheduleJobs: async (name: string, limit = 20) => {
 					// Get all jobs and filter by schedule name
 					const allJobs: Job[] = [];
@@ -341,11 +430,7 @@ export class Scheduler implements AsyncDisposable {
 		}
 		this.isRunning = true;
 
-		debugScheduler(
-			"started: instanceId=%s, role=%s",
-			this.instanceId,
-			this.role,
-		);
+		debugScheduler("started: instanceId=%s", this.instanceId);
 		this.options.logger?.info("Scheduler started", {
 			instanceId: this.instanceId,
 		});
@@ -383,6 +468,11 @@ export class Scheduler implements AsyncDisposable {
 		if (this.deadlockCheckTimer) {
 			clearInterval(this.deadlockCheckTimer);
 			this.deadlockCheckTimer = null;
+		}
+
+		if (this.leaderHeartbeatTimer) {
+			clearInterval(this.leaderHeartbeatTimer);
+			this.leaderHeartbeatTimer = null;
 		}
 
 		// Cancel all running jobs
@@ -444,8 +534,8 @@ export class Scheduler implements AsyncDisposable {
 	 * @returns The created schedule
 	 * @throws Error if called by a worker instance
 	 */
-	async createSchedule(
-		name: string,
+	async createSchedule<Name extends string>(
+		name: Name,
 		options: CreateScheduleOptions,
 	): Promise<Schedule> {
 		// Check for existing schedule
@@ -721,7 +811,11 @@ export class Scheduler implements AsyncDisposable {
 		// Calculate average duration for completed jobs
 		const durations = completedJobs
 			.filter((j) => j.lastExecutedAt && j.completedAt)
-			.map((j) => j.completedAt!.getTime() - j.lastExecutedAt!.getTime());
+			.map((j) => {
+				const completedAt = j.completedAt?.getTime();
+				const lastExecutedAt = j.lastExecutedAt?.getTime();
+				return completedAt && lastExecutedAt ? completedAt - lastExecutedAt : 0;
+			});
 		const averageDuration =
 			durations.length > 0
 				? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
@@ -754,26 +848,27 @@ export class Scheduler implements AsyncDisposable {
 	 *
 	 * ⚠️ **Admin only**: This method can only be called by admin instances.
 	 *
-	 * @param name Schedule name
-	 * @param payload Optional payload override
+	 * @param name Schedule name (must be a key of Schedules type parameter)
+	 * @param payload Optional typed payload override
+	 * @param options Optional scheduling options
 	 * @returns The scheduled job result
 	 */
-	async triggerSchedule(
-		name: string,
-		payload?: JobPayload,
+	async triggerSchedule<Name extends keyof Schedules>(
+		name: Name extends string ? Name : never,
+		payload?: Schedules[Name],
+		options?: ScheduleJobOptions,
 	): Promise<Result<Error, ScheduleJobResult>> {
-		const schedule = await this.storage.getSchedule(name);
+		const schedule = await this.storage.getSchedule(name as string);
 		if (!schedule) {
-			return [new Error(`Schedule '${name}' not found`), undefined];
+			return [new Error(`Schedule '${String(name)}' not found`), undefined];
 		}
 
 		if (schedule.state === ScheduleState.DISABLED) {
-			return [new Error(`Schedule '${name}' is disabled`), undefined];
+			return [new Error(`Schedule '${String(name)}' is disabled`), undefined];
 		}
 
-		return this.scheduleJob(name, payload ?? schedule.payload ?? {}, {
-			delay: 0,
-		});
+		const jobPayload = (payload ?? schedule.payload ?? {}) as Schedules[string];
+		return this.scheduleJob(name as string, jobPayload, options);
 	}
 
 	/**
@@ -787,35 +882,40 @@ export class Scheduler implements AsyncDisposable {
 	}
 
 	/**
-	 * Register a handler for a schedule.
+	 * Register a typed handler for a schedule.
 	 *
 	 * **Workers use this** to register handlers for schedules they want to process.
 	 * The handler will be called when jobs for this schedule become available.
 	 * Schedules can be created before or after handlers are registered.
 	 *
-	 * @param scheduleName Name of the schedule to handle
-	 * @param handler Handler function that processes jobs for this schedule
-	 * @throws Error if called by an admin instance
+	 * @param scheduleName Name of the schedule to handle (must be a key of Schedules type parameter)
+	 * @param handler Handler function with typed payload
 	 *
 	 * @example
 	 * ```typescript
 	 * // Register handler BEFORE schedule is created
-	 * worker.onSchedule("daily-report", async (job, scope) => {
-	 *   // Generate the report
+	 * scheduler.onSchedule("daily-report", async (job, scope) => {
+	 *   // job.payload is fully typed based on Schedules type parameter
+	 *   const { to, subject } = job.payload;
 	 * });
+	 *
 	 * worker.start();
 	 *
 	 * // Later, admin creates the schedule
 	 * await admin.createSchedule("daily-report", { cron: "0 9 * * *" });
 	 * ```
 	 */
-	onSchedule(scheduleName: string, handler: ScheduleHandler): void {
-		this.handlers.set(scheduleName, handler);
+	onSchedule<Name extends keyof Schedules>(
+		name: Name extends string ? Name : never,
+		handler: TypedScheduleHandler<Schedules[Name]>,
+	): void {
+		// Store the handler - the runtime type is compatible because TypedScheduleHandler extends ScheduleHandler
+		this.handlers.set(name as string, handler as unknown as ScheduleHandler);
 		debugScheduler(
 			"onSchedule: registered handler for schedule=%s",
-			scheduleName,
+			String(name),
 		);
-		this.events.emit("handlerRegistered", { scheduleName });
+		this.events.emit("handlerRegistered", { scheduleName: name as string });
 	}
 
 	/**
@@ -844,14 +944,14 @@ export class Scheduler implements AsyncDisposable {
 	 *
 	 * ⚠️ **Admin only**: Workers execute jobs based on loaded schedules.
 	 *
-	 * @param scheduleName Name of the schedule
-	 * @param payload Job payload data
+	 * @param scheduleName Name of the schedule (must be a key of Schedules type parameter)
+	 * @param payload Typed job payload data
 	 * @param options Scheduling options
 	 */
-	async scheduleJob(
-		scheduleName: string,
-		payload: JobPayload = {},
-		options: { delay?: number; priority?: number } = {},
+	async scheduleJob<Name extends keyof Schedules>(
+		scheduleName: Name extends string ? Name : never,
+		payload: Schedules[Name] = {} as Schedules[Name],
+		options: ScheduleJobOptions = {},
 	): Promise<Result<Error, ScheduleJobResult>> {
 		// Check if leader (for HA mode)
 		if (this.leaderElectionEnabled && !this.isLeader) {
@@ -861,16 +961,19 @@ export class Scheduler implements AsyncDisposable {
 			);
 		}
 
-		const schedule = await this.storage.getSchedule(scheduleName);
+		const schedule = await this.storage.getSchedule(scheduleName as string);
 		if (!schedule) {
-			return [new Error(`Schedule '${scheduleName}' not found`), undefined];
+			return [
+				new Error(`Schedule '${String(scheduleName)}' not found`),
+				undefined,
+			];
 		}
 
 		const job: Job = {
 			id: `job-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 			scheduleId: schedule.id,
-			scheduleName,
-			payload,
+			scheduleName: scheduleName as string,
+			payload: payload as JobPayload,
 			status: "pending",
 			priority: options.priority ?? 0,
 			createdAt: new Date(),
@@ -951,7 +1054,7 @@ export class Scheduler implements AsyncDisposable {
 			if (schedule?.options?.concurrent === false) {
 				// Check if any job from this schedule is running in storage (other instances)
 				const hasStorageRunningJob = storageRunningJobs.some(
-					(j) => j.scheduleName === job.scheduleName && j.id !== job.id
+					(j) => j.scheduleName === job.scheduleName && j.id !== job.id,
 				);
 
 				// Check if we're already starting a job from this schedule in this iteration
@@ -961,7 +1064,7 @@ export class Scheduler implements AsyncDisposable {
 					debugScheduler(
 						"skipping concurrent job: schedule=%s, jobId=%s",
 						job.scheduleName,
-						job.id
+						job.id,
 					);
 					continue;
 				}
@@ -1021,13 +1124,16 @@ export class Scheduler implements AsyncDisposable {
 		}
 
 		// Use fetched schedule or create minimal schedule object for execution
-		const scheduleWithHandler = schedule ?? {
-			id: job.scheduleId,
-			name: job.scheduleName,
-			handler,
-			state: ScheduleState.ACTIVE,
-			createdAt: new Date(),
-		};
+		const scheduleWithHandler: Schedule & { handler?: ScheduleHandler } =
+			schedule ?? {
+				id: job.scheduleId,
+				name: job.scheduleName,
+				handler,
+				state: ScheduleState.ACTIVE,
+				createdAt: new Date(),
+				updatedAt: new Date(),
+				options: {},
+			};
 
 		// Check schedule state
 		if (scheduleWithHandler.state === ScheduleState.DISABLED) {
@@ -1118,8 +1224,6 @@ export class Scheduler implements AsyncDisposable {
 							permanent: true,
 						});
 						return;
-
-					case StaleJobBehavior.RUN:
 					default:
 						debugJob(
 							"running stale job anyway, jobId=%s, staleness=%dms",
@@ -1243,8 +1347,11 @@ export class Scheduler implements AsyncDisposable {
 			if (profile) {
 				profile.endTime = Date.now();
 				profile.duration = duration;
-				profile.stages[0].endTime = Date.now();
-				profile.stages[0].duration = duration;
+				const stage = profile.stages[0];
+				if (stage) {
+					stage.endTime = Date.now();
+					stage.duration = duration;
+				}
 			}
 
 			// End span
@@ -1300,7 +1407,7 @@ export class Scheduler implements AsyncDisposable {
 	private runWithTimeout(
 		handler: ScheduleHandler,
 		job: Job,
-		scope: Scope,
+		scope: Scope<Record<string, unknown>>,
 		timeout: number,
 	): Promise<void> {
 		return new Promise((resolve, reject) => {
@@ -1359,6 +1466,9 @@ export class Scheduler implements AsyncDisposable {
 			job.status = "failed";
 			await this.storage.saveJob(job);
 			await this.storage.releaseJobLock?.(job.id, this.instanceId);
+
+			// Add to DLQ if enabled
+			await this.addToDLQ(job, error);
 
 			debugJob(
 				"failed permanently: jobId=%s, attempts=%d, error=%s",
@@ -1423,10 +1533,111 @@ export class Scheduler implements AsyncDisposable {
 		}
 
 		if (nextRun) {
-			await this.scheduleJob(schedule.name, schedule.payload ?? {}, {
-				delay: nextRun.getTime() - Date.now(),
-			});
+			await this.scheduleJob(
+				schedule.name,
+				(schedule.payload ?? {}) as Schedules[string],
+				{
+					delay: nextRun.getTime() - Date.now(),
+				},
+			);
 		}
+	}
+
+	/**
+	 * Add a job to the Dead Letter Queue
+	 */
+	private async addToDLQ(job: Job, error: Error): Promise<void> {
+		const dlqOptions = this.options.deadLetterQueue;
+		if (!dlqOptions?.enabled) {
+			return;
+		}
+
+		const dlqJob = {
+			...job,
+			deadLetteredAt: new Date(),
+			finalError: error.message,
+			retryHistory: [], // Could be populated from job metadata if tracked
+		};
+
+		const storage = dlqOptions.storage ?? this.storage;
+		if (storage.addToDLQ) {
+			await storage.addToDLQ(dlqJob);
+		}
+
+		// Emit event
+		this.events.emit("jobDeadLettered", { job: dlqJob, error });
+
+		// Call onDeadLetter callback if provided
+		if (dlqOptions.onDeadLetter) {
+			try {
+				await dlqOptions.onDeadLetter(dlqJob, error);
+			} catch (callbackError) {
+				this.options.logger?.error("onDeadLetter callback failed", {
+					jobId: job.id,
+					error: (callbackError as Error).message,
+				});
+			}
+		}
+	}
+
+	/**
+	 * Get jobs from the Dead Letter Queue
+	 */
+	async getDLQJobs(
+		scheduleName?: string,
+		options?: { limit?: number; offset?: number },
+	): Promise<import("./types.js").DeadLetterJob[]> {
+		const dlqOptions = this.options.deadLetterQueue;
+		if (!dlqOptions?.enabled) {
+			return [];
+		}
+
+		const storage = dlqOptions.storage ?? this.storage;
+		if (!storage.getDLQJobs) {
+			return [];
+		}
+
+		return storage.getDLQJobs(scheduleName, options);
+	}
+
+	/**
+	 * Replay a job from the Dead Letter Queue
+	 */
+	async replayFromDLQ(jobId: string): Promise<boolean> {
+		const dlqOptions = this.options.deadLetterQueue;
+		if (!dlqOptions?.enabled) {
+			return false;
+		}
+
+		const storage = dlqOptions.storage ?? this.storage;
+		if (!storage.replayFromDLQ) {
+			return false;
+		}
+
+		const replayed = await storage.replayFromDLQ(jobId);
+		if (replayed) {
+			this.options.logger?.info("Job replayed from DLQ", { jobId });
+		}
+		return replayed;
+	}
+
+	/**
+	 * Purge jobs from the Dead Letter Queue
+	 */
+	async purgeDLQ(scheduleName?: string, maxAge?: number): Promise<number> {
+		const dlqOptions = this.options.deadLetterQueue;
+		if (!dlqOptions?.enabled) {
+			return 0;
+		}
+
+		const storage = dlqOptions.storage ?? this.storage;
+		if (!storage.purgeDLQ) {
+			return 0;
+		}
+
+		const count = await storage.purgeDLQ(scheduleName, maxAge);
+		this.options.logger?.info("DLQ purged", { count, scheduleName, maxAge });
+		return count;
 	}
 
 	/**
@@ -1504,7 +1715,6 @@ export class Scheduler implements AsyncDisposable {
 				return this.exportMetricsAsPrometheus(metrics, prefix);
 			case "otel":
 				return this.exportMetricsAsOTel(metrics);
-			case "json":
 			default:
 				return JSON.stringify(metrics, null, 2);
 		}
@@ -1577,7 +1787,6 @@ export class Scheduler implements AsyncDisposable {
 						key: "scheduler.instance_id",
 						value: { stringValue: metrics.instanceId },
 					},
-					{ key: "scheduler.role", value: { stringValue: metrics.role } },
 				],
 			},
 			scopeMetrics: [
@@ -1666,6 +1875,31 @@ export class Scheduler implements AsyncDisposable {
 			this.jobProfiles.clear();
 		}
 	}
+}
+
+/**
+ * Create a typed scheduler instance.
+ *
+ * This is a convenience factory function that creates a Scheduler with
+ * typed schedule definitions for better type inference.
+ *
+ * @example
+ * ```typescript
+ * const scheduler = createScheduler<{
+ *   'send-email': { to: string; subject: string; body: string };
+ *   'process-payment': { amount: number; currency: string };
+ * }>({ storage });
+ *
+ * // Now you get autocomplete for schedule names and typed payloads!
+ * scheduler.onSchedule('send-email', async (job) => {
+ *   const { to, subject, body } = job.payload; // Fully typed!
+ * });
+ * ```
+ */
+export function createScheduler<Schedules extends ScheduleDefinitions>(
+	options: SchedulerOptions,
+): Scheduler<Schedules> {
+	return new Scheduler<Schedules>(options);
 }
 
 export { CronPresets };

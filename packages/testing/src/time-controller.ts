@@ -247,7 +247,7 @@ export async function createTestScope(options?: {
 	timeout?: number;
 	concurrency?: number;
 }): Promise<{
-	scope: import("go-go-scope").Scope;
+	scope: import("go-go-scope").Scope<Record<string, unknown>>;
 	time: TimeController;
 }> {
 	const time = createTimeController();

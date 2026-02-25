@@ -26,6 +26,7 @@
  */
 
 import type {
+	CacheProvider,
 	CircuitBreakerPersistedState,
 	CircuitBreakerStateProvider,
 	LockHandle,
@@ -33,6 +34,8 @@ import type {
 	PersistenceAdapter,
 	PersistenceAdapterOptions,
 } from "go-go-scope";
+
+export { SQLiteCacheAdapter } from "./cache.js";
 
 /**
  * sqlite3 Database interface
@@ -60,7 +63,11 @@ interface Database {
  * SQLite persistence adapter
  */
 export class SQLiteAdapter
-	implements LockProvider, CircuitBreakerStateProvider, PersistenceAdapter
+	implements
+		LockProvider,
+		CircuitBreakerStateProvider,
+		CacheProvider,
+		PersistenceAdapter
 {
 	private readonly db: Database;
 	private readonly keyPrefix: string;
@@ -89,7 +96,7 @@ export class SQLiteAdapter
 		});
 	}
 
-	private async get<T>(
+	private async queryGet<T>(
 		sql: string,
 		params: unknown[] = [],
 	): Promise<T | undefined> {
@@ -117,6 +124,19 @@ export class SQLiteAdapter
 				updated_at INTEGER NOT NULL
 			)
 		`);
+
+		// Create table for cache
+		await this.run(`
+			CREATE TABLE IF NOT EXISTS go_goscope_cache (
+				key TEXT PRIMARY KEY,
+				value TEXT NOT NULL,
+				expires_at INTEGER,
+				created_at INTEGER DEFAULT (unixepoch())
+			)
+		`);
+		await this.run(
+			`CREATE INDEX IF NOT EXISTS idx_cache_expires ON go_goscope_cache(expires_at)`,
+		);
 
 		this.connected = true;
 	}
@@ -201,7 +221,7 @@ export class SQLiteAdapter
 	async getState(key: string): Promise<CircuitBreakerPersistedState | null> {
 		const fullKey = this.prefix(`circuit:${key}`);
 
-		const row = await this.get<{
+		const row = await this.queryGet<{
 			state: string;
 			failure_count: number;
 			last_failure_time: number | null;
@@ -274,4 +294,112 @@ export class SQLiteAdapter
 			lastSuccessTime: Date.now(),
 		});
 	}
+
+	// ============================================================================
+	// Cache Provider
+	// ============================================================================
+
+	async get<T>(key: string): Promise<T | null> {
+		const fullKey = this.prefix(`cache:${key}`);
+		const now = Math.floor(Date.now() / 1000);
+
+		const row = await this.queryGet<{ value: string }>(
+			`SELECT value FROM go_goscope_cache WHERE key = ? AND (expires_at IS NULL OR expires_at > ?)`,
+			[fullKey, now],
+		);
+
+		if (!row) return null;
+
+		try {
+			return JSON.parse(row.value) as T;
+		} catch {
+			return null;
+		}
+	}
+
+	async set<T>(key: string, value: T, ttl?: number): Promise<void> {
+		const fullKey = this.prefix(`cache:${key}`);
+		const expiresAt = ttl ? Math.floor((Date.now() + ttl) / 1000) : null;
+
+		await this.run(
+			`INSERT INTO go_goscope_cache (key, value, expires_at) VALUES (?, ?, ?)
+			 ON CONFLICT(key) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at`,
+			[fullKey, JSON.stringify(value), expiresAt],
+		);
+	}
+
+	async delete(key: string): Promise<void> {
+		const fullKey = this.prefix(`cache:${key}`);
+		await this.run(`DELETE FROM go_goscope_cache WHERE key = ?`, [fullKey]);
+	}
+
+	async has(key: string): Promise<boolean> {
+		const fullKey = this.prefix(`cache:${key}`);
+		const now = Math.floor(Date.now() / 1000);
+
+		const row = await this.queryGet<unknown>(
+			`SELECT 1 FROM go_goscope_cache WHERE key = ? AND (expires_at IS NULL OR expires_at > ?)`,
+			[fullKey, now],
+		);
+
+		return !!row;
+	}
+
+	async clear(): Promise<void> {
+		if (this.keyPrefix) {
+			await this.run(`DELETE FROM go_goscope_cache WHERE key LIKE ?`, [
+				`${this.keyPrefix}cache:%`,
+			]);
+		} else {
+			await this.run(`DELETE FROM go_goscope_cache`);
+		}
+	}
+
+	async keys(pattern?: string): Promise<string[]> {
+		return new Promise((resolve, reject) => {
+			const now = Math.floor(Date.now() / 1000);
+			let sql: string;
+			let params: (string | number)[] = [now];
+
+			if (this.keyPrefix) {
+				if (pattern) {
+					sql = `SELECT key FROM go_goscope_cache WHERE key LIKE ? AND (expires_at IS NULL OR expires_at > ?)`;
+					params = [
+						`${this.keyPrefix}cache:${pattern.replace(/\*/g, "%")}`,
+						now,
+					];
+				} else {
+					sql = `SELECT key FROM go_goscope_cache WHERE key LIKE ? AND (expires_at IS NULL OR expires_at > ?)`;
+					params = [`${this.keyPrefix}cache:%`, now];
+				}
+			} else if (pattern) {
+				sql = `SELECT key FROM go_goscope_cache WHERE key LIKE ? AND (expires_at IS NULL OR expires_at > ?)`;
+				params = [pattern.replace(/\*/g, "%"), now];
+			} else {
+				sql = `SELECT key FROM go_goscope_cache WHERE expires_at IS NULL OR expires_at > ?`;
+			}
+
+			this.db.all(sql, params, (err: Error | null, rows?: unknown[]) => {
+				if (err) {
+					reject(err);
+				} else {
+					const typedRows = rows as Array<{ key: string }> | undefined;
+					const keys = typedRows?.map((r) => r.key) ?? [];
+					// Remove prefix from returned keys
+					if (this.keyPrefix) {
+						resolve(
+							keys.map((k) =>
+								k.startsWith(`${this.keyPrefix}cache:`)
+									? k.slice(`${this.keyPrefix}cache:`.length)
+									: k,
+							),
+						);
+					} else {
+						resolve(keys);
+					}
+				}
+			});
+		});
+	}
 }
+export { SQLiteIdempotencyAdapter } from "./idempotency.js";

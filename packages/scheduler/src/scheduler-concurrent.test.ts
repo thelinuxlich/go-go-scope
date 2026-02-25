@@ -13,7 +13,7 @@ import { InMemoryJobStorage, Scheduler } from "./index.js";
 describe("Scheduler Concurrent Execution", () => {
 	describe("concurrent: false (default)", () => {
 		test("prevents multiple jobs from same schedule running simultaneously", async () => {
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const storage = new InMemoryJobStorage();
 			const executed: string[] = [];
 			let resolveFirst: (() => void) | null = null;
@@ -41,12 +41,12 @@ describe("Scheduler Concurrent Execution", () => {
 			});
 
 			// Create two jobs manually
-			const [err1, result1] = await scheduler.scheduleJob("sequential", {
+			const [err1, _result1] = await scheduler.scheduleJob("sequential", {
 				runAt: new Date(Date.now() - 100), // Due now
 			});
 			expect(err1).toBeUndefined();
 
-			const [err2, result2] = await scheduler.scheduleJob("sequential", {
+			const [err2, _result2] = await scheduler.scheduleJob("sequential", {
 				runAt: new Date(Date.now() - 50), // Also due now
 			});
 			expect(err2).toBeUndefined();
@@ -61,7 +61,7 @@ describe("Scheduler Concurrent Execution", () => {
 			expect(executed.length).toBe(1);
 
 			// Complete first job
-			resolveFirst?.();
+			(resolveFirst as (() => void) | null)?.();
 
 			// Wait for second job to execute
 			await new Promise((r) => setTimeout(r, 200));
@@ -71,7 +71,7 @@ describe("Scheduler Concurrent Execution", () => {
 		});
 
 		test("sequential execution across multiple instances", async () => {
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const storage = new InMemoryJobStorage();
 			const executionLog: { jobId: string; start: number; end: number }[] = [];
 			let currentExecution = 0;
@@ -138,14 +138,14 @@ describe("Scheduler Concurrent Execution", () => {
 				const prev = executionLog[i - 1];
 				const curr = executionLog[i];
 				// Current job should start after previous ends (or close to it)
-				expect(curr.start).toBeGreaterThanOrEqual(prev.end - 10); // Allow 10ms tolerance
+				expect(curr!.start).toBeGreaterThanOrEqual(prev!.end - 10); // Allow 10ms tolerance
 			}
 		});
 	});
 
 	describe("concurrent: true", () => {
 		test("allows multiple jobs from same schedule to run simultaneously", async () => {
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const storage = new InMemoryJobStorage();
 			const executionLog: { jobId: string; start: number; end: number }[] = [];
 
@@ -198,13 +198,15 @@ describe("Scheduler Concurrent Execution", () => {
 
 			// Verify they ran in parallel (start times should be close)
 			if (executionLog.length === 2) {
-				const timeDiff = Math.abs(executionLog[0].start - executionLog[1].start);
+				const timeDiff = Math.abs(
+					executionLog[0]!.start - executionLog[1]!.start,
+				);
 				expect(timeDiff).toBeLessThan(100); // Started within 100ms of each other
 			}
 		});
 
 		test("overlapping execution with concurrent: true", async () => {
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const storage = new InMemoryJobStorage();
 			let concurrentExecutions = 0;
 			let maxConcurrent = 0;
@@ -230,7 +232,9 @@ describe("Scheduler Concurrent Execution", () => {
 
 			// Create two jobs close together
 			await scheduler.scheduleJob("overlap", { runAt: new Date() });
-			await scheduler.scheduleJob("overlap", { runAt: new Date(Date.now() + 50) });
+			await scheduler.scheduleJob("overlap", {
+				runAt: new Date(Date.now() + 50),
+			});
 
 			await scheduler.start();
 
@@ -247,9 +251,10 @@ describe("Scheduler Concurrent Execution", () => {
 
 	describe("mixed schedules", () => {
 		test("different schedules respect their own concurrent settings", async () => {
-			await using s = scope();
+			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 			const storage = new InMemoryJobStorage();
-			const log: { schedule: string; jobId: string; type: "start" | "end" }[] = [];
+			const log: { schedule: string; jobId: string; type: "start" | "end" }[] =
+				[];
 
 			const scheduler = new Scheduler({
 				scope: s,
@@ -284,9 +289,13 @@ describe("Scheduler Concurrent Execution", () => {
 
 			// Create jobs for both schedules
 			await scheduler.scheduleJob("sequential", { runAt: new Date() });
-			await scheduler.scheduleJob("sequential", { runAt: new Date(Date.now() + 50) });
+			await scheduler.scheduleJob("sequential", {
+				runAt: new Date(Date.now() + 50),
+			});
 			await scheduler.scheduleJob("parallel", { runAt: new Date() });
-			await scheduler.scheduleJob("parallel", { runAt: new Date(Date.now() + 50) });
+			await scheduler.scheduleJob("parallel", {
+				runAt: new Date(Date.now() + 50),
+			});
 
 			await scheduler.start();
 
@@ -305,14 +314,17 @@ describe("Scheduler Concurrent Execution", () => {
 			expect(sequentialEnds.length).toBe(2);
 
 			// Verify sequential execution (no overlap between same schedule jobs)
-			const seq1StartIdx = log.findIndex(
-				(e) => e.schedule === "sequential" && e.jobId === sequentialStarts[0] && e.type === "start"
-			);
 			const seq1EndIdx = log.findIndex(
-				(e) => e.schedule === "sequential" && e.jobId === sequentialStarts[0] && e.type === "end"
+				(e) =>
+					e.schedule === "sequential" &&
+					e.jobId === sequentialStarts[0] &&
+					e.type === "end",
 			);
 			const seq2StartIdx = log.findIndex(
-				(e) => e.schedule === "sequential" && e.jobId === sequentialStarts[1] && e.type === "start"
+				(e) =>
+					e.schedule === "sequential" &&
+					e.jobId === sequentialStarts[1] &&
+					e.type === "start",
 			);
 
 			// Second sequential job should start after first ends
@@ -320,7 +332,7 @@ describe("Scheduler Concurrent Execution", () => {
 
 			// Parallel schedule: jobs CAN overlap
 			const parallelStarts = log.filter(
-				(e) => e.schedule === "parallel" && e.type === "start"
+				(e) => e.schedule === "parallel" && e.type === "start",
 			);
 			expect(parallelStarts.length).toBe(2);
 		});

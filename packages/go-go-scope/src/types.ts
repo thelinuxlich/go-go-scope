@@ -198,6 +198,52 @@ interface TaskOptionsBase {
 	 * ```
 	 */
 	errorContext?: Record<string, unknown>;
+	/**
+	 * Idempotency configuration for caching task results across multiple executions.
+	 * When provided, the task result will be cached and subsequent tasks with
+	 * the same key will return the cached result without re-executing.
+	 *
+	 * Unlike `dedupe` which only deduplicates concurrent in-flight tasks,
+	 * idempotency persists results across multiple calls (requires a
+	 * persistence provider configured in scope).
+	 *
+	 * Unlike `memo` which uses in-memory caching, idempotency can work
+	 * across process restarts when using a persistent store.
+	 *
+	 * Errors are NOT cached - failed tasks will be retried.
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope({
+	 *   persistence: { idempotency: new RedisIdempotencyProvider(redis) }
+	 * })
+	 *
+	 * // Using a string key
+	 * const [err, result] = await s.task(
+	 *   () => processPayment(orderId),
+	 *   { idempotency: { key: `payment:${orderId}` } }
+	 * )
+	 *
+	 * // Using a function to generate the key with TTL
+	 * const [err, result] = await s.task(
+	 *   () => processPayment(orderId),
+	 *   { idempotency: { key: () => `payment:${orderId}`, ttl: 60000 } }
+	 * )
+	 * ```
+	 */
+	idempotency?: {
+		/**
+		 * Idempotency key for caching task results.
+		 * Can be a string or a function that generates the key.
+		 * The function is called at task creation time.
+		 */
+		key: string | ((...args: unknown[]) => string);
+		/**
+		 * Time-to-live for the idempotency cache entry in milliseconds.
+		 * If not specified, uses the scope's default TTL or no expiration.
+		 */
+		ttl?: number;
+	};
 }
 
 /**
@@ -659,7 +705,37 @@ export interface ScopeProfileReport {
 export type {
 	CircuitBreakerPersistedState,
 	CircuitBreakerStateProvider,
+	IdempotencyProvider,
 	LockHandle,
 	LockProvider,
 	PersistenceProviders,
 } from "./persistence/types.js";
+
+/**
+ * Backpressure strategy for channels.
+ * - 'block': Wait until space is available (default)
+ * - 'drop-oldest': Remove oldest item to make room for new item
+ * - 'drop-latest': Drop the new item when buffer is full
+ * - 'error': Throw error when buffer is full
+ * - 'sample': Keep only values within a time window (most recent)
+ */
+export type BackpressureStrategy =
+	| "block"
+	| "drop-oldest"
+	| "drop-latest"
+	| "error"
+	| "sample";
+
+/**
+ * Options for creating a Channel.
+ */
+export interface ChannelOptions<T> {
+	/** Buffer capacity (default: 0 for unbuffered) */
+	capacity?: number;
+	/** Backpressure strategy (default: 'block') */
+	backpressure?: BackpressureStrategy;
+	/** Callback invoked when a value is dropped due to backpressure */
+	onDrop?: (value: T) => void;
+	/** Time window in milliseconds for 'sample' strategy (default: 1000) */
+	sampleWindow?: number;
+}

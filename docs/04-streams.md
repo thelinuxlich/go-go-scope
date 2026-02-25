@@ -278,6 +278,10 @@ Group elements by size, time, or key:
 const batched = new Stream(events, s)
   .groupedWithin(100, 1000)  // 100 items OR 1 second
 
+// Group by fixed size (alias for buffer)
+const chunked = new Stream(items, s)
+  .grouped(10)  // chunks of 10
+
 // Group by key into substreams
 const { groups, done } = new Stream(users, s)
   .groupByKey(user => user.department)
@@ -332,6 +336,104 @@ const [err, product] = await new Stream(numbers, s)
 // Fold with initial
 const [err, total] = await new Stream(items, s)
   .fold(0, (acc, item) => acc + item.price)
+```
+
+### Enhanced Terminal Operations
+
+#### collect / collectWhile
+
+Collect elements into arrays with conditions:
+
+```typescript
+// Collect all elements
+const [err, all] = await new Stream(source, s).collect()
+
+// Collect while condition holds
+const [err, early] = await new Stream(numbers, s)
+  .collectWhile(n => n < 100)
+// Stops collecting when n >= 100
+
+// Collect first N elements
+const [err, firstTen] = await new Stream(source, s)
+  .collect(10)
+```
+
+#### grouped / groupedWithin
+
+Group elements into fixed-size chunks:
+
+```typescript
+// Group into fixed-size chunks
+const [err, chunks] = await new Stream(items, s)
+  .grouped(10)  // Arrays of 10 elements each
+  .toArray()
+
+// Group by size OR time (whichever comes first)
+const [err, batches] = await new Stream(events, s)
+  .groupedWithin(100, 1000)  // 100 items OR 1 second
+  .toArray()
+
+// Process batches
+for (const batch of batches) {
+  await processBatch(batch)
+}
+```
+
+#### pipe
+
+Pipe stream through a transformation function:
+
+```typescript
+// Custom pipeline
+const [err, result] = await new Stream(source, s)
+  .pipe(stream => 
+    stream
+      .filter(x => x > 0)
+      .map(x => x * 2)
+      .take(10)
+  )
+  .toArray()
+
+// Reusable pipeline
+const processNumbers = (s: Stream<number>) =>
+  s.filter(n => n > 0).map(n => n * 2).take(10)
+
+const [err1, r1] = await new Stream(source1, s).pipe(processNumbers).toArray()
+const [err2, r2] = await new Stream(source2, s).pipe(processNumbers).toArray()
+```
+
+#### runHead / runLast
+
+Get first or last element efficiently:
+
+```typescript
+// Get first element (stops stream early)
+const [err, first] = await new Stream(largeDataset, s).runHead()
+// Much more efficient than .take(1).toArray()
+
+// Get last element
+const [err, last] = await new Stream(events, s).runLast()
+// Consumes entire stream but only keeps last value
+
+// With defaults
+const [err, firstOrDefault] = await new Stream(maybeEmpty, s)
+  .runHead({ default: 'fallback' })
+```
+
+#### runSum
+
+Sum numeric values efficiently:
+
+```typescript
+// Simple sum
+const [err, total] = await new Stream(prices, s).runSum()
+
+// With mapper
+const [err, totalRevenue] = await new Stream(orders, s)
+  .runSum(order => order.total)
+
+// Equivalent to but more efficient than:
+// .fold(0, (sum, o) => sum + o.total)
 ```
 
 ### Retry
@@ -816,6 +918,10 @@ See [API Reference](./03-api-reference.md) for complete method documentation.
 
 **Error**: `catchError`, `catchAll`, `mapError`, `tapError`, `orElse`, `orElseSucceed`, `orElseIfEmpty`, `retry`, `ensuring`
 
-**Terminal**: `toArray`, `runDrain`, `drain`, `forEach`, `find`, `first`, `last`, `reduce`, `fold`, `scan`, `count`, `sum`, `some`, `every`, `includes`, `groupBy`
+**Partial Function**: `collect`, `collectWhile`
+
+**Terminal**: `toArray`, `runDrain`, `drain`, `forEach`, `find`, `first`, `last`, `runHead`, `runLast`, `reduce`, `fold`, `scan`, `count`, `sum`, `runSum`, `some`, `every`, `includes`, `groupBy`
+
+**Composition**: `pipe`
 
 **Creation**: Always use `scope.stream(source)` - automatically cleaned up on scope disposal

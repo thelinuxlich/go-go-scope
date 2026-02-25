@@ -1,6 +1,6 @@
 {
   "name": "go-go-scope",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Structured concurrency for TypeScript using Explicit Resource Management",
   "type": "module",
   "main": "./dist/index.mjs",
@@ -16,7 +16,8 @@
     "lint": "biome check --write src/",
     "test": "npm run build && npm run lint && vitest run",
     "test:watch": "vitest",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "structured-concurrency",

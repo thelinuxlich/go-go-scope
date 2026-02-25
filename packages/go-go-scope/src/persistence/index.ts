@@ -9,6 +9,7 @@
  * - @go-go-scope/persistence-postgres
  * - @go-go-scope/persistence-mysql
  * - @go-go-scope/persistence-sqlite
+ * - @go-go-scope/persistence-dynamodb
  *
  * @example
  * ```typescript
@@ -30,8 +31,11 @@
 
 // Core types
 export type {
+	CacheProvider,
+	CacheStats,
 	CircuitBreakerPersistedState,
 	CircuitBreakerStateProvider,
+	IdempotencyProvider,
 	LockHandle,
 	LockProvider,
 	PersistenceAdapter,

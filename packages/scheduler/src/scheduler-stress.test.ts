@@ -15,9 +15,8 @@
 
 import { scope } from "go-go-scope";
 import { describe, expect, test } from "vitest";
-import { Scheduler } from "./index.js";
-import { SQLJobStorage } from "./persistence-storage.js";
-import type { Job, JobStorage } from "./types.js";
+import { Scheduler, StaleJobBehavior } from "./index.js";
+import type { Job } from "./types.js";
 
 // Force GC if available
 function forceGC(): void {
@@ -44,11 +43,6 @@ async function waitFor(
 	throw new Error(`Timeout waiting for condition after ${timeout}ms`);
 }
 
-interface StressTestContext {
-	storage: JobStorage;
-	cleanup: () => Promise<void>;
-}
-
 // ============================================================================
 // HIGH THROUGHPUT TESTS
 // ============================================================================
@@ -58,7 +52,7 @@ describe("Stress Tests - High Throughput", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -107,7 +101,7 @@ describe("Stress Tests - High Throughput", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -164,7 +158,7 @@ describe("Stress Tests - Many Concurrent Schedules", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -234,7 +228,7 @@ describe("Stress Tests - Many Concurrent Schedules", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -295,7 +289,7 @@ describe("Stress Tests - Worker Failure Recovery", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -374,7 +368,7 @@ describe("Stress Tests - Worker Failure Recovery", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -425,7 +419,7 @@ describe("Stress Tests - Clock Skew Handling", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -439,7 +433,7 @@ describe("Stress Tests - Clock Skew Handling", () => {
 			autoStart: false,
 			checkInterval: 50,
 			staleThreshold: 60000, // 1 minute
-			staleJobBehavior: "run",
+			staleJobBehavior: StaleJobBehavior.RUN,
 		});
 
 		// Schedule job BEFORE loading (worker only loads existing schedules)
@@ -490,7 +484,7 @@ describe("Stress Tests - Thundering Herd Protection", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -525,7 +519,9 @@ describe("Stress Tests - Thundering Herd Protection", () => {
 		}
 
 		// Start all workers simultaneously
-		workers.forEach((w) => w.start());
+		workers.forEach((w) => {
+			w.start();
+		});
 
 		// Let them compete
 		await new Promise((r) => setTimeout(r, 2000));
@@ -560,7 +556,7 @@ describe("Stress Tests - Thundering Herd Protection", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -626,7 +622,7 @@ describe("Stress Tests - Long-Running Stability", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope();
+		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
 
 		const admin = new Scheduler({
 			scope: s,

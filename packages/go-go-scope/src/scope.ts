@@ -20,6 +20,7 @@ import { AsyncDisposableResource } from "./scope/resource.js";
 import { Semaphore } from "./semaphore.js";
 import { Task } from "./task.js";
 import type {
+	ChannelOptions,
 	CircuitBreakerOptions,
 	Failure,
 	Histogram,
@@ -161,6 +162,33 @@ export interface ScopeOptions<
 	 * ```
 	 */
 	persistence?: PersistenceProviders;
+	/**
+	 * Idempotency configuration for the scope.
+	 */
+	idempotency?: {
+		/**
+		 * Default TTL for idempotency keys in milliseconds.
+		 * Used when idempotency.key is provided on a task without idempotency.ttl.
+		 * Inherited from parent if not specified.
+		 */
+		defaultTTL?: number;
+	};
+	/**
+	 * Task pooling configuration for reducing GC pressure.
+	 * When enabled, task objects are pooled and reused instead of being garbage collected.
+	 */
+	taskPooling?: {
+		/**
+		 * Maximum number of tasks to keep in the pool.
+		 * @default 100
+		 */
+		maxSize?: number;
+		/**
+		 * Whether to enable task pooling for this scope.
+		 * @default false
+		 */
+		enabled?: boolean;
+	};
 }
 
 /**
@@ -183,7 +211,8 @@ export class Scope<
 > implements AsyncDisposable
 {
 	private readonly abortController: AbortController;
-	private readonly disposables: (Disposable | AsyncDisposable)[] = [];
+	// Lazy-initialized collections for scopes without options
+	private _disposables: (Disposable | AsyncDisposable)[] | undefined;
 	private readonly timeoutId: ReturnType<typeof setTimeout> | undefined;
 	private disposed = false;
 	private readonly _tracer?: Tracer;
@@ -191,7 +220,8 @@ export class Scope<
 	private readonly context?: import("@opentelemetry/api").Context;
 	private taskCount = 0;
 	private spanHasError = false;
-	private readonly activeTasks = new Set<Task<unknown>>();
+	// Use Set for O(1) add/delete/lookup of active tasks
+	private readonly activeTasks: Set<Task<unknown>> = new Set();
 	private readonly startTime: number;
 	private readonly id: number;
 	private readonly name: string;
@@ -214,29 +244,26 @@ export class Scope<
 	private readonly logger: Logger;
 	private readonly deadlockDetector?: DeadlockDetector;
 	private readonly profiler: Profiler;
-	private childScopes: Scope<Record<string, unknown>>[] = [];
+	// Lazy-initialized child scope tracking
+	private _childScopes: Scope<Record<string, unknown>>[] | undefined;
 
-	/**
-	 * Registry for deduplicating tasks. Maps dedupe keys to their executing promises.
-	 * @internal
-	 */
-	private readonly dedupeRegistry = new Map<
-		string | symbol,
-		Promise<unknown>
-	>();
-	/**
-	 * Registry for memoized task results. Maps memo keys to cached results with expiry.
-	 * @internal
-	 */
-	private readonly memoRegistry = new Map<
-		string | symbol,
-		{ result: unknown; expiry: number }
-	>();
+	// Lazy-initialized registries for dedupe and memo (only created when used)
+	private _dedupeRegistry: Map<string | symbol, Promise<unknown>> | undefined;
+	private _memoRegistry:
+		| Map<string | symbol, { result: unknown; expiry: number }>
+		| undefined;
 	/**
 	 * Persistence providers for distributed features.
 	 * @internal
 	 */
-	private readonly persistence?: PersistenceProviders;
+	private readonly _persistence?: PersistenceProviders;
+	/**
+	 * Default TTL for idempotency keys.
+	 * @internal
+	 */
+	private readonly idempotencyDefaultTTL?: number;
+	/** @internal */
+	readonly idempotency?: { defaultTTL?: number };
 
 	constructor(options?: ScopeOptions<Record<string, unknown>>) {
 		this.id = ++scopeIdCounter;
@@ -306,11 +333,20 @@ export class Scope<
 		// Initialize profiler
 		this.profiler = new Profiler(options?.profiler ?? false, this);
 
-		// Set persistence providers
-		this.persistence = options?.persistence;
-
 		// Inherit from parent scope if provided
 		const parent = options?.parent;
+
+		// Set persistence providers (inherit from parent if not explicitly provided)
+		const parentPersistence = (
+			parent as unknown as { _persistence?: PersistenceProviders }
+		)?._persistence;
+		const optionsPersistence = options?.persistence;
+		(this as unknown as { _persistence?: PersistenceProviders })._persistence =
+			optionsPersistence ?? parentPersistence;
+
+		// Set idempotency configuration (inherited from parent if not provided)
+		this.idempotency = options?.idempotency ?? parent?.idempotency;
+		this.idempotencyDefaultTTL = this.idempotency?.defaultTTL;
 		// Store parent reference
 		if (parent) {
 			(this as unknown as { parent?: typeof parent }).parent = parent;
@@ -456,7 +492,7 @@ export class Scope<
 		}
 
 		// Install plugins
-		installPlugins(this, options ?? {});
+		installPlugins(this as unknown as Scope<Record<string, never>>, options as ScopeOptions<Record<string, never>> ?? {});
 	}
 
 	/**
@@ -500,6 +536,62 @@ export class Scope<
 					resetTimeout: this.scopeCircuitBreaker.resetTimeout,
 				}
 			: undefined;
+	}
+
+	/**
+	 * Get disposables array (lazy-initialized)
+	 * @internal
+	 */
+	private get disposables(): (Disposable | AsyncDisposable)[] {
+		if (!this._disposables) {
+			this._disposables = [];
+		}
+		return this._disposables;
+	}
+
+	/**
+	 * Get child scopes array (lazy-initialized)
+	 * @internal
+	 */
+	private get childScopes(): Scope<Record<string, unknown>>[] {
+		if (!this._childScopes) {
+			this._childScopes = [];
+		}
+		return this._childScopes;
+	}
+
+	/**
+	 * Get dedupe registry (lazy-initialized)
+	 * @internal
+	 */
+	private get dedupeRegistry(): Map<string | symbol, Promise<unknown>> {
+		if (!this._dedupeRegistry) {
+			this._dedupeRegistry = new Map();
+		}
+		return this._dedupeRegistry;
+	}
+
+	/**
+	 * Get memo registry (lazy-initialized)
+	 * @internal
+	 */
+	private get memoRegistry(): Map<
+		string | symbol,
+		{ result: unknown; expiry: number }
+	> {
+		if (!this._memoRegistry) {
+			this._memoRegistry = new Map();
+		}
+		return this._memoRegistry;
+	}
+
+	/**
+	 * Get the persistence providers for this scope (inherited from parent if not set directly).
+	 * @internal Used for child scope inheritance
+	 */
+	get persistence(): PersistenceProviders | undefined {
+		return (this as unknown as { _persistence?: PersistenceProviders })
+			._persistence;
 	}
 
 	/**
@@ -622,8 +714,8 @@ export class Scope<
 
 		// Check for memoized result
 		const memoConfig = options?.memo;
-		if (memoConfig !== undefined) {
-			const cached = this.memoRegistry.get(memoConfig.key);
+		if (memoConfig !== undefined && this._memoRegistry) {
+			const cached = this._memoRegistry.get(memoConfig.key);
 			if (cached && cached.expiry > Date.now()) {
 				if (debugScope.enabled) {
 					debugScope(
@@ -652,8 +744,8 @@ export class Scope<
 
 		// Check for deduplication
 		const dedupeKey = options?.dedupe;
-		if (dedupeKey !== undefined) {
-			const existing = this.dedupeRegistry.get(dedupeKey);
+		if (dedupeKey !== undefined && this._dedupeRegistry) {
+			const existing = this._dedupeRegistry.get(dedupeKey);
 			if (existing) {
 				if (debugScope.enabled) {
 					debugScope(
@@ -682,6 +774,15 @@ export class Scope<
 				return dedupeTask;
 			}
 		}
+
+		// Process idempotency configuration if provided
+		const idempotencyConfig = options?.idempotency;
+		const idempotencyKeyOption = idempotencyConfig?.key;
+		const idempotencyKey =
+			typeof idempotencyKeyOption === "function"
+				? idempotencyKeyOption()
+				: idempotencyKeyOption;
+		const idempotencyTTL = idempotencyConfig?.ttl ?? this.idempotencyDefaultTTL;
 
 		this.taskCount++;
 		const taskIndex = this.taskCount;
@@ -754,6 +855,40 @@ export class Scope<
 					);
 				}
 				throw new AbortError(signal.reason);
+			}
+
+			// Check idempotency provider for cached result
+			if (idempotencyKey !== undefined) {
+				const idempotencyProvider = this._persistence?.idempotency;
+				if (idempotencyProvider) {
+					try {
+						const cached =
+							await idempotencyProvider.get<Result<E, T>>(idempotencyKey);
+						if (cached) {
+							if (debugScope.enabled) {
+								debugScope(
+									"[%s] idempotency cache hit for key '%s'",
+									this.name,
+									idempotencyKey,
+								);
+							}
+							// Return the cached success value
+							const cachedResult = cached.value;
+							if (cachedResult[1] !== undefined) {
+								return cachedResult[1] as T;
+							}
+						}
+					} catch (cacheError) {
+						// Log but continue - idempotency check failure shouldn't block execution
+						if (debugScope.enabled) {
+							debugScope(
+								"[%s] idempotency cache check failed: %s",
+								this.name,
+								cacheError,
+							);
+						}
+					}
+				}
 			}
 
 			// Helper to call fn with services injection
@@ -1173,6 +1308,36 @@ export class Scope<
 						);
 					}
 				}
+
+				// Store successful result in idempotency provider
+				if (idempotencyKey !== undefined && !err) {
+					const idempotencyProvider = this._persistence?.idempotency;
+					if (idempotencyProvider) {
+						// Store the successful result tuple
+						const resultToCache: Result<E, T> = [undefined, value] as Result<E, T>;
+						void idempotencyProvider
+							.set(idempotencyKey, resultToCache, idempotencyTTL)
+							.then(() => {
+								if (debugScope.enabled) {
+									debugScope(
+										"[%s] task result cached for idempotency key '%s' (ttl: %s)",
+										this.name,
+										idempotencyKey,
+										idempotencyTTL ?? "none",
+									);
+								}
+							})
+							.catch((cacheError) => {
+								if (debugScope.enabled) {
+									debugScope(
+										"[%s] failed to cache idempotency result: %s",
+										this.name,
+										cacheError,
+									);
+								}
+							});
+					}
+				}
 				taskSpan?.setStatus?.({ code: SpanStatusCodeEnum.OK });
 				taskSpan?.end?.();
 
@@ -1479,7 +1644,8 @@ export class Scope<
 
 		// Dispose all resources in reverse order (LIFO) - avoid array copy
 		const errors: unknown[] = [];
-		const disposables = this.disposables;
+		const disposables = this._disposables;
+		if (!disposables) return;
 		const len = disposables.length;
 		for (let i = len - 1; i >= 0; i--) {
 			const disposable = disposables[i];
@@ -1518,8 +1684,10 @@ export class Scope<
 		}
 
 		// Clear the disposables list
-		const disposedCount = this.disposables.length;
-		this.disposables.length = 0;
+		const disposedCount = this._disposables?.length ?? 0;
+		if (this._disposables) {
+			this._disposables.length = 0;
+		}
 		if (debugScope.enabled) {
 			debugScope("[%s] cleared %d disposables", this.name, disposedCount);
 		}
@@ -1598,9 +1766,40 @@ export class Scope<
 		}
 	}
 
-	/** Create a channel within this scope. */
-	channel<T>(capacity?: number): Channel<T> {
-		const ch = new Channel<T>(capacity ?? 0, this.signal);
+	/**
+	 * Create a channel within this scope.
+	 *
+	 * @param capacity - Buffer capacity (default: 0 for unbuffered)
+	 * @returns Channel with default backpressure strategy
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 * const ch = s.channel<string>(100)
+	 * ```
+	 */
+	channel<T>(capacity?: number): Channel<T>;
+
+	/**
+	 * Create a channel within this scope with options.
+	 *
+	 * @param options - Channel configuration options
+	 * @returns Channel with configured backpressure strategy
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 * const ch = s.channel<number>({
+	 *   capacity: 10,
+	 *   backpressure: 'drop-oldest',
+	 *   onDrop: (value) => console.log('Dropped:', value)
+	 * })
+	 * ```
+	 */
+	channel<T>(options?: ChannelOptions<T>): Channel<T>;
+
+	channel<T>(capacityOrOptions?: number | ChannelOptions<T>): Channel<T> {
+		const ch = new Channel<T>(capacityOrOptions, this.signal);
 		this.disposables.push({
 			async [Symbol.asyncDispose]() {
 				await ch[Symbol.asyncDispose]();
@@ -2035,7 +2234,9 @@ export class Scope<
 			// Start initial batch
 			const initialBatch = Math.min(concurrency, totalTasks);
 			for (let i = 0; i < initialBatch; i++) {
-				const task = processTask(factories[currentIndex]!, currentIndex);
+				const factory = factories[currentIndex];
+				if (!factory) break;
+				const task = processTask(factory, currentIndex);
 				runningTasks.push(task);
 				taskIdxMap.set(task, currentIndex);
 				currentIndex++;
@@ -2064,9 +2265,11 @@ export class Scope<
 					(t) => taskIdxMap.get(t) === winner.idx,
 				);
 				if (finishedTaskIdx >= 0) {
-					const finishedTask = runningTasks[finishedTaskIdx]!;
-					runningTasks.splice(finishedTaskIdx, 1);
-					taskIdxMap.delete(finishedTask);
+					const finishedTask = runningTasks[finishedTaskIdx];
+					if (finishedTask) {
+						runningTasks.splice(finishedTaskIdx, 1);
+						taskIdxMap.delete(finishedTask);
+					}
 				}
 
 				// Check if this is a valid winner
@@ -2092,10 +2295,13 @@ export class Scope<
 
 				// Start next task if available
 				if (currentIndex < totalTasks) {
-					const nextTask = processTask(factories[currentIndex]!, currentIndex);
-					runningTasks.push(nextTask);
-					taskIdxMap.set(nextTask, currentIndex);
-					currentIndex++;
+					const factory = factories[currentIndex];
+					if (factory) {
+						const nextTask = processTask(factory, currentIndex);
+						runningTasks.push(nextTask);
+						taskIdxMap.set(nextTask, currentIndex);
+						currentIndex++;
+					}
 				} else if (runningTasks.length === 0) {
 					// No more tasks to start and none running - all failed
 					if (debugEnabled) {
@@ -2783,7 +2989,7 @@ export class Scope<
 		key: string,
 		ttl = 30000,
 	): Promise<import("./persistence/types.js").LockHandle | null> {
-		if (!this.persistence?.lock) {
+		if (!this._persistence?.lock) {
 			throw new Error(
 				"No LockProvider configured. Pass persistence.lock to scope options.",
 			);
@@ -2793,7 +2999,7 @@ export class Scope<
 			debugScope('[%s] acquiring lock "%s" (ttl: %dms)', this.name, key, ttl);
 		}
 
-		const lock = await this.persistence.lock.acquire(key, ttl);
+		const lock = await this._persistence.lock.acquire(key, ttl);
 
 		if (debugScope.enabled) {
 			if (lock) {
@@ -2868,7 +3074,11 @@ export class Scope<
 			if (!nodeIds.has(name)) {
 				nodeIds.set(name, String.fromCharCode(65 + nodeCounter++));
 			}
-			return nodeIds.get(name)!;
+			const id = nodeIds.get(name);
+			if (!id) {
+				throw new Error(`Node ID not found for ${name}`);
+			}
+			return id;
 		};
 
 		const buildNodes = (

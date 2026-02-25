@@ -25,9 +25,9 @@ import type { Result, Scope, ScopePlugin } from "go-go-scope";
 /* #__PURE__ */
 export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 	private source: () => AsyncGenerator<T>;
-	private scope: Scope;
+	private scope: Scope<Record<string, unknown>>;
 
-	constructor(source: AsyncIterable<T>, scope: Scope) {
+	constructor(source: AsyncIterable<T>, scope: Scope<Record<string, unknown>>) {
 		this.scope = scope;
 		const iterator = source[Symbol.asyncIterator]();
 
@@ -157,8 +157,28 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 	 * Flatten a stream of iterables.
 	 * Lazy - flattens one level.
 	 */
+	flat<R>(this: Stream<Iterable<R> | AsyncIterable<R>>): Stream<R> {
+		const self = this;
+		const scope = this.scope;
+
+		return new Stream<R>(
+			(async function* () {
+				for await (const iterable of self) {
+					for await (const item of iterable) {
+						yield item;
+					}
+				}
+			})(),
+			scope,
+		);
+	}
+
+	/**
+	 * Alias for flat().
+	 * @deprecated Use flat() instead
+	 */
 	flatten<R>(this: Stream<Iterable<R> | AsyncIterable<R>>): Stream<R> {
-		return this.flatMap((x) => x);
+		return this.flat();
 	}
 
 	/**
@@ -1453,7 +1473,9 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 						for (let i = 0; i < iterators.length; i++) {
 							if (!hasValues[i]) continue;
 
-							const result = await iterators[i].next();
+							const iterator = iterators[i];
+							if (!iterator) continue;
+							const result = await iterator.next();
 
 							if (result.done) {
 								hasValues[i] = false;
@@ -1518,6 +1540,94 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 	}
 
 	/**
+	 * Collect values using a partial function.
+	 * Only emits values where the partial function returns a non-undefined result.
+	 * Lazy - filters and maps as values flow through.
+	 *
+	 * @example
+	 * ```typescript
+	 * // Parse numbers from mixed array
+	 * const [_, nums] = await s.stream(['1', 'a', '2', 'b', '3'])
+	 *   .collect((x) => {
+	 *     const n = parseInt(x, 10);
+	 *     return isNaN(n) ? undefined : n;
+	 *   })
+	 *   .toArray()
+	 * // nums = [1, 2, 3]
+	 * ```
+	 */
+	collect<R>(pf: (value: T) => R | undefined): Stream<R> {
+		const self = this;
+		const scope = this.scope;
+
+		return new Stream<R>(
+			(async function* () {
+				for await (const value of self) {
+					scope.signal.throwIfAborted();
+					const result = pf(value);
+					if (result !== undefined) {
+						yield result;
+					}
+				}
+			})(),
+			scope,
+		);
+	}
+
+	/**
+	 * Collect values using a partial function while it returns defined values.
+	 * Stops when the partial function returns undefined for the first time.
+	 * Lazy - collects while defined, then stops.
+	 *
+	 * @example
+	 * ```typescript
+	 * // Parse numbers until non-numeric string
+	 * const [_, nums] = await s.stream(['1', '2', '3', 'stop', '4'])
+	 *   .collectWhile((x) => {
+	 *     const n = parseInt(x, 10);
+	 *     return isNaN(n) ? undefined : n;
+	 *   })
+	 *   .toArray()
+	 * // nums = [1, 2, 3] (stops at 'stop')
+	 * ```
+	 */
+	collectWhile<R>(pf: (value: T) => R | undefined): Stream<R> {
+		const self = this;
+		const scope = this.scope;
+
+		return new Stream<R>(
+			(async function* () {
+				for await (const value of self) {
+					scope.signal.throwIfAborted();
+					const result = pf(value);
+					if (result === undefined) {
+						break;
+					}
+					yield result;
+				}
+			})(),
+			scope,
+		);
+	}
+
+	/**
+	 * Group elements into fixed-size chunks.
+	 * Alias for `buffer(size)` with better semantics for grouping.
+	 * Lazy - groups as values flow through.
+	 *
+	 * @example
+	 * ```typescript
+	 * const [_, groups] = await s.stream([1, 2, 3, 4, 5, 6, 7])
+	 *   .grouped(3)
+	 *   .toArray()
+	 * // groups = [[1, 2, 3], [4, 5, 6], [7]]
+	 * ```
+	 */
+	grouped(size: number): Stream<T[]> {
+		return this.buffer(size);
+	}
+
+	/**
 	 * Group elements into chunks by size and/or time window.
 	 * Emits a chunk when either the size limit is reached OR the time window expires.
 	 * Lazy - groups as values flow through.
@@ -1536,7 +1646,8 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 		return new Stream<T[]>(
 			(async function* () {
 				const buffer: T[] = [];
-				let lastEmit = Date.now();
+				// @ts-ignore - Tracking for future time-based logic
+				let _lastEmit = Date.now();
 				let timeoutId: ReturnType<typeof setTimeout> | undefined;
 				let resolveTimeout: (() => void) | undefined;
 
@@ -1572,7 +1683,7 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 							// Timeout fired - flush buffer
 							const chunk = await flushBuffer();
 							if (chunk) yield chunk;
-							lastEmit = Date.now();
+							_lastEmit = Date.now();
 						} else {
 							// Got a value
 							clearTimeout(timeoutId);
@@ -1590,7 +1701,7 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 							if (buffer.length >= size) {
 								const chunk = await flushBuffer();
 								if (chunk) yield chunk;
-								lastEmit = Date.now();
+								_lastEmit = Date.now();
 							}
 						}
 					}
@@ -1726,7 +1837,8 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 				};
 
 				// Start prefetching
-				const prefetchPromise = prefetchOuter();
+				// @ts-ignore - Fire-and-forget prefetch
+				const _prefetchPromise = prefetchOuter();
 
 				try {
 					while (true) {
@@ -2413,6 +2525,53 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 	}
 
 	/**
+	 * Get the first element.
+	 * Alias for `first()` - follows Effect naming convention.
+	 * Returns undefined if stream is empty.
+	 */
+	async runHead(): Promise<Result<unknown, T | undefined>> {
+		return this.first();
+	}
+
+	/**
+	 * Get the last element.
+	 * Alias for `last()` - follows Effect naming convention.
+	 * Returns undefined if stream is empty.
+	 */
+	async runLast(): Promise<Result<unknown, T | undefined>> {
+		return this.last();
+	}
+
+	/**
+	 * Sum all numeric values.
+	 * Alias for `sum()` - follows Effect naming convention.
+	 */
+	async runSum(): Promise<Result<unknown, number>> {
+		return this.sum();
+	}
+
+	/**
+	 * Pipe the stream through a series of transformation functions.
+	 * Enables functional composition of stream operations.
+	 *
+	 * @example
+	 * ```typescript
+	 * const [_, result] = await s.stream([1, 2, 3, 4, 5])
+	 *   .pipe(
+	 *     s => s.filter(x => x % 2 === 0),
+	 *     s => s.map(x => x * 10),
+	 *     s => s.take(2)
+	 *   )
+	 *   .toArray()
+	 * // result = [20, 40]
+	 * ```
+	 */
+	pipe<U>(...fns: Array<(stream: Stream<T>) => Stream<U>>): Stream<U> {
+		// biome-ignore lint/suspicious/noExplicitAny: Pipe transforms stream type through chain
+		return fns.reduce((acc, fn) => fn(acc), this as any) as Stream<U>;
+	}
+
+	/**
 	 * Retry the stream on failure with configurable delay.
 	 * Eager - retries immediately on failure.
 	 */
@@ -2464,7 +2623,7 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
  */
 class SharedStream<T> implements AsyncDisposable {
 	private source: Stream<T>;
-	private scope: Scope;
+	private scope: Scope<Record<string, unknown>>;
 	private bufferSize: number;
 	private subscribers: Set<(value: T) => void> = new Set();
 	private errorHandlers: Set<(error: unknown) => void> = new Set();
@@ -2472,7 +2631,7 @@ class SharedStream<T> implements AsyncDisposable {
 	private buffer: T[] = [];
 	private started = false;
 
-	constructor(source: Stream<T>, scope: Scope, bufferSize: number) {
+	constructor(source: Stream<T>, scope: Scope<Record<string, unknown>>, bufferSize: number) {
 		this.source = source;
 		this.scope = scope;
 		this.bufferSize = bufferSize;
@@ -2666,11 +2825,16 @@ class BoundedQueue<T> {
 		// Wake up a taker if any
 		const taker = this.takers.shift();
 		if (taker) {
-			taker.resolve({
-				done: false,
-				value: this.buffer.shift()!,
-				error: undefined,
-			});
+			const value = this.buffer.shift();
+			if (value === undefined) {
+				taker.reject(new Error("Channel buffer empty"));
+			} else {
+				taker.resolve({
+					done: false,
+					value,
+					error: undefined,
+				});
+			}
 		}
 
 		// Wake up next waiter if there's now space
@@ -2778,7 +2942,6 @@ interface QueueResult<T> {
 	error: unknown;
 }
 
-
 // ============================================================================
 // Stream Plugin for go-go-scope
 // ============================================================================
@@ -2786,12 +2949,12 @@ interface QueueResult<T> {
 /**
  * Stream plugin for go-go-scope
  * Adds the stream() method to Scope
- * 
+ *
  * @example
  * ```typescript
  * import { scope } from 'go-go-scope'
  * import { streamPlugin } from '@go-go-scope/stream'
- * 
+ *
  * const s = scope({ plugins: [streamPlugin] })
  * const st = s.stream([1, 2, 3])
  *   .map(x => x * 2)

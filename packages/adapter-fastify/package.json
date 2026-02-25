@@ -1,6 +1,6 @@
 {
   "name": "@go-go-scope/adapter-fastify",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Fastify adapter for go-go-scope - request-scoped structured concurrency",
   "type": "module",
   "main": "./dist/index.mjs",
@@ -15,7 +15,8 @@
     "build": "pkgroll --clean-dist",
     "lint": "biome check --write src/",
     "test": "vitest run --passWithNoTests",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "fastify",

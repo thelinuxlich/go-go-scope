@@ -36,8 +36,13 @@ import type {
 
 // Bun's native SQLite Database type
 interface BunDatabase {
-	run(sql: string, params?: unknown[]): { changes: number; lastInsertRowid: number };
-	query<T = unknown>(sql: string): {
+	run(
+		sql: string,
+		params?: unknown[],
+	): { changes: number; lastInsertRowid: number };
+	query<T = unknown>(
+		sql: string,
+	): {
 		get(...params: unknown[]): T | null;
 		all(...params: unknown[]): T[];
 		run(...params: unknown[]): { changes: number; lastInsertRowid: number };

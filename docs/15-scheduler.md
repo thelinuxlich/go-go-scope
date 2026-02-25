@@ -21,6 +21,7 @@ The `@go-go-scope/scheduler` module provides a production-ready distributed job 
 - **Metrics Export**: Prometheus, OpenTelemetry, and JSON formats
 - **Job Profiling**: Detailed execution timing and stage breakdowns
 - **Optional Scope**: Auto-creates scope if not provided
+- **Type Safety**: Full TypeScript support with typed payloads for compile-time safety
 
 ## Quick Start
 
@@ -47,7 +48,7 @@ await using scheduler = new Scheduler({ storage });
 import { scope } from "go-go-scope";
 import { Scheduler, CronPresets } from "@go-go-scope/scheduler";
 import { RedisJobStorage } from "@go-go-scope/scheduler";
-import { RedisAdapter } from "@go-go-scope/persistence-redis";
+import { RedisAdapter } from "go-go-scope/persistence/redis";
 import Redis from "ioredis";
 
 const redis = new Redis("redis://localhost:6379");
@@ -83,6 +84,153 @@ scheduler.onSchedule("daily-report", async (job, jobScope) => {
 scheduler.start();
 console.log("Scheduler ready to process jobs");
 // scheduler is automatically disposed when 'using' block exits
+```
+
+## Type-Safe Schedules
+
+The scheduler provides full TypeScript support with typed payloads. Define your schedule types once and get autocomplete and type checking throughout your codebase.
+
+### Defining Schedule Types
+
+```typescript
+import { Scheduler, createScheduler } from "@go-go-scope/scheduler";
+
+// Define your schedules with typed payloads
+type AppSchedules = {
+  'send-email': { 
+    to: string; 
+    subject: string; 
+    body: string;
+    from?: string;
+  };
+  'process-payment': { 
+    amount: number; 
+    currency: string;
+    customerId: string;
+  };
+  'cleanup-temp-files': { 
+    maxAge: number;
+    pattern?: string;
+  };
+};
+
+// Create typed scheduler
+const scheduler = new Scheduler<AppSchedules>({ 
+  storage: new RedisJobStorage(redis, redisAdapter) 
+});
+
+// Or use the createScheduler factory function
+const scheduler2 = createScheduler<AppSchedules>({ 
+  storage: new RedisJobStorage(redis, redisAdapter) 
+});
+```
+
+### Typed Handler Registration
+
+With typed schedules, you get autocomplete for schedule names and typed payloads in your handlers:
+
+```typescript
+// Autocomplete works! Type 'send-' and see suggestions
+scheduler.onSchedule('send-email', async (job, scope) => {
+  // job.payload is fully typed as { to: string; subject: string; body: string; from?: string }
+  const { to, subject, body, from } = job.payload;
+  
+  // Type checking works! This would error if 'to' was missing
+  await sendEmail({ to, subject, body, from });
+});
+
+scheduler.onSchedule('process-payment', async (job) => {
+  // job.payload is typed as { amount: number; currency: string; customerId: string }
+  const { amount, currency, customerId } = job.payload;
+  
+  // Type checking ensures you use the correct types
+  console.log(`Processing $${amount} ${currency} for customer ${customerId}`);
+});
+```
+
+### Typed Schedule Triggering
+
+Trigger schedules with type-checked payloads:
+
+```typescript
+// Type checking ensures correct payload structure
+await scheduler.triggerSchedule('send-email', {
+  to: 'user@example.com',
+  subject: 'Hello',
+  body: 'World',
+  from: 'noreply@example.com' // optional field
+});
+
+// This would cause a TypeScript error - missing required fields:
+// await scheduler.triggerSchedule('send-email', {
+//   to: 'user@example.com'
+//   // Error: Property 'subject' is missing
+// });
+
+// This would cause a TypeScript error - wrong type:
+// await scheduler.triggerSchedule('process-payment', {
+//   amount: '100',  // Error: Type 'string' is not assignable to type 'number'
+//   currency: 'USD',
+//   customerId: 'cust_123'
+// });
+```
+
+### Typed Job Scheduling
+
+Schedule one-time jobs with type safety:
+
+```typescript
+await scheduler.scheduleJob('cleanup-temp-files', {
+  maxAge: 86400,  // 24 hours in seconds
+  pattern: '*.tmp'
+}, { 
+  delay: 60000,  // Run in 1 minute
+  priority: 10 
+});
+
+// Type error - wrong type for maxAge:
+// await scheduler.scheduleJob('cleanup-temp-files', {
+//   maxAge: '86400'  // Error: Type 'string' is not assignable to type 'number'
+// });
+```
+
+### Backward Compatibility
+
+The scheduler maintains full backward compatibility. Using it without type parameters works exactly as before:
+
+```typescript
+// Untyped scheduler - accepts any string names and generic payloads
+const scheduler = new Scheduler({ storage });
+
+scheduler.onSchedule('any-schedule-name', async (job) => {
+  // job.payload is JobPayload (generic Record<string, unknown>)
+  const data = job.payload as { custom: string };
+});
+
+// Still works with any string
+await scheduler.triggerSchedule('dynamic-name', { any: 'data' });
+```
+
+### Extracting Schedule Types
+
+You can extract the schedule types from a scheduler instance using the `SchedulesOf` helper:
+
+```typescript
+import type { SchedulesOf } from "@go-go-scope/scheduler";
+
+const scheduler = new Scheduler<AppSchedules>({ storage });
+
+// Extract the schedules type
+type MySchedules = SchedulesOf<typeof scheduler>;
+// MySchedules = AppSchedules
+
+// Use it elsewhere
+function processSchedule<N extends keyof MySchedules>(
+  name: N,
+  payload: MySchedules[N]
+) {
+  // payload is correctly typed
+}
 ```
 
 ## Schedule Management
@@ -157,7 +305,10 @@ const allStats = await scheduler.getAllScheduleStats();
 ```typescript
 // Trigger a schedule to run immediately
 const [err, result] = await scheduler.triggerSchedule("daily-report", {
-  force: true, // Optional: bypass paused state
+  // Optional payload override (typed if using typed scheduler)
+  customField: "value"
+}, {
+  delay: 0 // Optional: run immediately
 });
 
 if (result) {
@@ -344,7 +495,61 @@ interface SchedulerOptions {
   
   /** Callback invoked when a deadlock is detected */
   onDeadlock?: (job: Job, duration: number) => void | Promise<void>;
+  
+  /** Enable web UI (default: false) */
+  enableWebUI?: boolean;
+  
+  /** Web UI port (default: 8080) */
+  webUIPort?: number;
+  
+  /** Web UI host (default: "0.0.0.0") */
+  webUIHost?: string;
+  
+  /** Web UI API key for authentication */
+  webUIApiKey?: string;
+  
+  /** Web UI custom path (default: "/") */
+  webUIPath?: string;
 }
+```
+
+### Typed Scheduler Methods
+
+When using `Scheduler<Schedules>`, the following methods have enhanced type safety:
+
+#### `onSchedule<Name>(name, handler)`
+
+Register a typed handler for a schedule.
+
+```typescript
+scheduler.onSchedule<Name extends keyof Schedules>(
+  name: Name extends string ? Name : never,
+  handler: (job: TypedJob<Schedules[Name]>, scope: Scope) => Promise<void>
+): void
+```
+
+#### `triggerSchedule<Name>(name, payload?, options?)`
+
+Trigger a schedule with typed payload.
+
+```typescript
+scheduler.triggerSchedule<Name extends keyof Schedules>(
+  name: Name extends string ? Name : never,
+  payload?: Schedules[Name],
+  options?: ScheduleJobOptions
+): Promise<Result<Error, ScheduleJobResult>>
+```
+
+#### `scheduleJob<Name>(scheduleName, payload?, options?)`
+
+Schedule a one-time job with typed payload.
+
+```typescript
+scheduler.scheduleJob<Name extends keyof Schedules>(
+  scheduleName: Name extends string ? Name : never,
+  payload?: Schedules[Name],
+  options?: ScheduleJobOptions
+): Promise<Result<Error, ScheduleJobResult>>
 ```
 
 ### Schedule Management Methods
@@ -425,127 +630,11 @@ const stats = await scheduler.getScheduleStats("my-schedule");
 const allStats = await scheduler.getAllScheduleStats();
 ```
 
-#### `triggerSchedule(name, payload?)`
-
-Manually trigger a schedule to run immediately.
-
-```typescript
-const [err, result] = await scheduler.triggerSchedule("my-schedule");
-if (result) {
-  console.log("Job ID:", result.jobId);
-}
-```
-
-#### `scheduleJob(scheduleName, payload?, options?)`
-
-Schedules a one-time job.
-
-```typescript
-const [err, result] = await scheduler.scheduleJob("my-schedule", 
-  { userId: "123" },  // payload
-  { delay: 60000 }    // run in 1 minute
-);
-
-if (result) {
-  console.log("Job scheduled:", result.jobId);
-}
-```
-
-#### `cancelJob(jobId)`
-
-Cancels a pending job.
-
-```typescript
-await scheduler.cancelJob(jobId);
-```
-
-### Concurrent Execution Control
-
-The `concurrent` option controls whether multiple jobs from the same schedule can run simultaneously.
-
-#### `concurrent: false` (Default)
-
-When `concurrent: false`, only **one job per schedule** runs at a time. If a job is already running when another job becomes due, the new job waits until the current one completes.
-
-```typescript
-// Sequential execution - jobs run one at a time
-await scheduler.createSchedule("sequential-task", {
-  interval: 60000,
-  concurrent: false,  // Default
-});
-
-scheduler.onSchedule("sequential-task", async (job) => {
-  // This handler will never run concurrently for the same schedule
-  console.log(`Starting job ${job.id}`);
-  await longRunningProcess();
-  console.log(`Completed job ${job.id}`);
-});
-```
-
-**Use cases for `concurrent: false`:**
-- Database migrations or schema updates
-- Report generation that writes to the same file
-- API calls with rate limits per schedule
-- Any task that modifies shared state
-
-#### `concurrent: true`
-
-When `concurrent: true`, **multiple jobs from the same schedule** can run simultaneously. This is useful when jobs are independent and you want to maximize throughput.
-
-```typescript
-// Parallel execution - jobs can run simultaneously
-await scheduler.createSchedule("parallel-task", {
-  cron: "*/5 * * * *",  // Every 5 minutes
-  concurrent: true,
-});
-
-scheduler.onSchedule("parallel-task", async (job) => {
-  // Multiple jobs from this schedule can run at the same time
-  console.log(`Processing job ${job.id}`);
-  await processIndependentData(job.payload);
-});
-```
-
-**Use cases for `concurrent: true`:**
-- Processing independent user data
-- Image/video encoding jobs
-- Sending emails or notifications
-- Any embarrassingly parallel workload
-
-#### Cross-Instance Coordination
-
-The `concurrent` setting is respected **across all scheduler instances**. If you have multiple workers:
-
-```typescript
-// Worker 1
-const worker1 = new Scheduler({ storage });
-worker1.onSchedule("task", handler);
-
-// Worker 2
-const worker2 = new Scheduler({ storage });
-worker2.onSchedule("task", handler);
-
-// With concurrent: false, only one worker will execute a job at a time
-// even if both poll at the same moment
-```
-
 ### Handler Methods
 
 #### `onSchedule(name, handler)`
 
-Register a handler for a schedule.
-
-```typescript
-scheduler.onSchedule("my-schedule", async (job: Job, scope: Scope) => {
-  // Execute job
-  const [err, data] = await scope.task(async () => {
-    return fetchData();
-  });
-  
-  if (err) throw err;
-  await process(data);
-});
-```
+Register a handler for a schedule (see Type-Safe Schedules section above).
 
 #### `offSchedule(name)`
 
@@ -645,24 +734,229 @@ scheduler.on("jobFailed", ({ job, error, permanent }) => {
 
 ```typescript
 const scheduler = new Scheduler({
+  storage,
   hooks: {
     beforeJob: async (job, schedule) => {
-      console.log(`Starting ${job.id}`);
+      // Setup, validation, etc.
+      console.log(`Starting job ${job.id} for ${schedule.name}`);
     },
+    
     afterJob: async (job, schedule, result) => {
-      if (!result.success) {
-        console.error(`Failed after ${result.duration}ms:`, result.error?.message);
-      }
+      // Cleanup, notifications, etc.
+      console.log(`Job ${job.id} ${result.success ? 'succeeded' : 'failed'} in ${result.duration}ms`);
     },
+    
     onJobError: async (job, schedule, error, willRetry) => {
-      console.log(`Error: ${error.message}, will retry: ${willRetry}`);
+      // Error handling, alerting, etc.
       if (!willRetry) {
-        // Last attempt failed - send alert
-        await sendAlert(`Job ${job.id} failed permanently`);
+        await alertOnPermanentFailure(job, error);
       }
     },
   },
 });
+```
+
+### Dead Letter Queue (DLQ)
+
+The Dead Letter Queue provides a way to handle jobs that have failed permanently (after all retries are exhausted). Failed jobs can be automatically or manually moved to the DLQ for later analysis and replay.
+
+#### Automatic DLQ
+
+Configure the scheduler to automatically add failed jobs to the DLQ:
+
+```typescript
+const scheduler = new Scheduler({
+  storage,
+  deadLetterQueue: {
+    enabled: true,           // Enable automatic DLQ
+    maxSize: 10000,          // Maximum DLQ size (default: unlimited)
+    ttl: 7 * 24 * 60 * 60 * 1000,  // DLQ entry TTL (default: unlimited)
+  },
+});
+```
+
+#### Manual DLQ Management
+
+Add jobs to the DLQ manually in error hooks:
+
+```typescript
+scheduler.on("jobFailed", async ({ job, error, permanent }) => {
+  if (permanent) {
+    await scheduler.addToDLQ({
+      jobId: job.id,
+      scheduleName: job.scheduleName,
+      payload: job.payload,
+      error: error.message,
+      failedAt: Date.now(),
+      retryCount: job.retryCount,
+    });
+  }
+});
+```
+
+#### Listing DLQ Entries
+
+View all failed jobs in the DLQ:
+
+```typescript
+// List all DLQ entries
+const entries = await scheduler.listDLQ({
+  limit: 100,
+  offset: 0,
+});
+
+// Filter by schedule name
+const emailFailures = await scheduler.listDLQ({
+  scheduleName: "send-email",
+  limit: 50,
+});
+
+// Filter by date range
+const recentFailures = await scheduler.listDLQ({
+  from: Date.now() - 24 * 60 * 60 * 1000,  // Last 24 hours
+  to: Date.now(),
+});
+```
+
+#### Replaying DLQ Jobs
+
+Replay failed jobs to retry them:
+
+```typescript
+// Replay a single job by DLQ entry ID
+await scheduler.replayFromDLQ("dlq-entry-id");
+
+// Replay multiple jobs
+await scheduler.replayFromDLQ(["id1", "id2", "id3"]);
+
+// Replay all failed jobs for a schedule
+const emailFailures = await scheduler.listDLQ({ scheduleName: "send-email" });
+await scheduler.replayFromDLQ(emailFailures.map(e => e.id));
+
+// Replay with custom options
+await scheduler.replayFromDLQ("dlq-entry-id", {
+  maxRetries: 5,        // Override original retry count
+  retryDelay: 2000,     // Longer delay between retries
+  timeout: 60000,       // Longer timeout
+});
+```
+
+#### Purging DLQ
+
+Clear old entries from the DLQ:
+
+```typescript
+// Delete a single entry
+await scheduler.purgeDLQ("dlq-entry-id");
+
+// Delete multiple entries
+await scheduler.purgeDLQ(["id1", "id2", "id3"]);
+
+// Purge all entries for a schedule
+await scheduler.purgeDLQ({ scheduleName: "send-email" });
+
+// Purge entries older than a date
+await scheduler.purgeDLQ({ olderThan: Date.now() - 7 * 24 * 60 * 60 * 1000 });
+
+// Purge all entries (use with caution)
+await scheduler.purgeDLQ("all");
+```
+
+#### DLQ Entry Structure
+
+```typescript
+interface DLQEntry {
+  id: string;                    // Unique DLQ entry ID
+  jobId: string;                 // Original job ID
+  scheduleName: string;          // Schedule name
+  payload: unknown;              // Job payload
+  error: string;                 // Error message
+  stack?: string;                // Stack trace (if available)
+  failedAt: number;              // Timestamp when failed
+  retryCount: number;           // Number of retry attempts
+  addedAt: number;              // When added to DLQ
+  replayedAt?: number;          // When replayed (if applicable)
+}
+```
+
+#### Complete DLQ Example
+
+```typescript
+import { Scheduler } from "@go-go-scope/scheduler";
+import { RedisJobStorage } from "@go-go-scope/scheduler";
+
+const scheduler = new Scheduler({
+  storage: new RedisJobStorage(redis, redisAdapter),
+  deadLetterQueue: {
+    enabled: true,
+    maxSize: 10000,
+    ttl: 7 * 24 * 60 * 60 * 1000,  // 7 days
+  },
+  hooks: {
+    onJobError: async (job, schedule, error, willRetry) => {
+      if (!willRetry) {
+        console.error(`Job ${job.id} failed permanently:`, error.message);
+        
+        // Add to DLQ with metadata
+        await scheduler.addToDLQ({
+          jobId: job.id,
+          scheduleName: schedule.name,
+          payload: job.payload,
+          error: error.message,
+          stack: error.stack,
+          failedAt: Date.now(),
+          retryCount: job.retryCount,
+        });
+        
+        // Send alert
+        await sendAlert({
+          severity: "critical",
+          message: `Job ${schedule.name} failed after ${job.retryCount} retries`,
+          jobId: job.id,
+        });
+      }
+    },
+  },
+});
+
+// Schedule with retry configuration
+await scheduler.createSchedule("process-payment", {
+  cron: "*/5 * * * *",
+  maxRetries: 3,
+  retryDelay: 2000,
+});
+
+// Handler
+scheduler.onSchedule("process-payment", async (job, scope) => {
+  const { orderId, amount } = job.payload;
+  await processPayment(orderId, amount);
+});
+
+// Daily DLQ review and replay
+async function reviewDLQ() {
+  const yesterday = Date.now() - 24 * 60 * 60 * 1000;
+  const failures = await scheduler.listDLQ({
+    from: yesterday,
+    limit: 100,
+  });
+  
+  console.log(`${failures.length} jobs failed in the last 24 hours`);
+  
+  // Group by schedule
+  const bySchedule = failures.reduce((acc, entry) => {
+    acc[entry.scheduleName] = (acc[entry.scheduleName] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  
+  console.log("Failures by schedule:", bySchedule);
+  
+  // Replay all if manually reviewed
+  if (await confirmReplay()) {
+    await scheduler.replayFromDLQ(failures.map(f => f.id));
+  }
+}
+
+scheduler.start();
 ```
 
 #### Timeout Handling
@@ -677,6 +971,76 @@ await scheduler.createSchedule("slow-job", {
 ```
 
 When timeout is exceeded, the job throws a timeout error and follows the normal retry flow.
+
+### Concurrent Execution Control
+
+The `concurrent` option controls whether multiple jobs from the same schedule can run simultaneously.
+
+#### `concurrent: false` (Default)
+
+When `concurrent: false`, only **one job per schedule** runs at a time. If a job is already running when another job becomes due, the new job waits until the current one completes.
+
+```typescript
+// Sequential execution - jobs run one at a time
+await scheduler.createSchedule("sequential-task", {
+  interval: 60000,
+  concurrent: false,  // Default
+});
+
+scheduler.onSchedule("sequential-task", async (job) => {
+  // This handler will never run concurrently for the same schedule
+  console.log(`Starting job ${job.id}`);
+  await longRunningProcess();
+  console.log(`Completed job ${job.id}`);
+});
+```
+
+**Use cases for `concurrent: false`:**
+- Database migrations or schema updates
+- Report generation that writes to the same file
+- API calls with rate limits per schedule
+- Any task that modifies shared state
+
+#### `concurrent: true`
+
+When `concurrent: true`, **multiple jobs from the same schedule** can run simultaneously. This is useful when jobs are independent and you want to maximize throughput.
+
+```typescript
+// Parallel execution - jobs can run simultaneously
+await scheduler.createSchedule("parallel-task", {
+  cron: "*/5 * * * *",  // Every 5 minutes
+  concurrent: true,
+});
+
+scheduler.onSchedule("parallel-task", async (job) => {
+  // Multiple jobs from this schedule can run at the same time
+  console.log(`Processing job ${job.id}`);
+  await processIndependentData(job.payload);
+});
+```
+
+**Use cases for `concurrent: true`:**
+- Processing independent user data
+- Image/video encoding jobs
+- Sending emails or notifications
+- Any embarrassingly parallel workload
+
+#### Cross-Instance Coordination
+
+The `concurrent` setting is respected **across all scheduler instances**. If you have multiple workers:
+
+```typescript
+// Worker 1
+const worker1 = new Scheduler({ storage });
+worker1.onSchedule("task", handler);
+
+// Worker 2
+const worker2 = new Scheduler({ storage });
+worker2.onSchedule("task", handler);
+
+// With concurrent: false, only one worker will execute a job at a time
+// even if both poll at the same moment
+```
 
 ### Common Methods
 
@@ -951,7 +1315,7 @@ using scheduler = new Scheduler({
 
 ```typescript
 import { RedisJobStorage } from "@go-go-scope/scheduler";
-import { RedisAdapter } from "@go-go-scope/persistence-redis";
+import { RedisAdapter } from "go-go-scope/persistence/redis";
 import Redis from "ioredis";
 
 const redis = new Redis("redis://localhost:6379");
@@ -966,7 +1330,7 @@ const storage = new RedisJobStorage(redis, adapter, {
 
 ```typescript
 import { SQLJobStorage } from "@go-go-scope/scheduler";
-import { PostgresAdapter } from "@go-go-scope/persistence-postgres";
+import { PostgresAdapter } from "go-go-scope/persistence-postgres";
 import pg from "pg";
 
 const pool = new pg.Pool({ /* config */ });
@@ -986,7 +1350,7 @@ const storage = new SQLJobStorage(
 
 ```typescript
 import { SQLJobStorage } from "@go-go-scope/scheduler";
-import { MySQLAdapter } from "@go-go-scope/persistence-mysql";
+import { MySQLAdapter } from "go-go-scope/persistence-mysql";
 import mysql from "mysql2/promise";
 
 const conn = await mysql.createConnection({ /* config */ });
@@ -1009,7 +1373,7 @@ const storage = new SQLJobStorage(
 
 ```typescript
 import { SQLJobStorage } from "@go-go-scope/scheduler";
-import { SQLiteAdapter } from "@go-go-scope/persistence-sqlite";
+import { SQLiteAdapter } from "go-go-scope/persistence-sqlite";
 import sqlite3 from "sqlite3";
 
 const db = new sqlite3.Database("scheduler.db");
@@ -1106,6 +1470,7 @@ const scheduler = new Scheduler({
 12. **Use job hooks** for cross-cutting concerns (metrics, alerting)
 13. **Enable OpenTelemetry tracing** for distributed systems
 14. **Profile jobs** periodically to identify performance issues
+15. **Use typed schedules** for compile-time safety and better IDE support
 
 ## Error Handling
 

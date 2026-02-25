@@ -36,12 +36,12 @@ function getDateInTimezone(date: Date, timezone?: string): Date {
 	// Create a date that represents the same local time components
 	// but in the system's local timezone for calculation purposes
 	const localDate = new Date(
-		Number.parseInt(parsed.year!),
-		Number.parseInt(parsed.month!) - 1,
-		Number.parseInt(parsed.day!),
-		Number.parseInt(parsed.hour!),
-		Number.parseInt(parsed.minute!),
-		Number.parseInt(parsed.second!),
+		Number.parseInt(parsed.year!, 10),
+		Number.parseInt(parsed.month!, 10) - 1,
+		Number.parseInt(parsed.day!, 10),
+		Number.parseInt(parsed.hour!, 10),
+		Number.parseInt(parsed.minute!, 10),
+		Number.parseInt(parsed.second!, 10),
 	);
 
 	return localDate;

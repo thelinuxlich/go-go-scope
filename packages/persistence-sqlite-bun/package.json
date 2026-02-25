@@ -1,6 +1,6 @@
 {
   "name": "@go-go-scope/persistence-sqlite-bun",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Bun-native SQLite persistence adapter for go-go-scope - uses bun:sqlite for optimal performance",
   "type": "module",
   "main": "./dist/index.mjs",
@@ -15,7 +15,8 @@
     "build": "pkgroll --clean-dist",
     "lint": "biome check --write src/",
     "test": "echo 'Run tests with: bun test src/index.test.ts'",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "bun",

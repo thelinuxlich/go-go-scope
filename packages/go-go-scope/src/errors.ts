@@ -46,3 +46,33 @@ export class AbortError extends Error {
 		this.reason = reason;
 	}
 }
+
+/**
+ * ChannelFullError - Error thrown when channel buffer is full with 'error' backpressure strategy.
+ *
+ * @example
+ * ```typescript
+ * import { scope, ChannelFullError } from 'go-go-scope'
+ *
+ * await using s = scope()
+ * const ch = s.channel<number>(1, { backpressure: 'error' })
+ *
+ * await ch.send(1) // succeeds
+ * try {
+ *   await ch.send(2) // throws ChannelFullError
+ * } catch (err) {
+ *   if (err instanceof ChannelFullError) {
+ *     console.log('Channel buffer is full')
+ *   }
+ * }
+ * ```
+ */
+/* #__PURE__ */
+export class ChannelFullError extends Error {
+	readonly _tag = "ChannelFullError" as const;
+
+	constructor(message = "Channel buffer is full") {
+		super(message);
+		this.name = "ChannelFullError";
+	}
+}

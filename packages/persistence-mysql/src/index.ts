@@ -25,8 +25,8 @@
  * ```
  */
 
-import type { Pool } from "mysql2/promise";
 import type {
+	CacheProvider,
 	CircuitBreakerPersistedState,
 	CircuitBreakerStateProvider,
 	LockHandle,
@@ -34,12 +34,19 @@ import type {
 	PersistenceAdapter,
 	PersistenceAdapterOptions,
 } from "go-go-scope";
+import type { Pool } from "mysql2/promise";
+
+export { MySQLCacheAdapter } from "./cache.js";
 
 /**
  * MySQL persistence adapter
  */
 export class MySQLAdapter
-	implements LockProvider, CircuitBreakerStateProvider, PersistenceAdapter
+	implements
+		LockProvider,
+		CircuitBreakerStateProvider,
+		CacheProvider,
+		PersistenceAdapter
 {
 	private readonly pool: Pool;
 	private readonly keyPrefix: string;
@@ -300,6 +307,15 @@ export class MySQLAdapter
           INDEX idx_updated (updated_at)
         ) ENGINE=InnoDB;
       `);
+
+			await connection.query(`
+        CREATE TABLE IF NOT EXISTS go_goscope_cache (
+          \`key\` VARCHAR(255) PRIMARY KEY,
+          value JSON NOT NULL,
+          expires_at DATETIME,
+          INDEX idx_expires (expires_at)
+        ) ENGINE=InnoDB;
+      `);
 		} finally {
 			connection.release();
 		}
@@ -312,4 +328,104 @@ export class MySQLAdapter
 	isConnected(): boolean {
 		return true;
 	}
+
+	// ============================================================================
+	// Cache Provider
+	// ============================================================================
+
+	async get<T>(key: string): Promise<T | null> {
+		const fullKey = this.prefix(`cache:${key}`);
+
+		const [rows] = await this.pool.query(
+			`SELECT value FROM go_goscope_cache WHERE \`key\` = ? AND (expires_at IS NULL OR expires_at > NOW())`,
+			[fullKey],
+		);
+
+		const results = rows as Array<{ value: unknown }>;
+		if (results.length === 0) {
+			return null;
+		}
+
+		const firstResult = results[0];
+		if (!firstResult) {
+			return null;
+		}
+		return firstResult.value as T;
+	}
+
+	async set<T>(key: string, value: T, ttl?: number): Promise<void> {
+		const fullKey = this.prefix(`cache:${key}`);
+		const expiresAt = ttl
+			? new Date(Date.now() + ttl).toISOString().slice(0, 19).replace("T", " ")
+			: null;
+
+		await this.pool.query(
+			`INSERT INTO go_goscope_cache (\`key\`, value, expires_at) VALUES (?, ?, ?)
+			 ON DUPLICATE KEY UPDATE value = VALUES(value), expires_at = VALUES(expires_at)`,
+			[fullKey, JSON.stringify(value), expiresAt],
+		);
+	}
+
+	async delete(key: string): Promise<void> {
+		const fullKey = this.prefix(`cache:${key}`);
+		await this.pool.query(`DELETE FROM go_goscope_cache WHERE \`key\` = ?`, [
+			fullKey,
+		]);
+	}
+
+	async has(key: string): Promise<boolean> {
+		const fullKey = this.prefix(`cache:${key}`);
+
+		const [rows] = await this.pool.query(
+			`SELECT 1 FROM go_goscope_cache WHERE \`key\` = ? AND (expires_at IS NULL OR expires_at > NOW())`,
+			[fullKey],
+		);
+
+		return (rows as unknown[]).length > 0;
+	}
+
+	async clear(): Promise<void> {
+		if (this.keyPrefix) {
+			await this.pool.query(
+				`DELETE FROM go_goscope_cache WHERE \`key\` LIKE ?`,
+				[`${this.keyPrefix}cache:%`],
+			);
+		} else {
+			await this.pool.query(`DELETE FROM go_goscope_cache`);
+		}
+	}
+
+	async keys(pattern?: string): Promise<string[]> {
+		let query: string;
+		let params: string[] = [];
+
+		if (this.keyPrefix) {
+			if (pattern) {
+				query = `SELECT \`key\` FROM go_goscope_cache WHERE \`key\` LIKE ? AND (expires_at IS NULL OR expires_at > NOW())`;
+				params = [`${this.keyPrefix}cache:${pattern.replace(/\*/g, "%")}`];
+			} else {
+				query = `SELECT \`key\` FROM go_goscope_cache WHERE \`key\` LIKE ? AND (expires_at IS NULL OR expires_at > NOW())`;
+				params = [`${this.keyPrefix}cache:%`];
+			}
+		} else if (pattern) {
+			query = `SELECT \`key\` FROM go_goscope_cache WHERE \`key\` LIKE ? AND (expires_at IS NULL OR expires_at > NOW())`;
+			params = [pattern.replace(/\*/g, "%")];
+		} else {
+			query = `SELECT \`key\` FROM go_goscope_cache WHERE expires_at IS NULL OR expires_at > NOW()`;
+		}
+
+		const [rows] = await this.pool.query(query, params);
+		const keys = (rows as Array<{ key: string }>).map((r) => r.key);
+
+		// Remove prefix from returned keys
+		if (this.keyPrefix) {
+			return keys.map((k) =>
+				k.startsWith(`${this.keyPrefix}cache:`)
+					? k.slice(`${this.keyPrefix}cache:`.length)
+					: k,
+			);
+		}
+		return keys;
+	}
 }
+export { MySQLIdempotencyAdapter } from "./idempotency.js";

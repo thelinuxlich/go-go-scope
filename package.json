@@ -1,6 +1,6 @@
 {
   "name": "go-go-scope-monorepo",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Structured concurrency for TypeScript using Explicit Resource Management",
   "type": "module",
   "private": true,
@@ -14,6 +14,8 @@
     "build:tui": "pnpm --filter @go-go-scope/scheduler-tui build",
     "build:adapters": "pnpm --filter @go-go-scope/adapter-* build",
     "build:persistence": "pnpm --filter @go-go-scope/persistence-* build",
+    "typecheck": "pnpm -r typecheck",
+    "typecheck:core": "pnpm --filter go-go-scope typecheck",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
     "test:core": "pnpm --filter go-go-scope test",
