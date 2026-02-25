@@ -12,6 +12,8 @@
 [![Node.js](https://img.shields.io/badge/Node.js-24+-green?style=for-the-badge&logo=node.js)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-purple?style=for-the-badge)](LICENSE)
 
+</div>
+
 ```typescript
 // Structured concurrency with automatic cleanup
 await using s = scope({ timeout: 5000 });
@@ -21,6 +23,8 @@ if (err) console.error("Failed:", err);
 else console.log("User:", data);
 // ✨ Everything cleaned up automatically
 ```
+
+<div align="center">
 
 [📖 Documentation](./docs) • [🚀 Quick Start](./docs/01-quick-start.md) • [📦 Packages](#packages) • [💡 Examples](./examples)
 
