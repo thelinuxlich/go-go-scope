@@ -178,6 +178,13 @@ interface ScopeOptions<ParentServices extends Record<string, unknown> = Record<s
      */
     defaultTTL?: number;
   }
+  
+  /**
+   * Request context object accessible in all tasks via `ctx.context`.
+   * Merged with parent's context when using `parent` option.
+   * Useful for storing request-scoped data like trace IDs, user IDs, etc.
+   */
+  context?: Record<string, unknown>
 }
 ```
 
@@ -234,6 +241,23 @@ const [err, result] = await s.task(
   () => processPayment(orderId),
   { idempotency: { key: `payment:${orderId}` } }  // Uses default TTL
 )
+
+// With request context for propagation
+await using s = scope({
+  name: 'api-request',
+  context: {
+    requestId: 'req-123',
+    traceId: 'trace-abc',
+    userId: 'user-456'
+  }
+})
+
+// Access context in any task
+const [err, data] = await s.task(async ({ context, logger }) => {
+  logger.info('Processing request', { requestId: context.requestId })
+  // All tasks have access to requestId, traceId, userId
+  return processRequest(context)
+})
 ```
 
 ---
@@ -257,6 +281,15 @@ task<T>(
 |------|------|-------------|
 | `fn` | Function | Task function receiving `{ services, signal, logger, context }` |
 | `options` | `TaskOptions` | Optional task configuration |
+
+**Task Context:**
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `services` | `Services` | Injected services from `provide()` |
+| `signal` | `AbortSignal` | Cancellation signal from scope |
+| `logger` | `Logger` | Structured logger with task context |
+| `context` | `Record<string, unknown>` | Request context from scope (inherited from parent scopes) |
 
 **Returns:** `Task<Result<unknown, T>>` - A lazy task (starts when awaited)
 
@@ -283,6 +316,17 @@ const [err, result] = await s.task(async ({ services, logger }) => {
   const data = await services.db.query('SELECT 1')
   logger.info('Query completed', { rowCount: data.length })
   return data
+})
+
+// With request context
+await using s = scope({
+  context: { requestId: 'req-123', traceId: 'trace-abc' }
+})
+
+const [err, data] = await s.task(async ({ context, logger }) => {
+  // Access request-scoped context
+  logger.info('Processing', { requestId: context.requestId })
+  return fetchData({ traceId: context.traceId })
 })
 
 // With retry

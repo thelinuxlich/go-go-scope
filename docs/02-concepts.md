@@ -147,6 +147,31 @@ async function fetchDashboardData(userId: string) {
 
 A **Scope** is a container for async operations. Think of it as a "workspace" for your tasks.
 
+### Request Context
+
+Scopes can carry a request context that is automatically propagated to all tasks and child scopes. This is useful for storing request-scoped data like trace IDs, user IDs, or correlation IDs:
+
+```typescript
+await using s = scope({
+  context: {
+    requestId: 'req-123',
+    traceId: 'trace-abc',
+    userId: 'user-456'
+  }
+})
+
+// Access context in any task
+const [err, result] = await s.task(async ({ context, logger }) => {
+  logger.info('Processing request', { requestId: context.requestId })
+  // context.requestId, context.traceId, context.userId are available
+  return processData(context.userId)
+})
+
+// Child scopes inherit parent context
+await using child = scope({ parent: s })
+// child.requestContext includes parent's context properties
+```
+
 ### Creating a Scope
 
 ```typescript
@@ -172,6 +197,15 @@ await using s = scope({
   circuitBreaker: {
     failureThreshold: 5,
     resetTimeout: 30000
+  }
+})
+
+// With request context (propagates to all tasks)
+await using s = scope({
+  context: {
+    requestId: 'req-123',
+    traceId: 'trace-abc',
+    userId: 'user-456'
   }
 })
 
@@ -340,6 +374,50 @@ const [err, user] = await s.task(
     timeout: 5000
   }
 )
+```
+
+### Task Context
+
+Task functions receive a context object with the following properties:
+
+```typescript
+await s.task(async ({ services, signal, logger, context }) => {
+  // services: Your provided services (DI)
+  // signal: AbortSignal for cancellation
+  // logger: Structured logger (debug, info, warn, error)
+  // context: Request-scoped context object from scope
+})
+```
+
+The `logger` is useful for structured logging within tasks:
+
+```typescript
+const [err, result] = await s.task(async ({ logger, signal }) => {
+  logger.info('Starting operation', { operation: 'processUser' })
+  try {
+    const data = await fetchData({ signal })
+    logger.debug('Data fetched', { size: data.length })
+    return data
+  } catch (e) {
+    logger.error('Operation failed', { error: String(e) })
+    throw e
+  }
+})
+```
+
+The `context` object contains any request-scoped data you passed to the scope:
+
+```typescript
+await using s = scope({
+  context: { requestId: 'req-123', userId: 'user-456' }
+})
+
+const [err, data] = await s.task(async ({ context, logger }) => {
+  // context.requestId === 'req-123'
+  // context.userId === 'user-456'
+  logger.info('Processing', { requestId: context.requestId })
+  return processRequest(context)
+})
 ```
 
 ---
