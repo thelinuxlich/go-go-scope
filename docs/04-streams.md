@@ -2,7 +2,13 @@
 
 The `Stream` class provides lazy, composable, and cancellable async iterable processing. It's designed for handling data flows, event streams, and reactive programming with automatic resource management.
 
-> **Note**: The Stream API has been extracted to a separate package `@go-go-scope/stream`.
+> **Note**: The Stream API is available as a separate package `@go-go-scope/stream`. You can use it either as a standalone class or via the stream plugin for convenient `scope.stream()` access.
+
+## Installation
+
+```bash
+npm install @go-go-scope/stream
+```
 
 ## Overview
 
@@ -22,17 +28,17 @@ const [err, results] = await new Stream(fetchData(), s)
 
 ### Alternative: Using the Stream Plugin
 
-If you prefer the `new Stream(, s)` method, you can use the stream plugin:
+For a more convenient API, use the stream plugin to add `s.stream()` method to your scope:
 
 ```typescript
 import { scope } from 'go-go-scope'
 import { streamPlugin } from '@go-go-scope/stream'
 
 await using s = scope({
-  plugins: [{ plugin: streamPlugin }]
+  plugins: [streamPlugin]
 })
 
-// Now you can use s.stream()
+// Now you can use s.stream() for cleaner syntax
 const [err, results] = await s.stream(fetchData())
   .filter(item => item.active)
   .map(item => item.name)
@@ -53,6 +59,8 @@ const [err, results] = await s.stream(fetchData())
 ### From Async Iterables
 
 ```typescript
+import { Stream } from '@go-go-scope/stream'
+
 async function* fetchUsers() {
   for (let page = 1; page <= 10; page++) {
     yield await fetch(`/api/users?page=${page}`)
@@ -60,7 +68,6 @@ async function* fetchUsers() {
 }
 
 await using s = scope()
-import { Stream } from '@go-go-scope/stream'
 const users = new Stream(fetchUsers(), s)
 ```
 
@@ -72,6 +79,17 @@ import { Stream } from '@go-go-scope/stream'
 const numbers = new Stream(async function* () {
   for (const n of [1, 2, 3, 4, 5]) yield n
 }(), s)
+```
+
+Or using the plugin:
+
+```typescript
+await using s = scope({ plugins: [streamPlugin] })
+
+// Automatically wraps arrays in async iterable
+const [err, results] = await s.stream([1, 2, 3, 4, 5])
+  .map(x => x * 2)
+  .toArray()
 ```
 
 ### With Scope-based Cancellation
@@ -453,9 +471,9 @@ const [err, results] = await new Stream(unreliableSource, s)
 Process application logs with filtering, grouping, and rate limiting:
 
 ```typescript
-await using s = scope()
+await using s = scope({ plugins: [streamPlugin] })
 
-const [err, errorSummary] = await new Stream(tailLogs(), s)
+const [err, errorSummary] = await s.stream(tailLogs())
   .filter(log => log.level === 'ERROR')
   .groupAdjacentBy(log => log.service)
   .map(([service, logs]) => ({
@@ -472,10 +490,10 @@ const [err, errorSummary] = await new Stream(tailLogs(), s)
 Sample and throttle sensor readings:
 
 ```typescript
-await using s = scope()
+await using s = scope({ plugins: [streamPlugin] })
 
 // Sample every 5 seconds, emit only on significant changes
-const readings = new Stream(sensor.poll(), s)
+const readings = s.stream(sensor.poll())
   .fixed(5000) // Sample every 5s
   .filter(r => r.temperature > 0) // Valid readings only
   .distinctAdjacent() // Only when value changes
@@ -493,11 +511,11 @@ const [err, batches] = await readings
 Fetch with concurrency control and retry:
 
 ```typescript
-await using s = scope()
+await using s = scope({ plugins: [streamPlugin] })
 
 const urls = ['https://api.example.com/user/1', ...]
 
-const [err, users] = await new Stream(urls, s)
+const [err, users] = await s.stream(urls)
   .mapAsync(
     url => fetch(url).then(r => r.json()),
     { concurrency: 5 } // Max 5 concurrent
@@ -513,12 +531,12 @@ const [err, users] = await new Stream(urls, s)
 Export large dataset with progress tracking:
 
 ```typescript
-await using s = scope()
+await using s = scope({ plugins: [streamPlugin] })
 
 let processed = 0
 const total = await db.count()
 
-const [err] = await new Stream(db.query(), s)
+const [err] = await s.stream(db.query())
   .buffer(1000) // Process in chunks
   .tap(() => {
     processed += 1000
@@ -536,10 +554,10 @@ const [err] = await new Stream(db.query(), s)
 Process event stream with partitioning:
 
 ```typescript
-await using s = scope()
+await using s = scope({ plugins: [streamPlugin] })
 
 // Partition by aggregate type
-const [userEvents, orderEvents] = new Stream(eventStore.subscribe(), s)
+const [userEvents, orderEvents] = s.stream(eventStore.subscribe())
   .partition(e => e.aggregateType === 'User')
 
 // Process in parallel with different handlers
@@ -561,9 +579,9 @@ await Promise.all([
 Group messages by user session:
 
 ```typescript
-await using s = scope()
+await using s = scope({ plugins: [streamPlugin] })
 
-const [err, sessions] = await new Stream(websocket.messages(), s)
+const [err, sessions] = await s.stream(websocket.messages())
   .takeWhile(() => !shutdownSignal.aborted)
   .groupAdjacentBy(msg => msg.userId)
   .filter(session => session.length > 5) // Active users only
@@ -580,9 +598,9 @@ const [err, sessions] = await new Stream(websocket.messages(), s)
 Process large CSV file line by line:
 
 ```typescript
-await using s = scope()
+await using s = scope({ plugins: [streamPlugin] })
 
-const [err, summary] = await new Stream(readFileLines('huge.csv', s))
+const [err, summary] = await s.stream(readFileLines('huge.csv'))
   .drop(1) // Skip header
   .map(parseCSVLine)
   .filter(row => row.isValid)
@@ -598,9 +616,9 @@ const [err, summary] = await new Stream(readFileLines('huge.csv', s))
 Retry failed webhooks with exponential backoff:
 
 ```typescript
-await using s = scope()
+await using s = scope({ plugins: [streamPlugin] })
 
-await new Stream(failedWebhooks, s)
+await s.stream(failedWebhooks)
   .mapAsync(async webhook => {
     const response = await fetch(webhook.url, {
       method: 'POST',
@@ -620,9 +638,9 @@ await new Stream(failedWebhooks, s)
 Implement search-as-you-type with debouncing:
 
 ```typescript
-await using s = scope()
+await using s = scope({ plugins: [streamPlugin] })
 
-const searchResults = new Stream(searchInput.events(), s)
+const searchResults = s.stream(searchInput.events())
   .map(e => e.target.value)
   .filter(q => q.length > 2)
   .debounce(300) // Wait 300ms after typing stops
@@ -639,10 +657,10 @@ for await (const results of searchResults) {
 Fan out to multiple tenants:
 
 ```typescript
-await using s = scope()
+await using s = scope({ plugins: [streamPlugin] })
 
 // Create 3 streams from one source
-const [tenantA, tenantB, tenantC] = new Stream(globalEvents, s)
+const [tenantA, tenantB, tenantC] = s.stream(globalEvents)
   .broadcast(3)
 
 // Each tenant filters their data
@@ -709,12 +727,12 @@ Unlike `scope.task()`, streams don't automatically create spans or track metrics
 Track stream processing with custom counters:
 
 ```typescript
-await using s = scope()
+await using s = scope({ plugins: [streamPlugin] })
 
 let processed = 0
 let failed = 0
 
-const [err, results] = await new Stream(dataSource, s)
+const [err, results] = await s.stream(dataSource)
   .tap(() => processed++)
   .map(transform)
   .tapError(() => failed++)
@@ -731,9 +749,9 @@ const [err, results] = await new Stream(dataSource, s)
 Add logging at key points in the pipeline:
 
 ```typescript
-await using s = scope()
+await using s = scope({ plugins: [streamPlugin] })
 
-const [err, results] = await new Stream(fetchData(), s)
+const [err, results] = await s.stream(fetchData())
   .tap(() => console.log('Starting data fetch'))
   .map(processItem)
   .tap((item, index) => console.log(`Processed item ${index}: ${item.id}`))
@@ -751,12 +769,12 @@ Create spans manually for complex pipelines:
 ```typescript
 import { trace } from '@opentelemetry/api'
 
-await using s = scope()
+await using s = scope({ plugins: [streamPlugin] })
 const tracer = trace.getTracer('my-app')
 
 const span = tracer.startSpan('process-data-stream')
 
-const [err, results] = await new Stream(dataSource, s)
+const [err, results] = await s.stream(dataSource)
   .tap(() => span.addEvent('stream-started'))
   .buffer(100)
   .tap(batch => span.addEvent('batch-buffered', { count: batch.length }))
@@ -776,6 +794,7 @@ Integrate with scope lifecycle hooks:
 
 ```typescript
 await using s = scope({
+  plugins: [streamPlugin],
   hooks: {
     beforeTask: (name) => console.log(`Starting: ${name}`),
     afterTask: (name) => console.log(`Completed: ${name}`)
@@ -785,7 +804,7 @@ await using s = scope({
 // Trigger hooks manually for streams
 s.hooks?.beforeTask?.('data-pipeline', 0)
 
-const [err, results] = await new Stream(dataSource, s)
+const [err, results] = await s.stream(dataSource)
   .map(process)
   .ensuring(() => s.hooks?.afterTask?.('data-pipeline', 0))
   .toArray()
@@ -796,12 +815,12 @@ const [err, results] = await new Stream(dataSource, s)
 Complete observability setup:
 
 ```typescript
-await using s = scope()
+await using s = scope({ plugins: [streamPlugin] })
 
 const startTime = Date.now()
 let itemCount = 0
 
-const [err, results] = await new Stream(eventSource, s)
+const [err, results] = await s.stream(eventSource)
   // Metrics
   .tap(() => s.metrics()?.tasksSpawned++)
   
@@ -887,7 +906,7 @@ go-go-scope streams implement ~90% of Effect's core Stream API:
 | `Stream.zip` | ✅ `zip`, `zipWithIndex` | Zip with index supported |
 | `Stream.switch` | ✅ `switchMap` | Renamed for clarity |
 | `Stream.schedule` | ❌ Not implemented | Use poll() or delay() |
-| `Stream.cross` | ❌ Not implemented | Rarely needed |
+| `Stream.cross` | ✅ `cross` | Implemented |
 
 Key differences:
 - **Error handling**: go-go-scope uses Result tuples, Effect uses typed errors
@@ -924,4 +943,4 @@ See [API Reference](./03-api-reference.md) for complete method documentation.
 
 **Composition**: `pipe`
 
-**Creation**: Always use `scope.stream(source)` - automatically cleaned up on scope disposal
+**Creation**: Use `new Stream(source, scope)` or `s.stream(source)` with plugin

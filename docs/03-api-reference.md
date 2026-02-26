@@ -872,7 +872,7 @@ for await (const item of ch) {
 
 ### Stream (from `@go-go-scope/stream`)
 
-The Stream API has been extracted to a separate package. Install it with:
+The Stream API is available as a separate package. Install it with:
 
 ```bash
 npm install @go-go-scope/stream
@@ -915,7 +915,7 @@ for await (const chunk of new Stream(readableStream, s)) {
 import { streamPlugin } from '@go-go-scope/stream'
 
 await using s = scope({
-  plugins: [{ plugin: streamPlugin }]
+  plugins: [streamPlugin]
 })
 
 // Now you can use s.stream()
@@ -1855,10 +1855,10 @@ const save = throttle(s, async (data: string) => {
 
 ### `stream(source, signal?)`
 
-Wrap an async iterable with cancellation.
+Wrap an async iterable with cancellation (requires `@go-go-scope/stream` package).
 
 ```typescript
-import { stream } from 'go-go-scope'
+import { stream } from '@go-go-scope/stream'
 
 const controller = new AbortController()
 

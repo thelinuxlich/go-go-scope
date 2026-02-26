@@ -1,12 +1,12 @@
-# go-go-scope v1.7.0 Stream API
+# go-go-scope Stream API Design
 
 > **Status**: Implemented  
-> **Target**: v1.7.0  
-> **Last Updated**: 2026-02-20
+> **Target**: v2.3.0  
+> **Last Updated**: 2026-02-26
 
 ## Overview
 
-go-go-scope v1.7.0 provides a powerful, lazy Stream API for processing async iterables. Inspired by Effect's Stream and built on native JavaScript features, it offers:
+go-go-scope provides a powerful, lazy Stream API for processing async iterables via the `@go-go-scope/stream` package. Inspired by Effect's Stream and built on native JavaScript features, it offers:
 
 - **Lazy evaluation** - Operations are only executed when needed
 - **Automatic cancellation** - Respects scope disposal via AbortSignal
@@ -14,18 +14,33 @@ go-go-scope v1.7.0 provides a powerful, lazy Stream API for processing async ite
 - **Composable operations** - Chain transformations like native array methods
 - **No polyfills** - Pure JavaScript implementation, no prototype pollution
 
+## Installation
+
+```bash
+npm install @go-go-scope/stream
+```
+
 ## Quick Start
 
 ```typescript
 import { scope } from 'go-go-scope';
+import { Stream, streamPlugin } from '@go-go-scope/stream';
 
+// Option 1: Use Stream class directly
 await using s = scope();
 
-// Lazy stream processing with automatic cancellation
 const [err, results] = await new Stream(fetchData(), s)
   .map(x => x * 2)
   .filter(x => x > 10)
   .take(5)
+  .toArray();
+
+// Option 2: Use the stream plugin for cleaner syntax
+await using s = scope({ plugins: [streamPlugin] });
+
+const [err, results] = await s.stream([1, 2, 3, 4])
+  .map(x => x * 2)
+  .filter(x => x > 4)
   .toArray();
 
 if (err) {
@@ -36,6 +51,8 @@ if (err) {
 ```
 
 ## Creating Streams
+
+### From Async Iterables
 
 ```typescript
 await using s = scope();
@@ -54,7 +71,23 @@ const stream2 = new Stream(generate(), s);
 // From an array (wrap in async generator)
 const stream3 = new Stream((async function* () {
   yield* [1, 2, 3, 4, 5];
-})());
+})(), s);
+```
+
+### Using the Stream Plugin
+
+```typescript
+await using s = scope({ plugins: [streamPlugin] });
+
+// Arrays are automatically wrapped
+const [err, results] = await s.stream([1, 2, 3, 4, 5])
+  .map(x => x * 2)
+  .toArray();
+
+// Works with async iterables too
+const [err2, results2] = await s.stream(fetchData())
+  .filter(item => item.active)
+  .toArray();
 ```
 
 ## Transformations (Lazy)
@@ -468,7 +501,6 @@ if (err) {
 ## Future Enhancements
 
 Potential additions for future versions:
-- `mapAsync(fn, { concurrency })` - Concurrent async mapping with controlled concurrency
 - `slidingWindow(size)` / `sliding(size)` - Sliding window of recent elements
 - `share()` - Hot observable sharing (multicast to late subscribers)
 
