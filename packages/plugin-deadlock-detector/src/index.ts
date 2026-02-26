@@ -1,22 +1,22 @@
 /**
- * Deadlock detector for go-go-scope
+ * Deadlock detector plugin for go-go-scope
  */
 
-import type { DeadlockDetectionOptions } from "./types.js";
+import type { Scope, ScopePlugin } from "go-go-scope";
+
+/**
+ * Options for deadlock detection
+ */
+export interface DeadlockDetectionOptions {
+	/** Timeout in milliseconds before considering a task stuck */
+	timeout: number;
+	/** Callback when potential deadlock is detected */
+	onDeadlock?: (tasks: string[]) => void;
+}
 
 /**
  * Tracks task waiting states to detect potential deadlocks.
  * Automatically registered with scope for cleanup.
- *
- * @example
- * ```typescript
- * await using s = scope({
- *   deadlockDetection: {
- *     timeout: 30000,
- *     onDeadlock: (tasks) => console.warn('Potential deadlock:', tasks)
- *   }
- * })
- * ```
  */
 /* #__PURE__ */
 export class DeadlockDetector implements Disposable {
@@ -30,14 +30,9 @@ export class DeadlockDetector implements Disposable {
 	constructor(
 		options: DeadlockDetectionOptions,
 		private scopeName: string,
-		scope?: { registerDisposable(disposable: Disposable): void },
 	) {
 		this.options = options;
 		this.startMonitoring();
-		// Auto-register with scope if provided
-		if (scope) {
-			scope.registerDisposable(this);
-		}
 	}
 
 	/**
@@ -76,7 +71,7 @@ export class DeadlockDetector implements Disposable {
 		const now = performance.now();
 		const stuckTasks: string[] = [];
 
-		for (const [_, task] of this.waitingTasks) {
+		for (const [, task] of this.waitingTasks) {
 			const waitTime = now - task.since;
 			if (waitTime > this.options.timeout) {
 				stuckTasks.push(
@@ -121,3 +116,54 @@ export class DeadlockDetector implements Disposable {
 		return this.waitingTasks.size;
 	}
 }
+
+/**
+ * Deadlock detector plugin
+ */
+export interface DeadlockDetectorPluginOptions {
+	deadlockDetection: DeadlockDetectionOptions;
+}
+
+/**
+ * Create the deadlock detector plugin
+ */
+export function deadlockDetectorPlugin(
+	options: DeadlockDetectionOptions,
+): ScopePlugin {
+	return {
+		name: "deadlock-detector",
+
+		install(scope: Scope, _scopeOptions) {
+			const detector = new DeadlockDetector(
+				options,
+				(scope as unknown as { name: string }).name ?? "scope",
+			);
+
+			// Store detector on scope
+			(
+				scope as unknown as { _deadlockDetector?: DeadlockDetector }
+			)._deadlockDetector = detector;
+
+			// Register cleanup
+			scope.onDispose(() => {
+				detector.dispose();
+			});
+		},
+
+		cleanup(scope) {
+			(
+				scope as unknown as { _deadlockDetector?: DeadlockDetector }
+			)._deadlockDetector?.dispose();
+		},
+	};
+}
+
+// Augment Scope to include deadlock detector
+declare module "go-go-scope" {
+	interface Scope {
+		/** @internal Deadlock detector instance */
+		_deadlockDetector?: DeadlockDetector;
+	}
+}
+
+export type { ScopePlugin };

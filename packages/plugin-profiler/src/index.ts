@@ -1,8 +1,40 @@
 /**
- * Profiler for go-go-scope - Task performance profiling
+ * Profiler plugin for go-go-scope
  */
 
-import type { ScopeProfileReport, TaskProfile } from "./types.js";
+import type { Scope, ScopePlugin } from "go-go-scope";
+
+/**
+ * Task profile data
+ */
+export interface TaskProfile {
+	name: string;
+	index: number;
+	stages: {
+		execution: number;
+		retry?: number;
+		circuitBreaker?: number;
+		concurrency?: number;
+	};
+	totalDuration: number;
+	retryAttempts: number;
+	succeeded?: boolean;
+}
+
+/**
+ * Profile report for a scope
+ */
+export interface ScopeProfileReport {
+	tasks: TaskProfile[];
+	statistics: {
+		totalTasks: number;
+		successfulTasks: number;
+		failedTasks: number;
+		avgTotalDuration: number;
+		avgExecutionDuration: number;
+		totalRetryAttempts: number;
+	};
+}
 
 /**
  * Internal tracking for task profiling
@@ -20,18 +52,6 @@ interface TaskProfileData {
 /**
  * Profiler for tracking task execution performance.
  * Measures time spent in each pipeline stage.
- *
- * @example
- * ```typescript
- * await using s = scope({ profiler: true })
- *
- * await s.task(() => fetchData())
- * await s.task(() => processData())
- *
- * // After scope exits, get profile report
- * const report = s.getProfileReport()
- * console.log(report.statistics.avgTotalDuration)
- * ```
  */
 /* #__PURE__ */
 export class Profiler implements Disposable {
@@ -39,15 +59,8 @@ export class Profiler implements Disposable {
 	private profiles: TaskProfile[] = [];
 	enabled = false;
 
-	constructor(
-		enabled = false,
-		scope?: { registerDisposable(disposable: Disposable): void },
-	) {
+	constructor(enabled = false) {
 		this.enabled = enabled;
-		// Auto-register with scope if enabled and scope provided
-		if (enabled && scope) {
-			scope.registerDisposable(this);
-		}
 	}
 
 	/**
@@ -76,12 +89,7 @@ export class Profiler implements Disposable {
 		const task = this.tasks.get(taskIndex);
 		if (!task) return;
 
-		// End previous stage
 		const now = performance.now();
-
-		// Only record if there was a previous explicit stage
-		// Execution time is calculated differently
-
 		task.stageStartTime = now;
 	}
 
@@ -198,4 +206,64 @@ export class Profiler implements Disposable {
 	[Symbol.dispose](): void {
 		this.clear();
 	}
+
+	/**
+	 * Alias for Symbol.dispose for convenience.
+	 */
+	dispose(): void {
+		this[Symbol.dispose]();
+	}
 }
+
+/**
+ * Profiler plugin options
+ */
+export interface ProfilerPluginOptions {
+	profiler: boolean;
+}
+
+/**
+ * Create the profiler plugin
+ */
+export function profilerPlugin(enabled = true): ScopePlugin {
+	return {
+		name: "profiler",
+
+		install(scope: Scope) {
+			const profiler = new Profiler(enabled);
+
+			// Store profiler on scope
+			(scope as unknown as { _profiler?: Profiler })._profiler = profiler;
+
+			// Add profile method to scope
+			(
+				scope as unknown as {
+					profile?(): ScopeProfileReport | undefined;
+				}
+			).profile = () => {
+				return profiler.getReport();
+			};
+
+			// Register cleanup
+			scope.onDispose(() => {
+				profiler.dispose();
+			});
+		},
+
+		cleanup(scope) {
+			(scope as unknown as { _profiler?: Profiler })._profiler?.dispose();
+		},
+	};
+}
+
+// Augment Scope to include profiler
+declare module "go-go-scope" {
+	interface Scope {
+		/** @internal Profiler instance */
+		_profiler?: Profiler;
+		/** Get profiling report */
+		profile?(): ScopeProfileReport | undefined;
+	}
+}
+
+export type { ScopePlugin };

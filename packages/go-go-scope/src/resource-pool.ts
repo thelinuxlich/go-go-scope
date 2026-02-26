@@ -5,6 +5,16 @@
 import type { ResourcePoolOptions } from "./types.js";
 
 /**
+ * Health check result for a resource
+ */
+export interface HealthCheckResult {
+	/** Whether the resource is healthy */
+	healthy: boolean;
+	/** Optional message explaining the health status */
+	message?: string;
+}
+
+/**
  * A managed pool of resources with automatic lifecycle management.
  * Useful for connection pooling (databases, HTTP clients, etc.).
  *
@@ -15,6 +25,15 @@ import type { ResourcePoolOptions } from "./types.js";
  * const pool = s.pool({
  *   create: () => createDatabaseConnection(),
  *   destroy: (conn) => conn.close(),
+ *   healthCheck: async (conn) => {
+ *     try {
+ *       await conn.query('SELECT 1')
+ *       return { healthy: true }
+ *     } catch {
+ *       return { healthy: false, message: 'Connection failed health check' }
+ *     }
+ *   },
+ *   healthCheckInterval: 30000, // Check every 30s
  *   min: 2,
  *   max: 10,
  *   acquireTimeout: 5000
@@ -42,6 +61,8 @@ export class ResourcePool<T> implements AsyncDisposable {
 	private disposed = false;
 	private abortReason: unknown;
 	private aborted = false;
+	private healthCheckTimer?: ReturnType<typeof setInterval>;
+	private unhealthyResources = new Set<T>();
 
 	constructor(
 		private options: ResourcePoolOptions<T>,
@@ -57,6 +78,15 @@ export class ResourcePool<T> implements AsyncDisposable {
 				},
 				{ once: true },
 			);
+		}
+
+		// Set up periodic health checks if configured
+		if (
+			options.healthCheck &&
+			options.healthCheckInterval &&
+			options.healthCheckInterval > 0
+		) {
+			this.startHealthChecks();
 		}
 	}
 
@@ -182,6 +212,10 @@ export class ResourcePool<T> implements AsyncDisposable {
 		inUse: number;
 		waiting: number;
 		creating: number;
+		/** Number of resources that failed health checks */
+		unhealthy: number;
+		/** Whether health checks are enabled */
+		healthChecksEnabled: boolean;
 	} {
 		return {
 			total: this.resources.length,
@@ -189,7 +223,95 @@ export class ResourcePool<T> implements AsyncDisposable {
 			inUse: this.resources.length - this.available.length,
 			waiting: this.waiters.length,
 			creating: this.creating,
+			unhealthy: this.unhealthyResources.size,
+			healthChecksEnabled: !!this.options.healthCheck,
 		};
+	}
+
+	/**
+	 * Manually trigger a health check on all resources.
+	 * Unhealthy resources will be destroyed and replaced (if min pool size is set).
+	 *
+	 * @returns Number of unhealthy resources found and removed
+	 */
+	async checkHealth(): Promise<number> {
+		if (!this.options.healthCheck) {
+			return 0;
+		}
+
+		const healthCheck = this.options.healthCheck;
+		const resourcesToCheck = [...this.resources];
+		let unhealthyCount = 0;
+
+		for (const resource of resourcesToCheck) {
+			try {
+				const result = await healthCheck(resource);
+				if (!result.healthy) {
+					unhealthyCount++;
+					this.unhealthyResources.add(resource);
+					await this.removeResource(resource);
+				}
+			} catch {
+				// Treat exceptions as unhealthy
+				unhealthyCount++;
+				this.unhealthyResources.add(resource);
+				await this.removeResource(resource);
+			}
+		}
+
+		// Replenish pool if we're below min size
+		const min = this.options.min ?? 0;
+		if (this.resources.length < min) {
+			const needed = min - this.resources.length;
+			for (let i = 0; i < needed; i++) {
+				try {
+					const resource = await this.createResource();
+					this.available.push(resource);
+				} catch {
+					// Ignore creation failures during replenishment
+				}
+			}
+		}
+
+		return unhealthyCount;
+	}
+
+	/**
+	 * Start periodic health checks.
+	 * @internal
+	 */
+	private startHealthChecks(): void {
+		const interval = this.options.healthCheckInterval ?? 30000;
+		this.healthCheckTimer = setInterval(() => {
+			void this.checkHealth();
+		}, interval);
+	}
+
+	/**
+	 * Remove a resource from the pool and destroy it.
+	 * @internal
+	 */
+	private async removeResource(resource: T): Promise<void> {
+		// Remove from resources array
+		const index = this.resources.indexOf(resource);
+		if (index > -1) {
+			this.resources.splice(index, 1);
+		}
+
+		// Remove from available array
+		const availableIndex = this.available.indexOf(resource);
+		if (availableIndex > -1) {
+			this.available.splice(availableIndex, 1);
+		}
+
+		// Destroy the resource
+		try {
+			await this.options.destroy(resource);
+		} catch {
+			// Ignore destruction errors
+		}
+
+		this.unhealthyResources.delete(resource);
 	}
 
 	/**
@@ -198,6 +320,12 @@ export class ResourcePool<T> implements AsyncDisposable {
 	async [Symbol.asyncDispose](): Promise<void> {
 		if (this.disposed) return;
 		this.disposed = true;
+
+		// Stop health checks
+		if (this.healthCheckTimer) {
+			clearInterval(this.healthCheckTimer);
+			this.healthCheckTimer = undefined;
+		}
 
 		// Reject all waiting acquirers
 		this.drainWaiters();
@@ -215,6 +343,7 @@ export class ResourcePool<T> implements AsyncDisposable {
 
 		this.resources = [];
 		this.available = [];
+		this.unhealthyResources.clear();
 	}
 
 	private async createResource(): Promise<T> {

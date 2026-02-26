@@ -9,8 +9,6 @@ import { type Scope, scope } from "go-go-scope";
 export interface ElysiaGoGoScopeOptions {
 	/** Root scope name */
 	name?: string;
-	/** Enable metrics collection */
-	metrics?: boolean;
 	/** Default timeout for all requests */
 	timeout?: number;
 }
@@ -54,11 +52,11 @@ export const ROOT_SCOPE_KEY = Symbol("go-go-root-scope");
  * ```
  */
 export function goGoScope(options: ElysiaGoGoScopeOptions = {}) {
-	const { name = "elysia-app", metrics = false, timeout } = options;
+	const { name = "elysia-app", timeout } = options;
 
 	// Create root scope on first use
 	if (!rootScope) {
-		rootScope = scope({ name, metrics });
+		rootScope = scope({ name });
 	}
 
 	return (app: Elysia) => {

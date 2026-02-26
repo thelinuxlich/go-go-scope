@@ -4,7 +4,7 @@
 
 import createDebug from "debug";
 import { Scope } from "./scope.js";
-import type { ParallelResults, Result, Tracer } from "./types.js";
+import type { ParallelResults, Result } from "./types.js";
 
 const debugScope = createDebug("go-go-scope:parallel");
 
@@ -38,7 +38,6 @@ export async function parallel<
 	options?: {
 		concurrency?: number;
 		signal?: AbortSignal;
-		tracer?: Tracer;
 		onProgress?: (
 			completed: number,
 			total: number,
@@ -80,7 +79,7 @@ export async function parallel<
 		throw options.signal.reason;
 	}
 
-	const s = new Scope({ signal: options?.signal, tracer: options?.tracer });
+	const s = new Scope({ signal: options?.signal });
 
 	// Use a fixed-size array to preserve order and types
 	const results: Result<unknown, unknown>[] = new Array(factories.length);

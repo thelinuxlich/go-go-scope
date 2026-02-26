@@ -127,7 +127,8 @@ export class PerformanceMonitor {
 	 * Get current metrics
 	 */
 	getMetrics(): PerformanceMetrics {
-		const scopeMetrics = this.scope.metrics();
+		// biome-ignore lint/suspicious/noExplicitAny: Accessing optional metrics plugin
+		const scopeMetrics = (this.scope as any).metrics?.();
 		const now = performance.now();
 		const elapsedSeconds = (now - this.startTime) / 1000;
 

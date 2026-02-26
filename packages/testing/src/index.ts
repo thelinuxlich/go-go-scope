@@ -18,6 +18,13 @@
 
 import { Scope, type ScopeOptions, type TaskOptions } from "go-go-scope";
 
+// Re-export assertion helpers
+export {
+	assertRejects,
+	assertResolves,
+	assertResolvesWithin,
+	expectTask,
+} from "./assertions.js";
 // Re-export time controller
 export {
 	createTestScope,
@@ -49,6 +56,8 @@ export interface TaskCall {
 	fn: (ctx: {
 		services: Record<string, never>;
 		signal: AbortSignal;
+		logger: import("go-go-scope").Logger;
+		context: Record<string, unknown>;
 	}) => Promise<unknown>;
 	options?: TaskOptions;
 }
@@ -117,6 +126,8 @@ export function createMockScope(options: MockScopeOptions = {}): MockScope {
 		fn: (ctx: {
 			services: Record<string, never>;
 			signal: AbortSignal;
+			logger: import("go-go-scope").Logger;
+			context: Record<string, unknown>;
 		}) => Promise<T>,
 		taskOptions?: TaskOptions<E>,
 	) => {

@@ -17,8 +17,6 @@ declare module "hono" {
 export interface HonoGoGoScopeOptions {
 	/** Root scope name */
 	name?: string;
-	/** Enable metrics collection */
-	metrics?: boolean;
 	/** Default timeout for all requests */
 	timeout?: number;
 }
@@ -56,11 +54,11 @@ let rootScope: Scope<Record<string, unknown>> | null = null;
 export function goGoScope(
 	options: HonoGoGoScopeOptions = {},
 ): MiddlewareHandler {
-	const { name = "hono-app", metrics = false, timeout } = options;
+	const { name = "hono-app", timeout } = options;
 
 	// Create root scope on first use
 	if (!rootScope) {
-		rootScope = scope({ name, metrics });
+		rootScope = scope({ name });
 	}
 
 	return async (c: Context, next: Next) => {

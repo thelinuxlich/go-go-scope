@@ -20,8 +20,6 @@ export const GOGO_MODULE_OPTIONS = Symbol("GOGO_MODULE_OPTIONS");
 export interface GoGoScopeModuleOptions {
 	/** Root scope name */
 	name?: string;
-	/** Enable metrics collection */
-	metrics?: boolean;
 	/** Default timeout for all requests */
 	timeout?: number;
 }
@@ -40,7 +38,6 @@ export class GoGoScopeService implements OnModuleDestroy {
 	) {
 		this.rootScope = scope({
 			name: _options.name ?? "nestjs-app",
-			metrics: _options.metrics,
 			timeout: _options.timeout,
 		});
 	}
@@ -57,13 +54,6 @@ export class GoGoScopeService implements OnModuleDestroy {
 			name,
 			...options,
 		});
-	}
-
-	/**
-	 * Get current metrics from the root scope
-	 */
-	getMetrics() {
-		return this.rootScope.metrics();
 	}
 
 	async onModuleDestroy() {

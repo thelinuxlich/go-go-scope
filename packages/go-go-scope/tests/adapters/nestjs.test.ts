@@ -13,7 +13,7 @@ describe("NestJS adapter", () => {
 
 	test("NestJS root scope pattern", async () => {
 		// Simulate @Injectable({ scope: Scope.DEFAULT })
-		const rootScope = scope({ name: "nestjs-app", metrics: true });
+		const rootScope = scope({ name: "nestjs-app" });
 
 		const [err, result] = await rootScope.task(async () => {
 			return { service: "ready" };

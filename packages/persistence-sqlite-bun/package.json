@@ -1,65 +1,65 @@
 {
-  "name": "@go-go-scope/persistence-sqlite-bun",
-  "version": "2.2.0",
-  "description": "Bun-native SQLite persistence adapter for go-go-scope - uses bun:sqlite for optimal performance",
-  "type": "module",
-  "main": "./dist/index.mjs",
-  "types": "./dist/index.d.mts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.mts",
-      "default": "./dist/index.mjs"
-    }
-  },
-  "scripts": {
-    "build": "pkgroll --clean-dist",
-    "lint": "biome check --write src/",
-    "test": "bun test src/index.test.ts",
-    "clean": "rm -rf dist",
-    "typecheck": "tsc --noEmit"
-  },
-  "keywords": [
-    "bun",
-    "sqlite",
-    "persistence",
-    "distributed-locks",
-    "circuit-breaker",
-    "go-go-scope",
-    "bun:sqlite"
-  ],
-  "engines": {
-    "node": ">=24.0.0"
-  },
-  "author": "thelinuxlich",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/thelinuxlich/go-go-scope.git",
-    "directory": "packages/persistence-sqlite-bun"
-  },
-  "files": [
-    "dist/",
-    "README.md"
-  ],
-  "publishConfig": {
-    "access": "public"
-  },
-  "dependencies": {
-    "go-go-scope": "workspace:*"
-  },
-  "peerDependencies": {
-    "bun": ">=1.0.0"
-  },
-  "peerDependenciesMeta": {
-    "bun": {
-      "optional": true
-    }
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^2.4.3",
-    "@types/node": "^24",
-    "pkgroll": "^2.26.3",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
-  }
+	"name": "@go-go-scope/persistence-sqlite-bun",
+	"version": "2.3.0",
+	"description": "Bun-native SQLite persistence adapter for go-go-scope - uses bun:sqlite for optimal performance",
+	"type": "module",
+	"main": "./dist/index.mjs",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.mts",
+			"default": "./dist/index.mjs"
+		}
+	},
+	"scripts": {
+		"build": "pkgroll --clean-dist",
+		"lint": "biome check --write src/",
+		"test": "bun test src/index.test.ts",
+		"clean": "rm -rf dist",
+		"typecheck": "tsc --noEmit"
+	},
+	"keywords": [
+		"bun",
+		"sqlite",
+		"persistence",
+		"distributed-locks",
+		"circuit-breaker",
+		"go-go-scope",
+		"bun:sqlite"
+	],
+	"engines": {
+		"node": ">=24.0.0"
+	},
+	"author": "thelinuxlich",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/thelinuxlich/go-go-scope.git",
+		"directory": "packages/persistence-sqlite-bun"
+	},
+	"files": [
+		"dist/",
+		"README.md"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"go-go-scope": "workspace:*"
+	},
+	"peerDependencies": {
+		"bun": ">=1.0.0"
+	},
+	"peerDependenciesMeta": {
+		"bun": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.3",
+		"@types/node": "^24",
+		"pkgroll": "^2.26.3",
+		"typescript": "^5.9.3",
+		"vitest": "^4.0.18"
+	}
 }

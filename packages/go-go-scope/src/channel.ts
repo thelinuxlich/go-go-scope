@@ -457,7 +457,10 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 				resolveRecv = res;
 				rejectRecv = rej;
 			});
-			this.receiveQueue.push({ resolve: resolveRecv as (value: unknown) => void, reject: rejectRecv });
+			this.receiveQueue.push({
+				resolve: resolveRecv as (value: unknown) => void,
+				reject: rejectRecv,
+			});
 			return promise;
 		}
 
@@ -485,7 +488,10 @@ export class Channel<T> implements AsyncIterable<T>, AsyncDisposable {
 			resolveRecv = res;
 			rejectRecv = rej;
 		});
-		this.receiveQueue.push({ resolve: resolveRecv as (value: unknown) => void, reject: rejectRecv });
+		this.receiveQueue.push({
+			resolve: resolveRecv as (value: unknown) => void,
+			reject: rejectRecv,
+		});
 		return promise;
 	}
 

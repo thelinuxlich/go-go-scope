@@ -2,11 +2,6 @@
  * Type definitions and interfaces for go-go-scope
  */
 
-import type { Context, Span, SpanOptions, Tracer } from "@opentelemetry/api";
-
-// Re-export OpenTelemetry types for users
-export type { Context, Span, SpanOptions, Tracer };
-
 export type Success<T> = readonly [undefined, T];
 export type Failure<E> = readonly [E, undefined];
 export type Result<E, T> = Success<T> | Failure<E>;
@@ -72,6 +67,20 @@ export interface RetryStrategies {
 	 * @returns Delay function for retry option
 	 */
 	linear(baseDelay: number, increment: number): RetryDelayFn;
+}
+
+/**
+ * Context passed to task functions.
+ */
+export interface TaskContext<Services extends Record<string, unknown>> {
+	/** Services available from the scope */
+	services: Services;
+	/** AbortSignal for cancellation */
+	signal: AbortSignal;
+	/** Logger with task context */
+	logger: Logger;
+	/** Context object inherited from scope */
+	context: Record<string, unknown>;
 }
 
 /**
@@ -359,11 +368,20 @@ export interface ScopeHooks {
 	/**
 	 * Called before a task starts execution
 	 */
-	beforeTask?: (taskName: string, taskIndex: number) => void;
+	beforeTask?: (
+		taskName: string,
+		taskIndex: number,
+		options?: TaskOptions,
+	) => void;
 	/**
 	 * Called after a task completes (success or failure)
 	 */
-	afterTask?: (taskName: string, durationMs: number, error?: unknown) => void;
+	afterTask?: (
+		taskName: string,
+		durationMs: number,
+		error?: unknown,
+		taskIndex?: number,
+	) => void;
 	/**
 	 * Called when the scope is cancelled
 	 */
@@ -372,6 +390,14 @@ export interface ScopeHooks {
 	 * Called when a resource is disposed
 	 */
 	onDispose?: (resourceIndex: number, error?: unknown) => void;
+	/**
+	 * Called when the scope is being disposed
+	 */
+	beforeDispose?: () => void;
+	/**
+	 * Called after the scope has been disposed
+	 */
+	afterDispose?: () => void;
 }
 
 /**
@@ -396,68 +422,6 @@ export interface ThrottleOptions {
 	leading?: boolean;
 	/** Trigger on the trailing edge (default: false) */
 	trailing?: boolean;
-}
-
-/**
- * Metrics collected by a scope
- */
-export interface ScopeMetrics {
-	/** Number of tasks spawned */
-	tasksSpawned: number;
-	/** Number of tasks completed successfully */
-	tasksCompleted: number;
-	/** Number of tasks that failed */
-	tasksFailed: number;
-	/** Total task execution time in milliseconds */
-	totalTaskDuration: number;
-	/** Average task duration in milliseconds */
-	avgTaskDuration: number;
-	/** 95th percentile task duration (approximation) */
-	p95TaskDuration: number;
-	/** Number of resources registered for cleanup */
-	resourcesRegistered: number;
-	/** Number of resources successfully disposed */
-	resourcesDisposed: number;
-	/** Scope duration in milliseconds (only available after disposal) */
-	scopeDuration?: number;
-	/** Histogram metrics recorded during scope lifetime */
-	histograms?: Record<string, HistogramSnapshot>;
-}
-
-/**
- * Histogram for tracking value distributions with percentile calculations.
- */
-export interface Histogram {
-	/** Record a value in the histogram */
-	record(value: number): void;
-	/** Get current snapshot with percentile calculations */
-	snapshot(): HistogramSnapshot;
-}
-
-/**
- * Snapshot of histogram data with percentile calculations.
- */
-export interface HistogramSnapshot {
-	/** Name of the histogram */
-	name: string;
-	/** Total number of values recorded */
-	count: number;
-	/** Sum of all values */
-	sum: number;
-	/** Minimum value recorded */
-	min: number;
-	/** Maximum value recorded */
-	max: number;
-	/** Average value */
-	avg: number;
-	/** 50th percentile (median) */
-	p50: number;
-	/** 90th percentile */
-	p90: number;
-	/** 95th percentile */
-	p95: number;
-	/** 99th percentile */
-	p99: number;
 }
 
 /**
@@ -487,6 +451,49 @@ export interface CircuitBreakerOptions {
 	onClose?: () => void;
 	/** Called when circuit enters half-open state */
 	onHalfOpen?: () => void;
+	/**
+	 * Success threshold - number of consecutive successes in half-open state
+	 * before transitioning to closed. Default: 1
+	 */
+	successThreshold?: number;
+	/**
+	 * Enable adaptive threshold based on error rate.
+	 * Threshold decreases as error rate increases for faster reaction.
+	 * Default: false
+	 */
+	adaptiveThreshold?: boolean;
+	/**
+	 * Minimum failure threshold when adaptive mode is enabled.
+	 * Default: 2
+	 */
+	minThreshold?: number;
+	/**
+	 * Maximum failure threshold when adaptive mode is enabled.
+	 * Default: 10
+	 */
+	maxThreshold?: number;
+	/**
+	 * Window size in ms for calculating error rate in adaptive mode.
+	 * Default: 60000 (1 minute)
+	 */
+	errorRateWindowMs?: number;
+	/**
+	 * Called when threshold adapts based on error rate
+	 */
+	onThresholdAdapt?: (newThreshold: number, errorRate: number) => void;
+	/**
+	 * Use sliding window for failure counting instead of fixed count.
+	 * When enabled, failures are counted within a time window rather than cumulatively.
+	 * This prevents the circuit from opening due to old failures.
+	 * Default: false
+	 */
+	slidingWindow?: boolean;
+	/**
+	 * Size of the sliding window in milliseconds.
+	 * Only used when slidingWindow is true.
+	 * Default: 60000 (1 minute)
+	 */
+	slidingWindowSizeMs?: number;
 }
 
 /**
@@ -502,10 +509,6 @@ export interface RaceOptions {
 	 * Optional signal to cancel the race.
 	 */
 	signal?: AbortSignal;
-	/**
-	 * Optional tracer for OpenTelemetry integration.
-	 */
-	tracer?: Tracer;
 	/**
 	 * If true, only successful results count as winners. Errors continue racing.
 	 * If false (default), first settled task wins regardless of success/error.
@@ -590,16 +593,6 @@ export interface ScopeLoggingOptions {
 }
 
 /**
- * Deadlock detection configuration
- */
-export interface DeadlockDetectionOptions {
-	/** Timeout in milliseconds before warning about potential deadlock */
-	timeout: number;
-	/** Callback when potential deadlock is detected */
-	onDeadlock?: (waitingTasks: string[]) => void;
-}
-
-/**
  * Resource pool configuration
  */
 export interface ResourcePoolOptions<T> {
@@ -613,18 +606,19 @@ export interface ResourcePoolOptions<T> {
 	max: number;
 	/** Maximum time to wait for a resource (ms) */
 	acquireTimeout?: number;
-}
-
-/**
- * Metrics export format options
- */
-export interface MetricsExportOptions {
-	/** Export format */
-	format: "json" | "prometheus" | "otel";
-	/** Scope name prefix for metrics */
-	prefix?: string;
-	/** Include timestamps (default: true). Set to false for Prometheus Pushgateway. */
-	includeTimestamps?: boolean;
+	/**
+	 * Optional health check function to validate resources.
+	 * Called periodically if healthCheckInterval is set.
+	 */
+	healthCheck?: (
+		resource: T,
+	) => Promise<{ healthy: boolean; message?: string }>;
+	/**
+	 * Interval in milliseconds between periodic health checks.
+	 * Only used if healthCheck is provided.
+	 * @default 30000
+	 */
+	healthCheckInterval?: number;
 }
 
 /**
@@ -659,47 +653,6 @@ export type ParallelResults<
 > = {
 	[K in keyof T]: Result<E, FactoryResult<T[K]>>;
 };
-
-/**
- * Task profiling information
- */
-export interface TaskProfile {
-	/** Task name */
-	name: string;
-	/** Task index */
-	index: number;
-	/** Time spent in each pipeline stage (ms) */
-	stages: {
-		circuitBreaker?: number;
-		concurrency?: number;
-		retry?: number;
-		timeout?: number;
-		execution: number;
-	};
-	/** Total duration (ms) */
-	totalDuration: number;
-	/** Number of retry attempts */
-	retryAttempts: number;
-	/** Whether task succeeded */
-	succeeded: boolean;
-}
-
-/**
- * Profile report for a scope
- */
-export interface ScopeProfileReport {
-	/** Per-task profiles */
-	tasks: TaskProfile[];
-	/** Aggregated statistics */
-	statistics: {
-		totalTasks: number;
-		successfulTasks: number;
-		failedTasks: number;
-		avgTotalDuration: number;
-		avgExecutionDuration: number;
-		totalRetryAttempts: number;
-	};
-}
 
 // Re-export persistence types
 export type {

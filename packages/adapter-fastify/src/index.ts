@@ -20,8 +20,6 @@ declare module "fastify" {
 export interface FastifyGoGoScopeOptions {
 	/** Root scope name */
 	name?: string;
-	/** Enable metrics collection */
-	metrics?: boolean;
 	/** Default timeout for all requests */
 	timeout?: number;
 }
@@ -53,10 +51,10 @@ export interface FastifyGoGoScopeOptions {
 export const fastifyGoGoScope: FastifyPluginAsync<FastifyGoGoScopeOptions> = fp(
 	async (fastify, opts = {}) => {
 		const options = opts as FastifyGoGoScopeOptions;
-		const { name = "fastify-app", metrics = false, timeout } = options;
+		const { name = "fastify-app", timeout } = options;
 
 		// Create root application scope
-		const rootScope = scope({ name, metrics });
+		const rootScope = scope({ name });
 		fastify.decorate("scope", rootScope as Scope);
 
 		// Create request-scoped child for each request

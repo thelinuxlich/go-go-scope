@@ -76,14 +76,19 @@ Complete guide to structured concurrency in TypeScript.
 ### Concurrency & Streams
 - ✅ **Streams** - Lazy async pipelines with 50+ operations
 - ✅ **Channels** - Go-style buffered channels with `map`, `filter`, `reduce`
+- ✅ **Priority Channels** - Priority-based message delivery
 - ✅ **Batch Processing** - Process arrays with progress tracking
 - ✅ **Concurrency Limits** - Semaphore-based rate limiting
+- ✅ **Token Bucket** - Rate limiting with burst support
 - ✅ **Persistence Adapters** - Redis, PostgreSQL, MySQL, SQLite support
 
 ### Observability & Persistence
-- ✅ **Metrics** - Prometheus/JSON export, cross-scope aggregation
+- ✅ **Metrics** - Prometheus/JSON export, counters, gauges, histograms
 - ✅ **Debug Tools** - `debugTree()` for visualizing scope hierarchies
 - ✅ **OpenTelemetry** - Distributed tracing support
+- ✅ **Structured Logging** - Pino/Winston adapters with redaction
+- ✅ **Graceful Shutdown** - Signal handling with cleanup coordination
+- ✅ **Request Context** - Automatic context propagation
 - ✅ **Distributed Locks** - Redis, PostgreSQL, MySQL, SQLite, MongoDB, DynamoDB adapters
 - ✅ **Circuit Breaker State** - Shared state across multiple instances
 - ✅ **Framework Adapters** - Fastify, Express, NestJS, Hono, Elysia, Koa, Hapi
@@ -92,6 +97,7 @@ Complete guide to structured concurrency in TypeScript.
 
 ### Testing
 - ✅ **Mock Scopes** - `createMockScope` for isolated testing
+- ✅ **Fluent Assertions** - `expectTask`, `assertResolves`, `assertRejects`
 - ✅ **Time Travel** - `createTimeController` for testing timeouts
 - ✅ **Spies** - Built-in spy functions
 - ✅ **Bun Compatible** - Full test suite passes under Bun runtime

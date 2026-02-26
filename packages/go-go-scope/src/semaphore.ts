@@ -73,6 +73,144 @@ export class Semaphore implements AsyncDisposable {
 	}
 
 	/**
+	 * Try to acquire a permit without blocking.
+	 * Returns true if permit was acquired, false otherwise.
+	 */
+	tryAcquire(): boolean {
+		if (this.aborted) {
+			return false;
+		}
+
+		if (this.permits > 0) {
+			this.permits--;
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Try to acquire a permit and execute a function.
+	 * Returns the function result if permit was acquired, undefined otherwise.
+	 */
+	async tryAcquireWithFn<T>(fn: () => Promise<T>): Promise<T | undefined> {
+		if (this.tryAcquire()) {
+			try {
+				return await fn();
+			} finally {
+				this.release();
+			}
+		}
+		return undefined;
+	}
+
+	/**
+	 * Acquire a permit with a timeout.
+	 * Returns true if permit was acquired within timeout, false otherwise.
+	 */
+	async acquireWithTimeout(timeoutMs: number): Promise<boolean> {
+		return new Promise((resolve) => {
+			if (this.aborted) {
+				resolve(false);
+				return;
+			}
+
+			if (this.permits > 0) {
+				this.permits--;
+				resolve(true);
+				return;
+			}
+
+			const timeoutId = setTimeout(() => {
+				// Remove from queue if still waiting
+				const index = this.queue.findIndex(
+					(item) => item.resolve === resolveFn,
+				);
+				if (index !== -1) {
+					this.queue.splice(index, 1);
+				}
+				resolve(false);
+			}, timeoutMs);
+
+			const resolveFn = () => {
+				clearTimeout(timeoutId);
+				resolve(true);
+			};
+
+			this.queue.push({
+				resolve: resolveFn,
+				reject: () => {
+					clearTimeout(timeoutId);
+					resolve(false);
+				},
+			});
+		});
+	}
+
+	/**
+	 * Acquire a permit with timeout and execute a function.
+	 * Returns undefined if timeout was reached.
+	 */
+	async acquireWithTimeoutAndFn<T>(
+		timeoutMs: number,
+		fn: () => Promise<T>,
+	): Promise<T | undefined> {
+		const acquired = await this.acquireWithTimeout(timeoutMs);
+		if (!acquired) return undefined;
+
+		try {
+			return await fn();
+		} finally {
+			this.release();
+		}
+	}
+
+	/**
+	 * Acquire multiple permits at once.
+	 * Blocks until all permits are available.
+	 */
+	async bulkAcquire<T>(count: number, fn: () => Promise<T>): Promise<T> {
+		if (count <= 0) {
+			throw new Error("bulkAcquire: count must be positive");
+		}
+		if (count > this.initialPermits) {
+			throw new Error(
+				`bulkAcquire: count (${count}) exceeds total permits (${this.initialPermits})`,
+			);
+		}
+
+		await this.waitForMultiple(count);
+		try {
+			return await fn();
+		} finally {
+			this.releaseMultiple(count);
+		}
+	}
+
+	/**
+	 * Try to acquire multiple permits without blocking.
+	 * Returns true if permits were acquired, false otherwise.
+	 */
+	tryBulkAcquire(count: number): boolean {
+		if (count <= 0) {
+			throw new Error("tryBulkAcquire: count must be positive");
+		}
+		if (count > this.initialPermits) {
+			return false;
+		}
+		if (this.aborted) {
+			return false;
+		}
+
+		if (this.permits >= count) {
+			this.permits -= count;
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
 	 * Wait for a permit to become available.
 	 */
 	private wait(): Promise<void> {
@@ -106,6 +244,47 @@ export class Semaphore implements AsyncDisposable {
 			}
 		} else {
 			this.permits++;
+		}
+	}
+
+	/**
+	 * Wait for multiple permits to become available.
+	 */
+	private async waitForMultiple(count: number): Promise<void> {
+		const acquireOne = (): Promise<void> => {
+			if (this.aborted) {
+				return Promise.reject(this.abortReason);
+			}
+
+			if (this.permits > 0) {
+				this.permits--;
+				return Promise.resolve();
+			}
+
+			let resolveSem!: () => void;
+			let rejectSem!: (reason: unknown) => void;
+			const promise = new Promise<void>((res, rej) => {
+				resolveSem = res;
+				rejectSem = rej;
+			});
+			this.queue.push({ resolve: resolveSem, reject: rejectSem });
+			return promise;
+		};
+
+		// Acquire permits one by one
+		const acquisitions: Promise<void>[] = [];
+		for (let i = 0; i < count; i++) {
+			acquisitions.push(acquireOne());
+		}
+		await Promise.all(acquisitions);
+	}
+
+	/**
+	 * Release multiple permits.
+	 */
+	private releaseMultiple(count: number): void {
+		for (let i = 0; i < count; i++) {
+			this.release();
 		}
 	}
 

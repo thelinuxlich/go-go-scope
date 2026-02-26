@@ -384,21 +384,6 @@ describe("Stream - Combining Operations", () => {
 		expect(oddResults).toEqual([1, 3, 5]);
 	});
 
-	test.skip("broadcast creates multiple consumers", async () => {
-		// Broadcast uses queue-based distribution which needs further refinement
-		await using s = scope();
-		const [s1, s2] = new Stream(fromArray([1, 2, 3]), s)
-			.broadcast(2);
-
-		const [err1, r1] = await s1.toArray();
-		const [err2, r2] = await s2.toArray();
-
-		expect(err1).toBeUndefined();
-		expect(err2).toBeUndefined();
-		expect(r1).toEqual([1, 2, 3]);
-		expect(r2).toEqual([1, 2, 3]);
-	});
-
 	test("switchMap with async outer emits all inner values", async () => {
 		await using s = scope();
 
@@ -653,18 +638,6 @@ describe("Stream - Error Handling", () => {
 		expect(err).toBeInstanceOf(Error);
 	});
 
-	test.skip("retry with delay between retries", async () => {
-		// Retry works for mid-stream failures, but the stream must be re-consumable
-		// This is a limitation - retry works best with factory functions
-		await using s = scope();
-		
-		const [err, results] = await new Stream(fromArray([1, 2, 3]), s)
-			.retry({ maxRetries: 2, delay: 10 })
-			.toArray();
-
-		expect(err).toBeUndefined();
-		expect(results).toEqual([1, 2, 3]);
-	});
 });
 
 describe("Stream - Terminal Operations", () => {

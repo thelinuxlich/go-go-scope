@@ -17,8 +17,7 @@ declare module "koa" {
 export interface KoaGoGoScopeOptions {
 	/** Root scope name */
 	name?: string;
-	/** Enable metrics collection */
-	metrics?: boolean;
+
 	/** Default timeout for all requests */
 	timeout?: number;
 	/** Optional error handler */
@@ -58,11 +57,11 @@ let rootScope: Scope<Record<string, unknown>> | null = null;
  * ```
  */
 export function koaGoGoScope(options: KoaGoGoScopeOptions = {}): Middleware {
-	const { name = "koa-app", metrics = false, timeout, onError } = options;
+	const { name = "koa-app", timeout, onError } = options;
 
 	// Create root scope on first use
 	if (!rootScope) {
-		rootScope = scope({ name, metrics });
+		rootScope = scope({ name });
 	}
 
 	return async (ctx: Context, next: Next) => {

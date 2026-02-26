@@ -91,7 +91,7 @@ describe("koaGoGoScope", () => {
 	});
 
 	test("applies metrics option", async () => {
-		const middleware = koaGoGoScope({ metrics: true });
+		const middleware = koaGoGoScope({});
 		const { ctx, next } = createMockContext();
 
 		await middleware(ctx as any, next);

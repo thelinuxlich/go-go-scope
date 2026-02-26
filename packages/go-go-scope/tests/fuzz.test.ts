@@ -16,40 +16,6 @@ function createRNG(seed: number) {
 }
 
 describe("fuzz tests", () => {
-	test.skip("channel operations with random delays", async () => {
-		// Skipped - needs investigation on channel timing with random delays
-	});
-
-	test.skip("semaphore with random acquire/release patterns", async () => {
-		const rng = createRNG(123);
-		const iterations = 10;
-
-		for (let i = 0; i < iterations; i++) {
-			await using s = scope();
-			const semaphore = s.semaphore(Math.floor(rng() * 3) + 1);
-
-			const counter = { value: 0 };
-			const maxConcurrent = { value: 0 };
-			let currentConcurrent = 0;
-
-			const tasks = Array.from({ length: 10 }, () =>
-				s.task(async () => {
-					await semaphore.acquire();
-					currentConcurrent++;
-					maxConcurrent.value = Math.max(maxConcurrent.value, currentConcurrent);
-					counter.value++;
-					currentConcurrent--;
-					semaphore.release();
-				}),
-			);
-
-			await Promise.all(tasks);
-
-			expect(counter.value).toBe(10);
-			expect(maxConcurrent.value).toBeLessThanOrEqual(semaphore.totalPermits);
-		}
-	}, 10000);
-
 	test("parallel with random task durations and errors", async () => {
 		const rng = createRNG(456);
 		const iterations = 30;
@@ -127,43 +93,6 @@ describe("fuzz tests", () => {
 			await s[Symbol.asyncDispose]();
 		}
 	}, 10000);
-
-	test.skip("broadcast with random subscriber timing", async () => {
-		const rng = createRNG(111);
-		const iterations = 5;
-
-		for (let i = 0; i < iterations; i++) {
-			await using s = scope();
-			const broadcast = s.broadcast<number>();
-
-			const received: number[][] = [[], [], []];
-
-			// Subscribe at different times
-			const subscribeTasks = received.map((arr) =>
-				s.task(async () => {
-					await new Promise((r) => setTimeout(r, rng() * 20));
-					broadcast.subscribe((val) => arr.push(val));
-				}),
-			);
-
-			await Promise.all(subscribeTasks);
-
-			// Send messages
-			for (let j = 0; j < 3; j++) {
-				await broadcast.send(j);
-			}
-
-			// All subscribers should have received all messages
-			for (const arr of received) {
-				expect(arr).toEqual([0, 1, 2]);
-			}
-		}
-	}, 10000);
-
-	test.skip("resource pool with random usage patterns", async () => {
-		// Skipped due to potential pool implementation edge cases
-		// TODO: Investigate resource pool acquire/release timing
-	});
 
 	test("select with random channel readiness", async () => {
 		const rng = createRNG(333);

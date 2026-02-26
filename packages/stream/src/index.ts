@@ -1158,6 +1158,90 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 		);
 	}
 
+	/**
+	 * Sample the stream at regular intervals.
+	 * Emits the most recent value at each interval.
+	 * Lazy - only samples when interval fires.
+	 */
+	sample(intervalMs: number): Stream<T> {
+		const self = this;
+		const scope = this.scope;
+
+		return new Stream<T>(
+			(async function* () {
+				let latest: T | undefined;
+				let hasValue = false;
+				let done = false;
+
+				// Producer: collect values
+				const producer = (async () => {
+					for await (const value of self) {
+						latest = value;
+						hasValue = true;
+					}
+					done = true;
+				})();
+
+				// Consumer: sample at intervals
+				while (!done) {
+					scope.signal.throwIfAborted();
+					await new Promise((resolve) => setTimeout(resolve, intervalMs));
+					if (hasValue) {
+						yield latest!;
+					}
+					if (done) break;
+				}
+
+				await producer;
+			})(),
+			scope,
+		);
+	}
+
+	/**
+	 * Audit time - emit the last value, then silence for duration.
+	 * Unlike throttle which emits first then silences, audit waits
+	 * for the duration then emits the most recent value.
+	 * Lazy - applies timing per emission.
+	 */
+	auditTime(durationMs: number): Stream<T> {
+		const self = this;
+		const scope = this.scope;
+
+		return new Stream<T>(
+			(async function* () {
+				let pending: T | undefined;
+				let hasPending = false;
+				let auditTimeout: ReturnType<typeof setTimeout> | null = null;
+
+				for await (const value of self) {
+					scope.signal.throwIfAborted();
+
+					pending = value;
+					hasPending = true;
+
+					// Start audit window if not already running
+					if (!auditTimeout) {
+						const auditPromise = new Promise<void>((resolve) => {
+							auditTimeout = setTimeout(() => {
+								auditTimeout = null;
+								resolve();
+							}, durationMs);
+						});
+
+						await auditPromise;
+
+						if (hasPending) {
+							yield pending;
+							hasPending = false;
+						}
+					}
+				}
+			})(),
+			scope,
+		);
+	}
+
 	// ============================================================================
 	// Combining
 	// ============================================================================
@@ -2434,6 +2518,28 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 	}
 
 	/**
+	 * Get element at specific index.
+	 * Returns undefined if index is out of bounds.
+	 */
+	async elementAt(index: number): Promise<Result<unknown, T | undefined>> {
+		if (index < 0) {
+			return [undefined, undefined];
+		}
+		try {
+			let i = 0;
+			for await (const value of this) {
+				if (i === index) {
+					return [undefined, value];
+				}
+				i++;
+			}
+			return [undefined, undefined];
+		} catch (err) {
+			return [err, undefined];
+		}
+	}
+
+	/**
 	 * Check if any element satisfies predicate.
 	 */
 	async some(
@@ -2522,6 +2628,52 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 	 */
 	async sum(): Promise<Result<unknown, number>> {
 		return this.fold(0, (acc, v) => acc + (v as unknown as number));
+	}
+
+	/**
+	 * Calculate the average of numeric values.
+	 * Returns undefined if stream is empty.
+	 */
+	async avg(): Promise<Result<unknown, number | undefined>> {
+		let sum = 0;
+		let count = 0;
+		for await (const value of this) {
+			sum += value as unknown as number;
+			count++;
+		}
+		return [undefined, count > 0 ? sum / count : undefined];
+	}
+
+	/**
+	 * Get the maximum value.
+	 * Returns undefined if stream is empty.
+	 */
+	async max(): Promise<Result<unknown, T | undefined>> {
+		let max: T | undefined;
+		let first = true;
+		for await (const value of this) {
+			if (first || value > max!) {
+				max = value;
+				first = false;
+			}
+		}
+		return [undefined, max];
+	}
+
+	/**
+	 * Get the minimum value.
+	 * Returns undefined if stream is empty.
+	 */
+	async min(): Promise<Result<unknown, T | undefined>> {
+		let min: T | undefined;
+		let first = true;
+		for await (const value of this) {
+			if (first || value < min!) {
+				min = value;
+				first = false;
+			}
+		}
+		return [undefined, min];
 	}
 
 	/**

@@ -832,40 +832,6 @@ describe("task() with retry option", () => {
 		expect((err as Error).message).toContain("timeout");
 	});
 
-	test("works with otel options for tracing", async () => {
-		const { tracer, spans } = createMockTracer();
-		await using s = scope({ tracer });
-
-		const t = s.task(() => Promise.resolve("success"), {
-			otel: { name: "retryable-task" },
-			retry: { maxRetries: 0 },
-		});
-		await t;
-
-		const taskSpan = spans.find((s) => s.name === "retryable-task");
-		expect(taskSpan).toBeDefined();
-	});
-
-	test("records task duration in otel span", async () => {
-		const { tracer, spans } = createMockTracer();
-		await using s = scope({ tracer });
-
-		const t = s.task(
-			async () => {
-				await new Promise((r) => setTimeout(r, 50));
-				return "success";
-			},
-			{ otel: { name: "timed-task" } },
-		);
-		await t;
-
-		const taskSpan = spans.find((s) => s.name === "timed-task");
-		expect(taskSpan).toBeDefined();
-		expect(taskSpan?.attributes?.["task.duration_ms"]).toBeDefined();
-		expect(taskSpan?.attributes?.["task.duration_ms"]).toBeGreaterThanOrEqual(
-			40,
-		);
-	});
 });
 
 describe("errorClass option", () => {

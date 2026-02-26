@@ -77,3 +77,32 @@ export function createLogger(
 	if (level) return new ConsoleLogger(scopeName, level);
 	return new NoOpLogger();
 }
+
+/**
+ * Create a child logger with task context.
+ * Prepends task information to log messages.
+ */
+export function createTaskLogger(
+	parentLogger: Logger,
+	scopeName: string,
+	taskName: string,
+	taskId: number,
+): Logger {
+	// If parent is NoOpLogger, return it directly
+	if (parentLogger instanceof NoOpLogger) {
+		return parentLogger;
+	}
+
+	const prefix = `[${scopeName}/${taskName}#${taskId}]`;
+
+	return {
+		debug: (message: string, ...args: unknown[]) =>
+			parentLogger.debug(`${prefix} ${message}`, ...args),
+		info: (message: string, ...args: unknown[]) =>
+			parentLogger.info(`${prefix} ${message}`, ...args),
+		warn: (message: string, ...args: unknown[]) =>
+			parentLogger.warn(`${prefix} ${message}`, ...args),
+		error: (message: string, ...args: unknown[]) =>
+			parentLogger.error(`${prefix} ${message}`, ...args),
+	};
+}

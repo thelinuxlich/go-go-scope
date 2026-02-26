@@ -2,52 +2,76 @@
  * Scope class for go-go-scope - Structured concurrency
  */
 
-import { context as otelContext, trace } from "@opentelemetry/api";
 import createDebug from "debug";
 
 import { BroadcastChannel } from "./broadcast-channel.js";
 import { Channel } from "./channel.js";
 import { CircuitBreaker } from "./circuit-breaker.js";
-import { DeadlockDetector } from "./deadlock-detector.js";
 import { AbortError, UnknownError } from "./errors.js";
-import { createLogger } from "./logger.js";
+import { createLogger, createTaskLogger } from "./logger.js";
 import { installPlugins } from "./plugin.js";
-import { Profiler } from "./profiler.js";
+import { poll as pollFn } from "./poll.js";
+import {
+	PriorityChannel,
+	type PriorityChannelOptions,
+} from "./priority-channel.js";
 import { ResourcePool } from "./resource-pool.js";
-import { exponentialBackoff, linear } from "./retry-strategies.js";
-import { HistogramImpl } from "./scope/histogram.js";
-import { AsyncDisposableResource } from "./scope/resource.js";
+import { exponentialBackoff } from "./retry-strategies.js";
 import { Semaphore } from "./semaphore.js";
 import { Task } from "./task.js";
+import { TokenBucket, type TokenBucketOptions } from "./token-bucket.js";
 import type {
 	ChannelOptions,
 	CircuitBreakerOptions,
+	DebounceOptions,
 	Failure,
-	Histogram,
-	HistogramSnapshot,
 	Logger,
-	ParallelResults,
-	PersistenceProviders,
-	PollController,
-	PollOptions,
-	ResourcePoolOptions,
 	Result,
-	RetryDelayFn,
 	ScopeHooks,
-	ScopeMetrics,
 	SelectOptions,
 	Success,
 	TaskOptions,
-	Tracer,
+	ThrottleOptions,
 } from "./types.js";
-import { SpanStatusCode as SpanStatusCodeEnum } from "./types.js";
-
-export { HistogramImpl, AsyncDisposableResource };
 
 const debugScope = createDebug("go-go-scope:scope");
-const debugTask = createDebug("go-go-scope:task");
 
 let scopeIdCounter = 0;
+
+/**
+ * Async disposable resource wrapper
+ */
+export class AsyncDisposableResource<T> implements AsyncDisposable {
+	private resource?: T;
+	private acquired = false;
+	private disposed = false;
+
+	constructor(
+		private readonly acquireFn: () => Promise<T>,
+		private readonly disposeFn: (resource: T) => Promise<void> | void,
+	) {}
+
+	async acquire(): Promise<T> {
+		if (this.disposed) {
+			throw new Error("Resource already disposed");
+		}
+		if (this.acquired) {
+			throw new Error("Resource already acquired");
+		}
+		this.acquired = true;
+		this.resource = await this.acquireFn();
+		return this.resource;
+	}
+
+	async [Symbol.asyncDispose](): Promise<void> {
+		if (this.disposed) return;
+		this.disposed = true;
+		if (this.resource) {
+			await this.disposeFn(this.resource);
+			this.resource = undefined;
+		}
+	}
+}
 
 /**
  * Options for creating a Scope
@@ -65,12 +89,7 @@ export interface ScopeOptions<
 	 */
 	signal?: AbortSignal;
 	/**
-	 * Optional OpenTelemetry tracer for automatic tracing.
-	 * When provided, the scope will create spans for lifecycle events.
-	 */
-	tracer?: Tracer;
-	/**
-	 * Optional name for the scope span. Defaults to "scope".
+	 * Optional name for the scope. Defaults to "scope-{id}".
 	 */
 	name?: string;
 	/**
@@ -93,36 +112,6 @@ export interface ScopeOptions<
 	 */
 	hooks?: ScopeHooks;
 	/**
-	 * Enable metrics collection (default: false)
-	 */
-	metrics?: boolean;
-	/**
-	 * Automatic metrics export configuration.
-	 * When provided, metrics will be automatically exported at the specified interval.
-	 *
-	 * @example
-	 * ```typescript
-	 * await using s = scope({
-	 *   metrics: true,
-	 *   metricsExport: {
-	 *     interval: 60000, // Export every minute
-	 *     format: 'json',
-	 *     destination: (metrics) => console.log(metrics)
-	 *   }
-	 * })
-	 * ```
-	 */
-	metricsExport?: {
-		/** Export interval in milliseconds */
-		interval: number;
-		/** Export format */
-		format: "json" | "prometheus" | "otel";
-		/** Destination function to receive exported metrics */
-		destination: (metrics: string) => void | Promise<void>;
-		/** Optional prefix for metric names */
-		prefix?: string;
-	};
-	/**
 	 * Optional logger for structured logging.
 	 */
 	logger?: import("./types.js").Logger;
@@ -131,79 +120,30 @@ export interface ScopeOptions<
 	 */
 	logLevel?: "debug" | "info" | "warn" | "error";
 	/**
-	 * Enable deadlock detection with specified timeout.
-	 */
-	deadlockDetection?: import("./types.js").DeadlockDetectionOptions;
-	/**
-	 * Enable task profiling.
-	 */
-	profiler?: boolean;
-	/**
 	 * Optional persistence providers for distributed features.
-	 * Enables distributed locks, rate limiting, and shared circuit breaker state.
-	 *
-	 * @example
-	 * ```typescript
-	 * import { RedisAdapter } from 'go-go-scope/persistence/redis'
-	 *
-	 * const redis = new Redis(process.env.REDIS_URL)
-	 * const persistence = new RedisAdapter(redis)
-	 *
-	 * await using s = scope({ persistence })
-	 *
-	 * // Acquire a lock with 30 second TTL
-	 * const lock = await s.acquireLock('resource:123', 30000)
-	 * if (!lock) {
-	 *   throw new Error('Could not acquire lock')
-	 * }
-	 *
-	 * // Lock automatically expires after TTL
-	 * // Optional: release early with await lock.release()
-	 * ```
 	 */
-	persistence?: PersistenceProviders;
+	persistence?: import("./persistence/types.js").PersistenceProviders;
 	/**
 	 * Idempotency configuration for the scope.
 	 */
 	idempotency?: {
-		/**
-		 * Default TTL for idempotency keys in milliseconds.
-		 * Used when idempotency.key is provided on a task without idempotency.ttl.
-		 * Inherited from parent if not specified.
-		 */
 		defaultTTL?: number;
 	};
 	/**
 	 * Task pooling configuration for reducing GC pressure.
-	 * When enabled, task objects are pooled and reused instead of being garbage collected.
 	 */
 	taskPooling?: {
-		/**
-		 * Maximum number of tasks to keep in the pool.
-		 * @default 100
-		 */
 		maxSize?: number;
-		/**
-		 * Whether to enable task pooling for this scope.
-		 * @default false
-		 */
 		enabled?: boolean;
 	};
+	/**
+	 * Optional context object accessible in all tasks.
+	 */
+	context?: Record<string, unknown>;
 }
 
 /**
  * A Scope for structured concurrency.
- * All tasks spawned within a scope are automatically cancelled when the scope exits.
- *
- * Implements AsyncDisposable for use with `await using`.
- *
- * @example
- * ```typescript
- * await using s = scope({ timeout: 5000 })
- * const t1 = s.spawn(() => fetchData())
- * const t2 = s.spawn(() => fetchMore())
- * const [r1, r2] = await Promise.all([t1, t2])
- * ```
  */
 /* #__PURE__ */
 export class Scope<
@@ -211,161 +151,89 @@ export class Scope<
 > implements AsyncDisposable
 {
 	private readonly abortController: AbortController;
-	// Lazy-initialized collections for scopes without options
 	private _disposables: (Disposable | AsyncDisposable)[] | undefined;
 	private readonly timeoutId: ReturnType<typeof setTimeout> | undefined;
 	private disposed = false;
-	private readonly _tracer?: Tracer;
-	private readonly span?: import("@opentelemetry/api").Span;
-	private readonly context?: import("@opentelemetry/api").Context;
 	private taskCount = 0;
-	private spanHasError = false;
-	// Use Set for O(1) add/delete/lookup of active tasks
 	private readonly activeTasks: Set<Task<unknown>> = new Set();
-	private readonly startTime: number;
 	private readonly id: number;
 	private readonly name: string;
 	private readonly concurrencySemaphore?: Semaphore;
 	private readonly scopeCircuitBreaker?: CircuitBreaker;
 	private services: Services = {} as Services;
 	private readonly hooks?: ScopeHooks;
-	private readonly enableMetrics: boolean;
-	private metricsData: {
-		tasksSpawned: number;
-		tasksCompleted: number;
-		tasksFailed: number;
-		totalTaskDuration: number;
-		durations: number[];
-		resourcesRegistered: number;
-		resourcesDisposed: number;
-		scopeEndTime?: number;
-	};
-	private histograms = new Map<string, HistogramImpl>();
+	private readonly beforeTaskHooks: Array<
+		(name: string, index: number, options?: TaskOptions) => void
+	> = [];
+	private readonly afterTaskHooks: Array<
+		(name: string, duration: number, error?: unknown, index?: number) => void
+	> = [];
 	private readonly logger: Logger;
-	private readonly deadlockDetector?: DeadlockDetector;
-	private readonly profiler: Profiler;
-	// Lazy-initialized child scope tracking
+	readonly requestContext: Record<string, unknown>;
 	private _childScopes: Scope<Record<string, unknown>>[] | undefined;
-
-	// Lazy-initialized registries for dedupe and memo (only created when used)
 	private _dedupeRegistry: Map<string | symbol, Promise<unknown>> | undefined;
 	private _memoRegistry:
 		| Map<string | symbol, { result: unknown; expiry: number }>
 		| undefined;
-	/**
-	 * Persistence providers for distributed features.
-	 * @internal
-	 */
-	private readonly _persistence?: PersistenceProviders;
-	/**
-	 * Default TTL for idempotency keys.
-	 * @internal
-	 */
-	private readonly idempotencyDefaultTTL?: number;
-	/** @internal */
+	private _resourceDisposers:
+		| Array<{
+				key: string;
+				dispose: () => void | Promise<void>;
+				index: number;
+		  }>
+		| undefined;
+	private _resourceIndex = 0;
+	private readonly _persistence?: import("./persistence/types.js").PersistenceProviders;
 	readonly idempotency?: { defaultTTL?: number };
 
 	constructor(options?: ScopeOptions<Record<string, unknown>>) {
 		this.id = ++scopeIdCounter;
 		this.name = options?.name ?? `scope-${this.id}`;
 		this.hooks = options?.hooks;
-		this.enableMetrics = options?.metrics ?? false;
-		this.metricsData = {
-			tasksSpawned: 0,
-			tasksCompleted: 0,
-			tasksFailed: 0,
-			totalTaskDuration: 0,
-			durations: [],
-			resourcesRegistered: 0,
-			resourcesDisposed: 0,
-		};
-
-		// Set up automatic metrics export if configured
-		if (options?.metricsExport && this.enableMetrics) {
-			const { interval, format, destination, prefix } = options.metricsExport;
-			const exportMetrics = async () => {
-				const metrics = this.metrics();
-				if (metrics) {
-					const { exportMetrics: formatMetrics } = await import(
-						"./metrics-exporter.js"
-					);
-					const data = formatMetrics(metrics, {
-						format,
-						prefix,
-						includeTimestamps: true,
-					});
-					void destination(data);
-				}
-			};
-
-			// Schedule periodic export
-			const exportIntervalId = setInterval(() => {
-				void exportMetrics();
-			}, interval);
-
-			// Store interval ID for cleanup
-			(
-				this as unknown as {
-					_metricsExportInterval?: ReturnType<typeof setInterval>;
-				}
-			)._metricsExportInterval = exportIntervalId;
-
-			// Register cleanup
-			this.onDispose(() => {
-				clearInterval(exportIntervalId);
-				// Final export on disposal
-				void exportMetrics();
-			});
-		}
-
-		// Initialize logger
 		this.logger = createLogger(this.name, options?.logger, options?.logLevel);
 
-		// Initialize deadlock detector if enabled
-		if (options?.deadlockDetection) {
-			this.deadlockDetector = new DeadlockDetector(
-				options.deadlockDetection,
-				this.name,
-				this,
-			);
-		}
+		// Initialize request context
+		const parentRequestContext =
+			(
+				options?.parent as unknown as {
+					requestContext?: Record<string, unknown>;
+				}
+			)?.requestContext ?? {};
+		this.requestContext = {
+			...parentRequestContext,
+			...(options?.context ?? {}),
+		};
 
-		// Initialize profiler
-		this.profiler = new Profiler(options?.profiler ?? false, this);
-
-		// Inherit from parent scope if provided
-		const parent = options?.parent;
-
-		// Set persistence providers (inherit from parent if not explicitly provided)
+		// Set persistence providers
 		const parentPersistence = (
-			parent as unknown as { _persistence?: PersistenceProviders }
+			options?.parent as unknown as {
+				_persistence?: import("./persistence/types.js").PersistenceProviders;
+			}
 		)?._persistence;
 		const optionsPersistence = options?.persistence;
-		(this as unknown as { _persistence?: PersistenceProviders })._persistence =
-			optionsPersistence ?? parentPersistence;
+		(
+			this as unknown as {
+				_persistence?: import("./persistence/types.js").PersistenceProviders;
+			}
+		)._persistence = optionsPersistence ?? parentPersistence;
 
-		// Set idempotency configuration (inherited from parent if not provided)
-		this.idempotency = options?.idempotency ?? parent?.idempotency;
-		this.idempotencyDefaultTTL = this.idempotency?.defaultTTL;
-		// Store parent reference
-		if (parent) {
-			(this as unknown as { parent?: typeof parent }).parent = parent;
+		// Set idempotency configuration
+		this.idempotency = options?.idempotency ?? options?.parent?.idempotency;
+
+		if (options?.parent) {
+			(this as unknown as { parent?: typeof options.parent }).parent =
+				options.parent;
 		}
-		const parentSignal = parent?.signal ?? options?.signal;
-		const parentServices = parent?.services;
+
+		const parentSignal = options?.parent?.signal ?? options?.signal;
+		const parentServices = options?.parent?.services;
 		if (parentServices) {
 			this.services = { ...parentServices } as Services;
 		}
 
-		// Register as child scope if parent exists
-		if (parent) {
-			parent.registerChild(this);
+		if (options?.parent) {
+			options.parent.registerChild(this);
 		}
-
-		// Inherit options from parent if not explicitly provided
-		const tracer = options?.tracer ?? parent?.tracer;
-		const concurrency = options?.concurrency ?? parent?.concurrency;
-		const circuitBreaker = options?.circuitBreaker ?? parent?.circuitBreaker;
 
 		if (debugScope.enabled) {
 			debugScope(
@@ -373,161 +241,86 @@ export class Scope<
 				this.name,
 				options?.timeout ?? 0,
 				parentSignal ? "yes" : "no",
-				concurrency ?? "unlimited",
-				circuitBreaker ? "yes" : "no",
-				parent ? "yes" : "no",
+				options?.concurrency ?? "unlimited",
+				options?.circuitBreaker ? "yes" : "no",
+				options?.parent ? "yes" : "no",
 			);
 		}
+
 		this.abortController = new AbortController();
-		this._tracer = tracer;
-		this.startTime = performance.now();
 
 		// Create concurrency semaphore if specified
+		const concurrency = options?.concurrency ?? options?.parent?.concurrency;
 		if (concurrency !== undefined && concurrency > 0) {
 			this.concurrencySemaphore = new Semaphore(
 				concurrency,
 				this.abortController.signal,
 			);
-			if (debugScope.enabled) {
-				debugScope(
-					"[%s] created concurrency semaphore with %d permits",
-					this.name,
-					concurrency,
-				);
-			}
 		}
 
 		// Create circuit breaker if specified
+		const circuitBreaker =
+			options?.circuitBreaker ?? options?.parent?.circuitBreaker;
 		if (circuitBreaker) {
 			this.scopeCircuitBreaker = new CircuitBreaker(
 				circuitBreaker,
 				this.abortController.signal,
 			);
-			if (debugScope.enabled) {
-				debugScope(
-					"[%s] created circuit breaker (failureThreshold: %d)",
-					this.name,
-					circuitBreaker.failureThreshold ?? 5,
-				);
-			}
 		}
 
-		// Create span if tracer is provided
-		if (this.tracer) {
-			// Get parent context from parent scope if available
-			const parentContext = options?.parent?.otelContext;
-			// Get active context from OpenTelemetry (root context if none active)
-			const currentContext = parentContext ?? otelContext.active();
-
-			// Create the span with parent context
-			this.span = this.tracer.startSpan(
-				options?.name ?? "scope",
-				{
-					attributes: {
-						"scope.timeout": options?.timeout,
-						"scope.has_parent_signal": !!parentSignal,
-						"scope.has_parent_scope": !!options?.parent,
-						"scope.concurrency": options?.concurrency,
-					},
-				},
-				currentContext,
-			);
-
-			// Store the context with this span set as active
-			if (this.span) {
-				this.context = trace.setSpan(currentContext, this.span);
-			} else {
-				this.context = currentContext;
-			}
+		// Set up timeout if specified
+		if (options?.timeout) {
+			this.timeoutId = setTimeout(() => {
+				this.abortController.abort(
+					new Error(`Scope timeout after ${options.timeout}ms`),
+				);
+			}, options.timeout);
 		}
 
 		// Link to parent signal if provided
 		if (parentSignal) {
-			const parentHandler = () => {
-				const reason = parentSignal.reason;
-				if (debugScope.enabled) {
-					debugScope(
-						"[%s] aborting due to parent signal: %s",
-						this.name,
-						reason,
-					);
-				}
-				this.span?.recordException(
-					reason instanceof Error ? reason : new Error(String(reason)),
-				);
-				this.span?.setStatus({
-					code: SpanStatusCodeEnum.ERROR,
-					message: "aborted by parent",
-				});
-				this.spanHasError = true;
-				this.abortController.abort(reason);
+			const abortHandler = () => {
+				this.abortController.abort(parentSignal.reason);
 			};
 			if (parentSignal.aborted) {
-				if (debugScope.enabled) {
-					debugScope("[%s] parent already aborted", this.name);
-				}
-				this.abortController.abort(parentSignal.reason);
+				abortHandler();
 			} else {
-				parentSignal.addEventListener("abort", parentHandler, { once: true });
+				parentSignal.addEventListener("abort", abortHandler, { once: true });
 			}
 		}
 
-		// Set up timeout if provided
-		if (options?.timeout !== undefined && options.timeout > 0) {
-			this.timeoutId = setTimeout(() => {
-				const error = new Error(
-					`Scope '${this.name}' timeout after ${options.timeout}ms`,
-				);
-				if (debugScope.enabled) {
-					debugScope("[%s] timeout after %dms", this.name, options.timeout);
-				}
-				this.span?.recordException(error);
-				this.span?.setStatus({
-					code: SpanStatusCodeEnum.ERROR,
-					message: "timeout",
-				});
-				this.spanHasError = true;
-				this.abortController.abort(error);
-			}, options.timeout);
-		}
-
 		// Install plugins
-		installPlugins(this as unknown as Scope<Record<string, never>>, options as ScopeOptions<Record<string, never>> ?? {});
+		installPlugins(
+			this as unknown as Scope<Record<string, never>>,
+			options as ScopeOptions<Record<string, never>>,
+		);
 	}
 
-	/**
-	 * Get the AbortSignal for this scope.
-	 */
 	get signal(): AbortSignal {
 		return this.abortController.signal;
 	}
 
-	/**
-	 * Check if the scope has been disposed.
-	 */
 	get isDisposed(): boolean {
 		return this.disposed;
 	}
 
-	/**
-	 * Get the tracer for this scope (inherited from parent if not set directly).
-	 * @internal Used for child scope inheritance
-	 */
-	get tracer(): Tracer | undefined {
-		return this._tracer;
+	get scopeName(): string {
+		return this.name;
+	}
+
+	get servicesMap(): Services {
+		return this.services;
 	}
 
 	/**
-	 * Get the concurrency limit for this scope (inherited from parent if not set directly).
-	 * @internal Used for child scope inheritance
+	 * Get the concurrency limit for this scope.
 	 */
 	get concurrency(): number | undefined {
 		return this.concurrencySemaphore?.totalPermits;
 	}
 
 	/**
-	 * Get the circuit breaker options for this scope (inherited from parent if not set directly).
-	 * @internal Used for child scope inheritance
+	 * Get the circuit breaker configuration for this scope.
 	 */
 	get circuitBreaker(): CircuitBreakerOptions | undefined {
 		return this.scopeCircuitBreaker
@@ -538,10 +331,6 @@ export class Scope<
 			: undefined;
 	}
 
-	/**
-	 * Get disposables array (lazy-initialized)
-	 * @internal
-	 */
 	private get disposables(): (Disposable | AsyncDisposable)[] {
 		if (!this._disposables) {
 			this._disposables = [];
@@ -549,10 +338,6 @@ export class Scope<
 		return this._disposables;
 	}
 
-	/**
-	 * Get child scopes array (lazy-initialized)
-	 * @internal
-	 */
 	private get childScopes(): Scope<Record<string, unknown>>[] {
 		if (!this._childScopes) {
 			this._childScopes = [];
@@ -560,10 +345,6 @@ export class Scope<
 		return this._childScopes;
 	}
 
-	/**
-	 * Get dedupe registry (lazy-initialized)
-	 * @internal
-	 */
 	private get dedupeRegistry(): Map<string | symbol, Promise<unknown>> {
 		if (!this._dedupeRegistry) {
 			this._dedupeRegistry = new Map();
@@ -571,10 +352,6 @@ export class Scope<
 		return this._dedupeRegistry;
 	}
 
-	/**
-	 * Get memo registry (lazy-initialized)
-	 * @internal
-	 */
 	private get memoRegistry(): Map<
 		string | symbol,
 		{ result: unknown; expiry: number }
@@ -585,124 +362,23 @@ export class Scope<
 		return this._memoRegistry;
 	}
 
-	/**
-	 * Get the persistence providers for this scope (inherited from parent if not set directly).
-	 * @internal Used for child scope inheritance
-	 */
-	get persistence(): PersistenceProviders | undefined {
-		return (this as unknown as { _persistence?: PersistenceProviders })
-			._persistence;
+	get persistence():
+		| import("./persistence/types.js").PersistenceProviders
+		| undefined {
+		return (
+			this as unknown as {
+				_persistence?: import("./persistence/types.js").PersistenceProviders;
+			}
+		)._persistence;
 	}
 
-	/**
-	 * Get the OpenTelemetry span for this scope.
-	 * @internal Used for linking child spans
-	 */
-	get otelSpan(): import("@opentelemetry/api").Span | undefined {
-		return this.span;
-	}
-
-	/**
-	 * Get the OpenTelemetry context for this scope.
-	 * @internal Used for creating child spans with proper parent-child relationships
-	 */
-	get otelContext(): import("@opentelemetry/api").Context | undefined {
-		return this.context;
-	}
-
-	/**
-	 * Get current metrics for this scope.
-	 * Only available if metrics were enabled in scope options.
-	 * @returns Current metrics or undefined if metrics not enabled
-	 */
-	metrics(): ScopeMetrics | undefined {
-		if (!this.enableMetrics) return undefined;
-
-		const durations = this.metricsData.durations;
-		const avgDuration =
-			this.metricsData.tasksCompleted > 0
-				? this.metricsData.totalTaskDuration / this.metricsData.tasksCompleted
-				: 0;
-
-		// Calculate p95 (approximation using sorted array)
-		let p95 = 0;
-		if (durations.length > 0) {
-			const sorted = [...durations].sort((a, b) => a - b);
-			const p95Index = Math.floor(sorted.length * 0.95);
-			p95 = sorted[p95Index] ?? sorted.at(-1) ?? 0;
-		}
-
-		// Build histogram snapshots
-		const histogramSnapshots: Record<string, HistogramSnapshot> = {};
-		for (const [name, histogram] of this.histograms) {
-			histogramSnapshots[name] = histogram.snapshot();
-		}
-
-		return {
-			tasksSpawned: this.metricsData.tasksSpawned,
-			tasksCompleted: this.metricsData.tasksCompleted,
-			tasksFailed: this.metricsData.tasksFailed,
-			totalTaskDuration: this.metricsData.totalTaskDuration,
-			avgTaskDuration: avgDuration,
-			p95TaskDuration: p95,
-			resourcesRegistered: this.metricsData.resourcesRegistered,
-			resourcesDisposed: this.metricsData.resourcesDisposed,
-			scopeDuration: this.metricsData.scopeEndTime
-				? this.metricsData.scopeEndTime - this.startTime
-				: undefined,
-			histograms: histogramSnapshots,
-		};
-	}
-
-	/**
-	 * Create or get a histogram for tracking value distributions.
-	 * Only available if metrics were enabled in scope options.
-	 *
-	 * @param name - Unique name for the histogram
-	 * @returns Histogram instance or undefined if metrics not enabled
-	 *
-	 * @example
-	 * ```typescript
-	 * await using s = scope({ metrics: true })
-	 *
-	 * const responseTime = s.histogram('response_time')
-	 * if (responseTime) {
-	 *   responseTime.record(150)
-	 *   responseTime.record(230)
-	 * }
-	 *
-	 * // Later, get snapshot with percentiles
-	 * const snapshot = responseTime?.snapshot()
-	 * console.log(`p95: ${snapshot?.p95}ms`)
-	 * ```
-	 */
-	histogram(name: string): Histogram | undefined {
-		if (!this.enableMetrics) return undefined;
-
-		let histogram = this.histograms.get(name);
-		if (!histogram) {
-			histogram = new HistogramImpl(name);
-			this.histograms.set(name, histogram);
-		}
-		return histogram;
-	}
-
-	/**
-	 * Spawn a task that returns a Result tuple with the raw error object.
-	 * Automatically wraps the function with error handling.
-	 *
-	 * Supports retry and timeout via TaskOptions.
-	 * Scope-level concurrency and circuit breaker (if configured) are automatically applied.
-	 *
-	 * When `errorClass` is provided in options, errors will be wrapped in that class,
-	 * enabling automatic union inference when combined with go-go-try's success/failure helpers.
-	 *
-	 * @param fn - Function that receives { services, signal } and returns a Promise
-	 * @param options - Optional task configuration for tracing and execution
-	 * @returns A disposable Task that resolves to a Result
-	 */
 	task<T, E extends Error = Error>(
-		fn: (ctx: { services: Services; signal: AbortSignal }) => Promise<T>,
+		fn: (ctx: {
+			services: Services;
+			signal: AbortSignal;
+			logger: Logger;
+			context: Record<string, unknown>;
+		}) => Promise<T>,
 		options?: TaskOptions<E>,
 	): Task<Result<E, T>> {
 		if (this.disposed) {
@@ -714,17 +390,9 @@ export class Scope<
 
 		// Check for memoized result
 		const memoConfig = options?.memo;
-		if (memoConfig !== undefined && this._memoRegistry) {
-			const cached = this._memoRegistry.get(memoConfig.key);
+		if (memoConfig !== undefined) {
+			const cached = this.memoRegistry.get(memoConfig.key);
 			if (cached && cached.expiry > Date.now()) {
-				if (debugScope.enabled) {
-					debugScope(
-						"[%s] task memoized result returned for key '%s'",
-						this.name,
-						memoConfig.key,
-					);
-				}
-				// Return a task that resolves to the cached result
 				const memoFactory = (): Promise<Result<E, T>> => {
 					return Promise.resolve(cached.result as Result<E, T>);
 				};
@@ -732,30 +400,19 @@ export class Scope<
 					memoFactory,
 					this.abortController.signal,
 				);
-				// Track as active task briefly for consistency
 				this.activeTasks.add(memoTask as Task<unknown>);
 				Promise.resolve().then(() => {
 					this.activeTasks.delete(memoTask as Task<unknown>);
 				});
 				return memoTask;
 			}
-			// Expired or not found - will compute and cache below
 		}
 
 		// Check for deduplication
 		const dedupeKey = options?.dedupe;
-		if (dedupeKey !== undefined && this._dedupeRegistry) {
-			const existing = this._dedupeRegistry.get(dedupeKey);
+		if (dedupeKey !== undefined) {
+			const existing = this.dedupeRegistry.get(dedupeKey);
 			if (existing) {
-				if (debugScope.enabled) {
-					debugScope(
-						"[%s] task deduplicated with key '%s'",
-						this.name,
-						dedupeKey,
-					);
-				}
-				// Return a task that wraps the existing promise
-				// Create a factory that returns the existing promise
 				const dedupeFactory = (): Promise<Result<E, T>> => {
 					return existing as Promise<Result<E, T>>;
 				};
@@ -764,7 +421,6 @@ export class Scope<
 					this.abortController.signal,
 				);
 				this.activeTasks.add(dedupeTask as Task<unknown>);
-				// Use Promise.resolve().then() to avoid triggering the task start immediately
 				Promise.resolve().then(() => {
 					dedupeTask.then(
 						() => this.activeTasks.delete(dedupeTask as Task<unknown>),
@@ -775,85 +431,36 @@ export class Scope<
 			}
 		}
 
-		// Process idempotency configuration if provided
-		const idempotencyConfig = options?.idempotency;
-		const idempotencyKeyOption = idempotencyConfig?.key;
+		// Process idempotency configuration
+		const idempotencyKeyOption = options?.idempotency?.key;
 		const idempotencyKey =
 			typeof idempotencyKeyOption === "function"
 				? idempotencyKeyOption()
 				: idempotencyKeyOption;
-		const idempotencyTTL = idempotencyConfig?.ttl ?? this.idempotencyDefaultTTL;
 
 		this.taskCount++;
 		const taskIndex = this.taskCount;
-		const hasOtel = !!this._tracer;
 		const hasDebug = debugScope.enabled;
-
-		// Build task name (only used when needed)
 		const taskName = options?.otel?.name ?? `task-${taskIndex}`;
 
 		if (hasDebug) {
-			// Start profiling
-			this.profiler.startTask(taskIndex, taskName);
-
-			// Log task start
 			this.logger.debug('Spawning task #%d "%s"', taskIndex, taskName);
 			debugScope('[%s] spawning task #%d "%s"', this.name, taskIndex, taskName);
 		}
 
-		// Update metrics
-		if (this.enableMetrics) {
-			this.metricsData.tasksSpawned++;
+		// Call beforeTask hook
+		this.hooks?.beforeTask?.(taskName, taskIndex, options);
+		// Call dynamic beforeTask hooks
+		for (const hook of this.beforeTaskHooks) {
+			hook(taskName, taskIndex, options);
 		}
 
-		// Call beforeTask hook
-		this.hooks?.beforeTask?.(taskName, taskIndex);
-
-		// Pre-compute commonly used values to avoid repeated lookups
+		const startTime = Date.now();
 		const parentSignal = this.abortController.signal;
 
-		// Create task span only if tracer is configured
-		const taskSpan = hasOtel
-			? this._tracer.startSpan(
-					options?.otel?.name ?? "scope.task",
-					{
-						attributes: {
-							"task.index": taskIndex,
-							"task.has_retry": !!options?.retry,
-							"task.has_timeout": !!options?.timeout,
-							"task.has_circuit_breaker": !!this.scopeCircuitBreaker,
-							"task.scope_concurrency":
-								this.concurrencySemaphore?.totalPermits ?? 0,
-							...(options?.timeout && { "task.timeout_ms": options.timeout }),
-							...options?.otel?.attributes,
-						},
-					},
-					this.otelContext ?? otelContext.active(),
-				)
-			: undefined;
-
-		let retryAttempt = 0;
-
-		const hasTaskDebug = debugTask.enabled;
-
-		// Cache frequently accessed options for faster checks
-		const hasCircuitBreaker = !!this.scopeCircuitBreaker;
-		const hasConcurrency = !!this.concurrencySemaphore;
-		const hasRetry = !!options?.retry;
-		// hasTimeout is checked inline to avoid unused variable warning
-		// const hasTimeout = !!options?.timeout;
-
-		// Build the execution pipeline from innermost to outermost
+		// Build the execution pipeline
 		const wrappedFn = async (signal: AbortSignal): Promise<T> => {
-			// Check if signal is already aborted
 			if (signal.aborted) {
-				if (hasTaskDebug) {
-					debugTask(
-						"[%s] task aborted before execution: %s",
-						taskName,
-						signal.reason,
-					);
-				}
 				throw new AbortError(signal.reason);
 			}
 
@@ -865,1584 +472,227 @@ export class Scope<
 						const cached =
 							await idempotencyProvider.get<Result<E, T>>(idempotencyKey);
 						if (cached) {
-							if (debugScope.enabled) {
-								debugScope(
-									"[%s] idempotency cache hit for key '%s'",
-									this.name,
-									idempotencyKey,
-								);
-							}
-							// Return the cached success value
 							const cachedResult = cached.value;
 							if (cachedResult[1] !== undefined) {
 								return cachedResult[1] as T;
 							}
 						}
-					} catch (cacheError) {
-						// Log but continue - idempotency check failure shouldn't block execution
-						if (debugScope.enabled) {
-							debugScope(
-								"[%s] idempotency cache check failed: %s",
-								this.name,
-								cacheError,
-							);
-						}
+					} catch {
+						// Continue on cache error
 					}
 				}
 			}
 
-			// Helper to call fn with services injection
+			const taskLogger = createTaskLogger(
+				this.logger,
+				this.name,
+				taskName,
+				taskIndex,
+			);
+
 			const callFn = (sig: AbortSignal): Promise<T> => {
-				return fn({ services: this.services, signal: sig });
+				return fn({
+					services: this.services as Services,
+					signal: sig,
+					logger: taskLogger,
+					context: this.requestContext,
+				});
 			};
 
-			// 1. Apply circuit breaker if configured at scope level
-			let executeFn = callFn;
-			if (hasCircuitBreaker) {
-				const cb = this.scopeCircuitBreaker;
-				const circuitState = cb.currentState;
-				if (hasTaskDebug) {
-					debugTask("[%s] circuit breaker state: %s", taskName, circuitState);
-				}
-				taskSpan?.setAttributes?.({
-					"task.circuit_breaker.state": circuitState,
-					"task.circuit_breaker.failure_count": cb.failureCount,
-				});
-				executeFn = async (sig) => {
-					if (hasTaskDebug) {
-						debugTask("[%s] executing through circuit breaker", taskName);
-					}
-					try {
-						const result = await cb.execute(() => callFn(sig));
-						if (hasTaskDebug) {
-							debugTask("[%s] circuit breaker: success", taskName);
-						}
-						return result;
-					} catch (error) {
-						if (
-							error instanceof Error &&
-							error.message === "Circuit breaker is open"
-						) {
-							taskSpan?.setAttributes?.({
-								"task.circuit_breaker.rejected": true,
-							});
-						}
-						throw error;
-					}
-				};
-			}
-
-			// 2. Apply concurrency limit if configured at scope level
-			if (hasConcurrency) {
-				const sem = this.concurrencySemaphore;
-				const innerFn = executeFn;
-				executeFn = async (sig) => {
-					if (hasTaskDebug) {
-						debugTask(
-							"[%s] acquiring concurrency permit (available: %d, waiting: %d)",
-							taskName,
-							sem.availablePermits,
-							sem.waiterCount,
-						);
-					}
-					taskSpan?.setAttributes?.({
-						"task.concurrency.available_before": sem.availablePermits,
-						"task.concurrency.waiting_before": sem.waiterCount,
-					});
-					try {
-						const result = await sem.execute(() => innerFn(sig));
-						if (hasTaskDebug) {
-							debugTask("[%s] concurrency permit released", taskName);
-						}
-						return result;
-					} catch (error) {
-						if (hasTaskDebug) {
-							debugTask(
-								"[%s] concurrency permit released with error",
-								taskName,
-							);
-						}
-						throw error;
-					}
-				};
-			}
-
-			// 3. Apply retry logic if specified
-			if (hasRetry && options?.retry) {
-				const retryOpts =
-					typeof options.retry === "string"
-						? { strategy: options.retry }
-						: options.retry;
-				const innerFn = executeFn;
-				executeFn = async (sig) => {
-					const maxRetries =
-						"maxRetries" in retryOpts ? (retryOpts.maxRetries ?? 3) : 3;
-					// Handle strategy shorthand
-					let delay: number | RetryDelayFn =
-						"delay" in retryOpts ? (retryOpts.delay ?? 0) : 0;
-					if ("strategy" in retryOpts && retryOpts.strategy) {
-						switch (retryOpts.strategy) {
-							case "exponential":
-								delay = exponentialBackoff({ initial: 100, max: 30000 });
-								break;
-							case "linear":
-								delay = linear(100, 100);
-								break;
-							case "fixed":
-								delay = 1000;
-								break;
-						}
-					}
-					const retryCondition =
-						"retryCondition" in retryOpts
-							? retryOpts.retryCondition
-							: () => true;
-					const onRetry =
-						"onRetry" in retryOpts ? retryOpts.onRetry : undefined;
-
-					taskSpan?.setAttributes?.({
-						"task.retry.max_retries": maxRetries,
-						"task.retry.has_delay": !!delay,
-						"task.retry.has_condition": !!(
-							"retryCondition" in retryOpts && retryOpts.retryCondition
-						),
-					});
-					if (hasTaskDebug) {
-						debugTask(
-							"[%s] starting retry loop (maxRetries: %d)",
-							taskName,
-							maxRetries,
-						);
-					}
-
-					for (let attempt = 0; attempt <= maxRetries; attempt++) {
-						if (sig.aborted) {
-							if (hasTaskDebug) {
-								debugTask("[%s] task aborted during retry", taskName);
-							}
-							throw new AbortError(sig.reason);
-						}
-
-						try {
-							if (hasTaskDebug) {
-								debugTask(
-									"[%s] attempt %d/%d",
-									taskName,
-									attempt + 1,
-									maxRetries + 1,
-								);
-							}
-							retryAttempt = attempt;
-							const result = await innerFn(sig);
-							if (attempt > 0) {
-								if (hasTaskDebug) {
-									debugTask(
-										"[%s] succeeded on attempt %d",
-										taskName,
-										attempt + 1,
-									);
-								}
-								taskSpan?.setAttributes?.({
-									"task.retry.succeeded_after": attempt + 1,
-								});
-							}
-							return result;
-						} catch (error) {
-							if (!retryCondition?.(error)) {
-								if (hasTaskDebug) {
-									debugTask(
-										"[%s] error rejected by retryCondition, throwing",
-										taskName,
-									);
-								}
-								taskSpan?.setAttributes?.({
-									"task.retry.condition_rejected": true,
-								});
-								throw error;
-							}
-
-							if (attempt >= maxRetries) {
-								if (hasTaskDebug) {
-									debugTask(
-										"[%s] max retries (%d) exceeded, throwing",
-										taskName,
-										maxRetries,
-									);
-								}
-								taskSpan?.setAttributes?.({
-									"task.retry.max_retries_exceeded": true,
-									"task.retry.attempts_made": attempt + 1,
-								});
-								throw error;
-							}
-
-							const delayMs =
-								typeof delay === "function" ? delay(attempt + 1, error) : delay;
-
-							debugTask(
-								"[%s] attempt %d failed, waiting %dms before retry",
-								taskName,
-								attempt + 1,
-								delayMs,
-							);
-
-							if (onRetry) {
-								try {
-									onRetry(error, attempt + 1);
-								} catch {
-									// Ignore errors in onRetry
-								}
-							}
-
-							if (delayMs > 0) {
-								await new Promise((resolve, reject) => {
-									const timeoutId = setTimeout(resolve, delayMs);
-									sig.addEventListener(
-										"abort",
-										() => {
-											clearTimeout(timeoutId);
-											reject(new AbortError(sig.reason));
-										},
-										{ once: true },
-									);
-								});
-							}
-						}
-					}
-
-					// Should never reach here
-					throw new Error("Retry loop exited unexpectedly");
-				};
-			}
-
-			// 4. Apply timeout if specified
-			// Use native AbortSignal.timeout() and AbortSignal.any()
-			if (options?.timeout !== undefined && options.timeout > 0) {
-				const timeoutMs = options.timeout;
-				const innerFn = executeFn;
-				executeFn = (sig) => {
-					// Combine task signal with timeout signal
-					const timeoutSignal = AbortSignal.timeout(timeoutMs);
-					const combinedSignal = AbortSignal.any([sig, timeoutSignal]);
-
-					// Race the inner function against the timeout signal
-					// This ensures the timeout actually rejects even if innerFn doesn't check the signal
-					return new Promise((resolve, reject) => {
-						// Start the inner function
-						const innerPromise = innerFn(combinedSignal);
-
-						// Watch for timeout
-						const onTimeout = () => {
-							reject(new Error(`timeout after ${timeoutMs}ms`));
-						};
-
-						timeoutSignal.addEventListener("abort", onTimeout, { once: true });
-
-						innerPromise
-							.then((result) => {
-								timeoutSignal.removeEventListener("abort", onTimeout);
-								resolve(result);
-							})
-							.catch((err) => {
-								timeoutSignal.removeEventListener("abort", onTimeout);
-								reject(err);
-							});
-					});
-				};
-			}
-
-			// Execute the pipeline
-			if (hasTaskDebug) {
-				debugTask("[%s] starting execution", taskName);
-			}
-			const startTime = performance.now();
-			try {
-				const result = await executeFn(signal);
-				const duration = performance.now() - startTime;
-				if (hasTaskDebug) {
-					debugTask("[%s] completed successfully in %dms", taskName, duration);
-				}
-				taskSpan?.setAttributes?.({
-					"task.duration_ms": Math.round(duration),
-					"task.retry_attempts": retryAttempt,
-				});
-				return result;
-			} catch (error) {
-				const duration = performance.now() - startTime;
-				if (hasTaskDebug) {
-					debugTask("[%s] failed after %dms: %s", taskName, duration, error);
-				}
-
-				// Determine error reason
-				let errorReason = "exception";
-				if (error instanceof Error) {
-					if (error.message.startsWith("timeout after")) {
-						errorReason = "timeout";
-					} else if (error.message === "Circuit breaker is open") {
-						errorReason = "circuit_breaker_open";
-					} else if (signal.aborted) {
-						errorReason = "aborted";
-					}
-				} else if (signal.aborted) {
-					errorReason = "aborted";
-				}
-
-				taskSpan?.recordException?.(
-					error instanceof Error ? error : new Error(String(error)),
+			// Apply circuit breaker if configured
+			let result: T;
+			if (this.scopeCircuitBreaker) {
+				result = await this.scopeCircuitBreaker.execute(() =>
+					this.executeWithRetry(callFn, signal, options?.retry),
 				);
-				taskSpan?.setAttributes?.({
-					"task.duration_ms": Math.round(duration),
-					"task.error_reason": errorReason,
-					"task.retry_attempts": retryAttempt,
-				});
-				throw error;
+			} else {
+				result = await this.executeWithRetry(callFn, signal, options?.retry);
+			}
+
+			return result;
+		};
+
+		// Create task factory
+		const factory = async (): Promise<Result<E, T>> => {
+			if (dedupeKey !== undefined) {
+				const promise = factoryInternal();
+				this.dedupeRegistry.set(dedupeKey, promise);
+				return promise;
+			}
+			return factoryInternal();
+		};
+
+		const factoryInternal = async (): Promise<Result<E, T>> => {
+			try {
+				let result: T;
+
+				// Create timeout promise if timeout option is set
+				let timeoutPromise: Promise<never> | undefined;
+				if (options?.timeout) {
+					timeoutPromise = new Promise((_, reject) => {
+						const timeoutId = setTimeout(() => {
+							reject(new Error(`Task timeout after ${options.timeout}ms`));
+						}, options.timeout);
+						// Clean up timeout if parent signal aborts
+						parentSignal.addEventListener(
+							"abort",
+							() => clearTimeout(timeoutId),
+							{ once: true },
+						);
+					});
+				}
+
+				// Apply concurrency limit if configured
+				if (this.concurrencySemaphore) {
+					const fnPromise = this.concurrencySemaphore.acquire(async () => {
+						return wrappedFn(parentSignal);
+					});
+					result = timeoutPromise
+						? await Promise.race([fnPromise, timeoutPromise])
+						: await fnPromise;
+				} else {
+					const fnPromise = wrappedFn(parentSignal);
+					result = timeoutPromise
+						? await Promise.race([fnPromise, timeoutPromise])
+						: await fnPromise;
+				}
+
+				return [undefined, result] as Success<T>;
+			} catch (error) {
+				// Wrap error according to errorClass or systemErrorClass options
+				const wrappedError = this.wrapError(error, options);
+				return [wrappedError, undefined] as Failure<E>;
 			}
 		};
 
-		// Get error class from options for typed error handling
-		// TaskOptions is a discriminated union, so we need to check for properties
-		const errorClass =
-			options && "errorClass" in options ? options.errorClass : undefined;
-		// Default to UnknownError for system errors if not specified
-		const systemErrorClass =
-			options && "systemErrorClass" in options && options.systemErrorClass
-				? options.systemErrorClass
-				: UnknownError;
-		// Get error context for debugging
-		const errorContext = options?.errorContext;
-
-		// Create the task with the full pipeline
-		const task = new Task<Result<E, T>>(async (signal) => {
-			try {
-				const result = await wrappedFn(signal);
-				return [undefined, result] as Success<T>;
-			} catch (error) {
-				// Attach error context if provided
-				if (errorContext && error instanceof Error) {
-					(error as Error & { context?: Record<string, unknown> }).context =
-						errorContext;
-				}
-
-				// Wrap error in typed error class if provided
-				if (errorClass) {
-					const wrappedError = new errorClass(
-						error instanceof Error ? error.message : String(error),
-						{ cause: error },
-					);
-					if (errorContext) {
-						(
-							wrappedError as Error & { context?: Record<string, unknown> }
-						).context = errorContext;
-					}
-					return [wrappedError as E, undefined] as Failure<E>;
-				}
-
-				// Unwrap AbortError to preserve original abort reason
-				// Must check before isCustomError since AbortError extends Error
-				if (error instanceof AbortError) {
-					return [error.reason as E, undefined] as Failure<E>;
-				}
-
-				// Preserve custom error classes that extend Error
-				// Only wrap plain objects or primitives in systemErrorClass
-				const isCustomError =
-					error instanceof Error &&
-					error.constructor !== Error &&
-					error.constructor !== systemErrorClass;
-				if (isCustomError) {
-					return [error as E, undefined] as Failure<E>;
-				}
-
-				// Wrap system errors only (errors without _tag property)
-				// UnknownError is used as default, preserving tagged business errors
-				const hasTag =
-					error instanceof Error && "_tag" in error && error._tag !== undefined;
-				if (!hasTag) {
-					const wrappedError = new systemErrorClass(
-						error instanceof Error ? error.message : String(error),
-						{ cause: error },
-					);
-					if (errorContext) {
-						(
-							wrappedError as Error & { context?: Record<string, unknown> }
-						).context = errorContext;
-					}
-					return [wrappedError as E, undefined] as Failure<E>;
-				}
-
-				return [error as E, undefined] as Failure<E>;
-			}
-		}, parentSignal);
-
-		// Track active task
+		const task = new Task<Result<E, T>>(factory, this.abortController.signal);
 		this.activeTasks.add(task as Task<unknown>);
 
-		// Register in dedupe registry if needed
-		// Store Promise.resolve(task) to convert Task (PromiseLike) to a real Promise
-		if (dedupeKey !== undefined) {
-			this.dedupeRegistry.set(dedupeKey, Promise.resolve(task));
-		}
-
-		// Record span status on completion and remove from active tasks
 		task.then(
-			([err, value]) => {
-				// End profiling
-				this.profiler.endTask(taskIndex, !err);
+			async (result) => {
 				this.activeTasks.delete(task as Task<unknown>);
-				// Clean up dedupe registry
-				if (dedupeKey !== undefined) {
-					this.dedupeRegistry.delete(dedupeKey);
+				const duration = Date.now() - startTime;
+				// Call afterTask hook
+				this.hooks?.afterTask?.(taskName, duration, result[0], taskIndex);
+				// Call dynamic afterTask hooks
+				for (const hook of this.afterTaskHooks) {
+					hook(taskName, duration, result[0], taskIndex);
 				}
-				// Store successful result in memo registry
-				if (memoConfig !== undefined && !err) {
+				// Store successful result in memo cache
+				if (memoConfig !== undefined && result[0] === undefined) {
 					this.memoRegistry.set(memoConfig.key, {
-						result: [undefined, value] as Result<E, T>,
+						result,
 						expiry: Date.now() + memoConfig.ttl,
 					});
-					if (debugScope.enabled) {
-						debugScope(
-							"[%s] task result memoized for key '%s' (ttl: %dms)",
-							this.name,
-							memoConfig.key,
-							memoConfig.ttl,
-						);
-					}
 				}
-
-				// Store successful result in idempotency provider
-				if (idempotencyKey !== undefined && !err) {
+				// Store result in idempotency provider
+				if (idempotencyKey !== undefined) {
 					const idempotencyProvider = this._persistence?.idempotency;
 					if (idempotencyProvider) {
-						// Store the successful result tuple
-						const resultToCache: Result<E, T> = [undefined, value] as Result<E, T>;
-						void idempotencyProvider
-							.set(idempotencyKey, resultToCache, idempotencyTTL)
-							.then(() => {
-								if (debugScope.enabled) {
-									debugScope(
-										"[%s] task result cached for idempotency key '%s' (ttl: %s)",
-										this.name,
-										idempotencyKey,
-										idempotencyTTL ?? "none",
-									);
-								}
-							})
-							.catch((cacheError) => {
-								if (debugScope.enabled) {
-									debugScope(
-										"[%s] failed to cache idempotency result: %s",
-										this.name,
-										cacheError,
-									);
-								}
-							});
+						try {
+							// Use task-specific TTL, or scope default TTL, or no TTL
+							const ttl =
+								options?.idempotency?.ttl ?? this.idempotency?.defaultTTL;
+							await idempotencyProvider.set(idempotencyKey, result, ttl);
+						} catch {
+							// Ignore idempotency storage errors
+						}
 					}
 				}
-				taskSpan?.setStatus?.({ code: SpanStatusCodeEnum.OK });
-				taskSpan?.end?.();
-
-				// Update metrics and call hook
-				const duration = performance.now() - this.startTime;
-				if (this.enableMetrics) {
-					if (err) {
-						this.metricsData.tasksFailed++;
-					} else {
-						this.metricsData.tasksCompleted++;
-						this.metricsData.totalTaskDuration += duration;
-						this.metricsData.durations.push(duration);
-					}
-				}
-				this.hooks?.afterTask?.(taskName, duration, err);
-			},
-			() => {
-				this.activeTasks.delete(task as Task<unknown>);
-				// Clean up dedupe registry
+				// Release dedupe key after completion
 				if (dedupeKey !== undefined) {
 					this.dedupeRegistry.delete(dedupeKey);
 				}
-				taskSpan?.setStatus?.({
-					code: SpanStatusCodeEnum.ERROR,
-					message: "task failed",
-				});
-				taskSpan?.end?.();
+			},
+			(error) => {
+				this.activeTasks.delete(task as Task<unknown>);
+				const duration = Date.now() - startTime;
+				// Call afterTask hook with error
+				this.hooks?.afterTask?.(taskName, duration, error, taskIndex);
+				// Call dynamic afterTask hooks
+				for (const hook of this.afterTaskHooks) {
+					hook(taskName, duration, error, taskIndex);
+				}
+				// Release dedupe key after failure
+				if (dedupeKey !== undefined) {
+					this.dedupeRegistry.delete(dedupeKey);
+				}
 			},
 		);
 
-		// Register custom cleanup if provided - runs when scope exits
-		if (options?.onCleanup) {
-			const cleanupFn = options.onCleanup;
-			const cleanupDisposable: AsyncDisposable = {
-				async [Symbol.asyncDispose]() {
-					debugTask("[%s] running task cleanup", taskName);
-					try {
-						await cleanupFn();
-					} catch (err) {
-						debugTask("[%s] cleanup error: %s", taskName, err);
-					}
-				},
-			};
-			this.disposables.push(cleanupDisposable);
-		}
-
-		if (debugScope.enabled) {
-			debugScope(
-				"[%s] task #%d added to disposables (total: %d)",
-				this.name,
-				taskIndex,
-				this.disposables.length,
-			);
-		}
 		return task;
 	}
 
 	/**
-	 * Provide a service that will be available to tasks in this scope.
-	 * Services are automatically cleaned up when the scope exits.
+	 * Run multiple tasks in parallel with optional concurrency limit.
+	 * All tasks run within this scope and are cancelled together on failure.
 	 *
-	 * @param key - Unique key for the service (string or symbol)
-	 * @param factory - Function to create the service, receives current services
-	 * @param cleanup - Optional cleanup function (defaults to no-op)
-	 * @returns The scope with the service added (for chaining)
-	 *
-	 * @example
-	 * ```typescript
-	 * await using s = scope()
-	 *   .provide('db', () => openDatabase(), (db) => db.close())
-	 *   .provide('cache', () => createCache())
-	 *
-	 * const result = await s.spawn((svcs) => svcs.db.query('SELECT 1'))
-	 * ```
-	 *
-	 * @example
-	 * ```typescript
-	 * // Using symbols for better encapsulation
-	 * const DatabaseKey = Symbol('Database')
-	 *
-	 * await using s = scope()
-	 *   .provide(DatabaseKey, () => openDatabase())
-	 *
-	 * const db = s.use(DatabaseKey)
-	 * ```
-	 *
-	 * @example
-	 * ```typescript
-	 * // Factory can access previously defined services
-	 * await using s = scope()
-	 *   .provide('config', () => ({ dbUrl: 'postgres://localhost' }))
-	 *   .provide('db', ({ services }) => {
-	 *     // Access previously defined services
-	 *     return createDatabase(services.config.dbUrl)
-	 *   })
-	 * ```
-	 */
-	provide<K extends string | symbol, T>(
-		key: K,
-		factory: (ctx: { services: Services }) => T,
-		cleanup?: (service: T) => void | Promise<void>,
-	): Scope<Services & Record<K, T>> {
-		if (this.disposed) {
-			throw new Error("Cannot provide service on disposed scope");
-		}
-
-		const service = factory({ services: this.services });
-
-		// Store service
-		(this.services as Record<string | symbol, unknown>)[key] = service;
-
-		// Register cleanup if provided
-		if (cleanup) {
-			const cleanupDisposable: AsyncDisposable = {
-				async [Symbol.asyncDispose]() {
-					// Errors propagate to scope disposal to be recorded in span
-					await cleanup(service);
-				},
-			};
-			this.disposables.push(cleanupDisposable);
-			if (this.enableMetrics) {
-				this.metricsData.resourcesRegistered++;
-			}
-		}
-
-		if (debugScope.enabled) {
-			debugScope(
-				"[%s] provided service '%s' (total disposables: %d)",
-				this.name,
-				key,
-				this.disposables.length,
-			);
-		}
-
-		// Return with updated type
-		return this as Scope<Services & Record<K, T>>;
-	}
-
-	/**
-	 * Override an existing service with a new implementation.
-	 * Useful for testing - allows replacing real services with mocks/fakes.
-	 *
-	 * The old service's cleanup function (if any) will NOT be called immediately;
-	 * it will be cleaned up when the scope is disposed along with the new service's cleanup.
-	 *
-	 * @param key - Key of an existing service to override (string or symbol)
-	 * @param factory - Function to create the replacement service
-	 * @param cleanup - Optional cleanup function for the new service
-	 * @returns The scope (for chaining)
-	 *
-	 * @example
-	 * ```typescript
-	 * await using s = scope()
-	 *   .provide('db', () => realDatabase())
-	 *   .override('db', () => mockDatabase())  // Replace with mock for testing
-	 *
-	 * // s.use('db') now returns the mock
-	 * ```
-	 */
-	override<K extends keyof Services, T extends Services[K]>(
-		key: K,
-		factory: (ctx: { services: Services }) => T,
-		cleanup?: (service: T) => void | Promise<void>,
-	): Scope<Services> {
-		if (this.disposed) {
-			throw new Error("Cannot override service on disposed scope");
-		}
-
-		// Check if service exists
-		if (!(key in this.services)) {
-			throw new Error(
-				`Cannot override service '${String(key)}': it was not provided`,
-			);
-		}
-
-		const service = factory({ services: this.services });
-
-		// Store service (replaces existing)
-		(this.services as Record<string | symbol, unknown>)[
-			key as string | symbol
-		] = service;
-
-		// Register cleanup if provided
-		if (cleanup) {
-			const cleanupDisposable: AsyncDisposable = {
-				async [Symbol.asyncDispose]() {
-					await cleanup(service);
-				},
-			};
-			this.disposables.push(cleanupDisposable);
-			if (this.enableMetrics) {
-				this.metricsData.resourcesRegistered++;
-			}
-		}
-
-		if (debugScope.enabled) {
-			debugScope(
-				"[%s] overridden service '%s' (total disposables: %d)",
-				this.name,
-				String(key),
-				this.disposables.length,
-			);
-		}
-
-		return this;
-	}
-
-	/**
-	 * Get a service by key.
-	 *
-	 * @param key - The service key
-	 * @returns The service
-	 */
-	use<K extends keyof Services>(key: K): Services[K] {
-		if (this.disposed) {
-			throw new Error("Cannot use service on disposed scope");
-		}
-		return this.services[key];
-	}
-
-	/**
-	 * Check if a service is registered.
-	 *
-	 * @param key - The service key
-	 * @returns True if the service exists
-	 */
-	has<K extends keyof Services>(key: K): boolean {
-		if (this.disposed) {
-			return false;
-		}
-		return key in this.services;
-	}
-
-	/**
-	 * Register a disposable for cleanup when the scope is disposed.
-	 * @internal Used by rate-limiting and other utilities
-	 */
-	registerDisposable(disposable: Disposable | AsyncDisposable): void {
-		this.disposables.push(disposable);
-	}
-
-	/**
-	 * Register a callback to run when the scope is disposed.
-	 * Useful for registering cleanup handlers without creating a Task.
-	 * @param callback - Function to call on scope disposal (can be async)
-	 * @example
-	 * ```typescript
-	 * await using s = scope();
-	 *
-	 * const ws = new WebSocket('ws://localhost:8080');
-	 * s.onDispose(() => ws.close());
-	 * ```
-	 */
-	onDispose(callback: () => void | Promise<void>): void {
-		this.registerDisposable({
-			[Symbol.dispose]: () => {
-				void callback();
-			},
-			[Symbol.asyncDispose]: async () => {
-				await callback();
-			},
-		});
-	}
-
-	/**
-	 * Dispose the scope and all tracked resources.
-	 * Resources are disposed in LIFO order (reverse of creation).
-	 */
-	async [Symbol.asyncDispose](): Promise<void> {
-		if (this.disposed) {
-			if (debugScope.enabled) {
-				debugScope("[%s] already disposed, skipping", this.name);
-			}
-			return;
-		}
-
-		if (debugScope.enabled) {
-			debugScope(
-				"[%s] disposing scope (tasks: %d, disposables: %d)",
-				this.name,
-				this.taskCount,
-				this.disposables.length,
-			);
-		}
-		this.disposed = true;
-
-		// Clear timeout if set
-		if (this.timeoutId !== undefined) {
-			clearTimeout(this.timeoutId);
-		}
-
-		// Abort all tasks
-		if (debugScope.enabled) {
-			debugScope("[%s] aborting all tasks", this.name);
-		}
-		const abortReason = new Error("scope disposed");
-		this.abortController.abort(abortReason);
-
-		// Dispose deadlock detector
-		this.deadlockDetector?.dispose();
-
-		// Call onCancel hook
-		this.hooks?.onCancel?.(abortReason);
-
-		// Dispose all resources in reverse order (LIFO) - avoid array copy
-		const errors: unknown[] = [];
-		const disposables = this._disposables;
-		if (!disposables) return;
-		const len = disposables.length;
-		for (let i = len - 1; i >= 0; i--) {
-			const disposable = disposables[i];
-			if (!disposable) continue;
-			const resourceIndex = len - i;
-			try {
-				if (debugScope.enabled) {
-					debugScope(
-						"[%s] disposing resource %d/%d",
-						this.name,
-						resourceIndex,
-						len,
-					);
-				}
-				if (Symbol.asyncDispose in disposable) {
-					await disposable[Symbol.asyncDispose]();
-				} else if (Symbol.dispose in disposable) {
-					disposable[Symbol.dispose]();
-				}
-				if (this.enableMetrics) {
-					this.metricsData.resourcesDisposed++;
-				}
-				this.hooks?.onDispose?.(resourceIndex);
-			} catch (error) {
-				if (debugScope.enabled) {
-					debugScope(
-						"[%s] error disposing resource %d: %s",
-						this.name,
-						resourceIndex,
-						error,
-					);
-				}
-				errors.push(error);
-				this.hooks?.onDispose?.(resourceIndex, error);
-			}
-		}
-
-		// Clear the disposables list
-		const disposedCount = this._disposables?.length ?? 0;
-		if (this._disposables) {
-			this._disposables.length = 0;
-		}
-		if (debugScope.enabled) {
-			debugScope("[%s] cleared %d disposables", this.name, disposedCount);
-		}
-
-		// Wait for all active tasks to settle before ending the span
-		// This ensures the scope duration includes all task execution time
-		const activeTaskCount = this.activeTasks.size;
-		if (activeTaskCount > 0) {
-			if (debugScope.enabled) {
-				debugScope(
-					"[%s] waiting for %d active tasks to settle",
-					this.name,
-					activeTaskCount,
-				);
-			}
-			await Promise.allSettled(
-				Array.from(this.activeTasks).map((t) =>
-					Promise.resolve(t).catch(() => {}),
-				),
-			);
-			this.activeTasks.clear();
-			if (debugScope.enabled) {
-				debugScope("[%s] all tasks settled", this.name);
-			}
-		}
-
-		// End the scope span
-		if (errors.length > 0) {
-			const errorMessages = errors.map((e) =>
-				e instanceof Error ? e.message : String(e),
-			);
-			this.span?.setStatus({
-				code: SpanStatusCodeEnum.ERROR,
-				message: `Disposal errors: ${errorMessages.join(", ")}`,
-			});
-			for (const error of errors) {
-				this.span?.recordException(
-					error instanceof Error ? error : new Error(String(error)),
-				);
-			}
-			this.spanHasError = true;
-		}
-		// Only set OK if we haven't already recorded an error
-		if (!this.spanHasError) {
-			this.span?.setStatus({ code: SpanStatusCodeEnum.OK });
-		}
-
-		// Calculate and record scope duration in milliseconds
-		const duration = performance.now() - this.startTime;
-		this.span?.setAttributes?.({ "scope.duration_ms": duration });
-
-		// Record end time for metrics
-		if (this.enableMetrics) {
-			this.metricsData.scopeEndTime = performance.now();
-		}
-
-		this.span?.end();
-		if (debugScope.enabled) {
-			debugScope(
-				"[%s] scope disposed (duration: %dms, errors: %d)",
-				this.name,
-				Math.round(duration),
-				errors.length,
-			);
-		}
-
-		// If any disposals threw, aggregate and rethrow
-		if (errors.length > 0) {
-			if (errors.length === 1) {
-				throw errors[0];
-			}
-			const aggregate = new Error(
-				`Multiple errors during scope disposal: ${errors.map((e) => (e instanceof Error ? e.message : String(e))).join(", ")}`,
-			);
-			throw aggregate;
-		}
-	}
-
-	/**
-	 * Create a channel within this scope.
-	 *
-	 * @param capacity - Buffer capacity (default: 0 for unbuffered)
-	 * @returns Channel with default backpressure strategy
-	 *
-	 * @example
-	 * ```typescript
-	 * await using s = scope()
-	 * const ch = s.channel<string>(100)
-	 * ```
-	 */
-	channel<T>(capacity?: number): Channel<T>;
-
-	/**
-	 * Create a channel within this scope with options.
-	 *
-	 * @param options - Channel configuration options
-	 * @returns Channel with configured backpressure strategy
-	 *
-	 * @example
-	 * ```typescript
-	 * await using s = scope()
-	 * const ch = s.channel<number>({
-	 *   capacity: 10,
-	 *   backpressure: 'drop-oldest',
-	 *   onDrop: (value) => console.log('Dropped:', value)
-	 * })
-	 * ```
-	 */
-	channel<T>(options?: ChannelOptions<T>): Channel<T>;
-
-	channel<T>(capacityOrOptions?: number | ChannelOptions<T>): Channel<T> {
-		const ch = new Channel<T>(capacityOrOptions, this.signal);
-		this.disposables.push({
-			async [Symbol.asyncDispose]() {
-				await ch[Symbol.asyncDispose]();
-			},
-		});
-		return ch;
-	}
-
-	/** Poll a function at regular intervals.
-	 * Returns a controller to start, stop, and check status.
-	 */
-	poll<T>(
-		fn: (signal: AbortSignal) => Promise<T>,
-		onValue: (value: T) => void | Promise<void>,
-		options?: Omit<PollOptions, "signal">,
-	): PollController {
-		return this.createPoll(fn, onValue, { ...options, signal: this.signal });
-	}
-
-	/**
-	 * Internal implementation of poll to avoid circular dependencies.
-	 * @internal
-	 */
-	private createPoll<T>(
-		fn: (signal: AbortSignal) => Promise<T>,
-		onValue: (value: T) => void | Promise<void>,
-		options: PollOptions = {},
-	): PollController {
-		const interval = options.interval ?? 5000;
-		const immediate = options.immediate ?? true;
-		const debugEnabled = debugScope.enabled;
-
-		if (debugEnabled) {
-			debugScope(
-				"[poll] creating poll controller (interval: %dms, immediate: %s)",
-				interval,
-				immediate,
-			);
-		}
-
-		// Check if already aborted
-		if (options.signal?.aborted) {
-			if (debugEnabled) {
-				debugScope("[poll] already aborted, throwing");
-			}
-			throw options.signal.reason;
-		}
-
-		let pollCount = 0;
-		let lastPollTime: number | undefined;
-		let nextPollTime: number | undefined;
-		let running = false;
-		let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
-		const s = new Scope({ signal: options.signal });
-
-		const executePoll = async () => {
-			if (!running || s.signal.aborted) return;
-
-			pollCount++;
-			lastPollTime = performance.now();
-			nextPollTime = lastPollTime + interval;
-			if (debugEnabled) {
-				debugScope("[poll] executing poll #%d", pollCount);
-			}
-
-			try {
-				const startTime = performance.now();
-				const [err, value] = await s.task(({ signal }) => fn(signal));
-				const duration = performance.now() - startTime;
-				if (err) {
-					if (debugEnabled) {
-						debugScope(
-							"[poll] poll #%d failed: %s",
-							pollCount,
-							err instanceof Error ? err.message : String(err),
-						);
-					}
-					// Continue polling even on error
-				} else {
-					if (debugEnabled) {
-						debugScope(
-							"[poll] poll #%d succeeded in %dms",
-							pollCount,
-							Math.round(duration),
-						);
-					}
-					await onValue(value as T);
-				}
-			} catch (error) {
-				if (debugEnabled) {
-					debugScope(
-						"[poll] poll #%d failed: %s",
-						pollCount,
-						error instanceof Error ? error.message : String(error),
-					);
-				}
-				// Continue polling even on error
-			}
-
-			// Schedule next poll if still running
-			if (running && !s.signal.aborted) {
-				timeoutId = setTimeout(executePoll, interval);
-			}
-		};
-
-		const start = () => {
-			if (running) {
-				if (debugEnabled) {
-					debugScope("[poll] already running, ignoring start()");
-				}
-				return;
-			}
-			if (s.signal.aborted) {
-				if (debugEnabled) {
-					debugScope("[poll] cannot start, already aborted");
-				}
-				return;
-			}
-			running = true;
-			if (debugEnabled) {
-				debugScope("[poll] starting poll");
-			}
-
-			if (immediate) {
-				// Execute immediately
-				void executePoll();
-			} else {
-				// Schedule first execution
-				nextPollTime = performance.now() + interval;
-				timeoutId = setTimeout(executePoll, interval);
-			}
-		};
-
-		const stop = () => {
-			if (!running) {
-				if (debugEnabled) {
-					debugScope("[poll] not running, ignoring stop()");
-				}
-				return;
-			}
-			running = false;
-			if (timeoutId) {
-				clearTimeout(timeoutId);
-				timeoutId = undefined;
-			}
-			nextPollTime = undefined;
-			if (debugEnabled) {
-				debugScope("[poll] stopped poll, total executions: %d", pollCount);
-			}
-		};
-
-		const status = () => {
-			const now = performance.now();
-			let timeUntilNext = 0;
-
-			if (running && nextPollTime) {
-				timeUntilNext = Math.max(0, nextPollTime - now);
-			} else if (running && !immediate && pollCount === 0) {
-				// Hasn't started yet and not immediate
-				timeUntilNext = interval;
-			}
-
-			return {
-				running,
-				pollCount,
-				timeUntilNext,
-				lastPollTime,
-				nextPollTime,
-			};
-		};
-
-		// Clean up when signal is aborted
-		options.signal?.addEventListener(
-			"abort",
-			() => {
-				if (debugEnabled) {
-					debugScope("[poll] abort signal received, stopping");
-				}
-				stop();
-				s[Symbol.asyncDispose]().catch(() => {});
-			},
-			{ once: true },
-		);
-
-		// Auto-start if immediate
-		if (immediate) {
-			start();
-		}
-
-		return {
-			start,
-			stop,
-			status,
-			[Symbol.dispose]: stop,
-		};
-	}
-
-	/**
-	 * Race multiple tasks - the first to settle wins, others are cancelled.
-	 * Tasks run within this scope and inherit its configuration.
-	 * Returns a Result tuple [error, value] - never throws.
-	 *
-	 * @param factories - Array of factory functions that create promises
-	 * @param options - Optional race configuration
-	 * @returns A Promise that resolves to a Result tuple of the first settled task
-	 *
-	 * @example
-	 * ```typescript
-	 * // Basic race - first to settle wins
-	 * const [err, winner] = await s.race([
-	 *   () => fetch('https://a.com'),
-	 *   () => fetch('https://b.com'),
-	 * ])
-	 *
-	 * // Race with timeout
-	 * const [err, winner] = await s.race([
-	 *   () => fetch('https://slow.com'),
-	 *   () => fetch('https://fast.com'),
-	 * ], { timeout: 5000 })
-	 *
-	 * // Race for first success only
-	 * const [err, winner] = await s.race([
-	 *   () => fetchWithRetry('https://a.com'),
-	 *   () => fetchWithRetry('https://b.com'),
-	 * ], { requireSuccess: true })
-	 * ```
-	 */
-	async race<T>(
-		factories: readonly ((signal: AbortSignal) => Promise<T>)[],
-		options?: {
-			/** Only count successful results as winners */
-			requireSuccess?: boolean;
-			/** Timeout in milliseconds */
-			timeout?: number;
-			/** Maximum concurrent tasks (default: unlimited) */
-			concurrency?: number;
-		},
-	): Promise<Result<unknown, T>> {
-		const totalTasks = factories.length;
-		const requireSuccess = options?.requireSuccess ?? false;
-		const timeout = options?.timeout;
-		const concurrency = options?.concurrency ?? 0;
-
-		if (totalTasks === 0) {
-			return [new Error("Cannot race empty array of factories"), undefined];
-		}
-
-		if (debugScope.enabled) {
-			debugScope(
-				"[race] starting race with %d competitors (requireSuccess: %s, timeout: %s, concurrency: %s)",
-				totalTasks,
-				requireSuccess,
-				timeout ?? "none",
-				concurrency > 0 ? concurrency : "unlimited",
-			);
-		}
-
-		// Check if signal is already aborted
-		if (this.signal.aborted) {
-			if (debugScope.enabled) {
-				debugScope("[race] already aborted");
-			}
-			return [this.signal.reason, undefined];
-		}
-
-		const s = new Scope({ signal: this.signal, tracer: this.tracer });
-		let settledCount = 0;
-		let _successCount = 0;
-		let winnerIndex = -1;
-		const errors: { index: number; error: unknown }[] = [];
-
-		// Helper to create aggregate error
-		const createAggregateError = (errs: unknown[]): Error => {
-			if (typeof AggregateError !== "undefined") {
-				return new AggregateError(errs, "All race competitors failed");
-			}
-			return new Error(`All race competitors failed (${errs.length} errors)`);
-		};
-
-		// Type guard for Result tuple
-		const isResultTuple = (value: unknown): value is Result<unknown, T> => {
-			return Array.isArray(value) && value.length === 2;
-		};
-
-		try {
-			// Create abort promise that returns error as Result
-			const abortPromise = new Promise<Result<unknown, T>>((resolve) => {
-				s.signal.addEventListener(
-					"abort",
-					() => {
-						if (debugScope.enabled) {
-							debugScope(
-								"[race] aborted, %d/%d tasks settled",
-								settledCount,
-								totalTasks,
-							);
-						}
-						resolve([s.signal.reason, undefined]);
-					},
-					{ once: true },
-				);
-			});
-
-			// Create timeout promise if timeout is specified
-			const timeoutPromise = timeout
-				? new Promise<never>((_, reject) => {
-						setTimeout(() => {
-							if (debugScope.enabled) {
-								debugScope("[race] timeout after %dms", timeout);
-							}
-							reject(new Error(`Race timeout after ${timeout}ms`));
-						}, timeout);
-					})
-				: null;
-
-			const debugEnabled = debugScope.enabled;
-
-			// Helper to process a single task
-			const processTask = async (
-				factory: (signal: AbortSignal) => Promise<T>,
-				idx: number,
-			): Promise<{ idx: number; result: Result<unknown, T> }> => {
-				const result = await s.task(async ({ signal }) => {
-					const r = await factory(signal);
-					settledCount++;
-					return r;
-				});
-				const [err, value] = result;
-
-				if (err) {
-					errors.push({ index: idx, error: err });
-					if (debugEnabled) {
-						debugScope("[race] task %d/%d failed", idx + 1, totalTasks);
-					}
-					return { idx, result: [err, undefined] };
-				}
-
-				// Success case
-				_successCount++;
-				if (winnerIndex === -1) {
-					winnerIndex = idx;
-					if (debugEnabled) {
-						debugScope(
-							"[race] winner! task %d/%d won the race",
-							idx + 1,
-							totalTasks,
-						);
-					}
-				} else if (debugEnabled) {
-					debugScope("[race] task %d/%d settled (loser)", idx + 1, totalTasks);
-				}
-
-				return { idx, result: [undefined, value as T] };
-			};
-
-			// If no concurrency limit, run all tasks at once
-			if (concurrency <= 0 || concurrency >= totalTasks) {
-				// Spawn all tasks with tracking
-				const tasks = factories.map((factory, idx) =>
-					processTask(factory, idx),
-				);
-
-				// Race all tasks with optional timeout
-				const racePromise = timeoutPromise
-					? Promise.race([Promise.race(tasks), timeoutPromise])
-					: Promise.race([...tasks, abortPromise]);
-
-				const winner = await racePromise;
-
-				if (debugEnabled) {
-					if (isResultTuple(winner)) {
-						debugScope("[race] ended with error: %s", winner[0]);
-					} else {
-						debugScope(
-							"[race] race complete, winner was task %d/%d",
-							winner.idx + 1,
-							totalTasks,
-						);
-					}
-				}
-
-				// If it's a direct Result (from abort/timeout), return it
-				if (isResultTuple(winner)) {
-					return winner;
-				}
-
-				// If requireSuccess and the winner is an error, we need to keep racing
-				if (requireSuccess && winner.result[0]) {
-					if (debugEnabled) {
-						debugScope("[race] first finisher failed, waiting for success...");
-					}
-
-					// Wait for remaining tasks
-					const remainingResults = await Promise.all(tasks);
-
-					// Find first success
-					const firstSuccess = remainingResults.find((r) => !r.result[0]);
-					if (firstSuccess) {
-						return firstSuccess.result;
-					}
-
-					// All failed
-					if (errors.length === totalTasks) {
-						return [
-							createAggregateError(errors.map((e) => e.error)),
-							undefined,
-						];
-					}
-
-					return winner.result;
-				}
-
-				return winner.result;
-			}
-
-			// With concurrency limit - run tasks in batches
-			if (debugEnabled) {
-				debugScope("[race] running with concurrency limit: %d", concurrency);
-			}
-
-			let currentIndex = 0;
-			const runningTasks: Promise<{
-				idx: number;
-				result: Result<unknown, T>;
-			}>[] = [];
-			const taskIdxMap = new Map<
-				Promise<{ idx: number; result: Result<unknown, T> }>,
-				number
-			>();
-
-			// Start initial batch
-			const initialBatch = Math.min(concurrency, totalTasks);
-			for (let i = 0; i < initialBatch; i++) {
-				const factory = factories[currentIndex];
-				if (!factory) break;
-				const task = processTask(factory, currentIndex);
-				runningTasks.push(task);
-				taskIdxMap.set(task, currentIndex);
-				currentIndex++;
-			}
-
-			// Keep racing until we have a winner
-			while (runningTasks.length > 0) {
-				// Build race competitors for this iteration
-				const competitors: Promise<
-					{ idx: number; result: Result<unknown, T> } | Result<unknown, T>
-				>[] = [...runningTasks, abortPromise];
-				if (timeoutPromise) {
-					competitors.push(timeoutPromise as Promise<never>);
-				}
-
-				// Race current batch
-				const winner = await Promise.race(competitors);
-
-				// If it's a direct Result (from abort/timeout), return it
-				if (isResultTuple(winner)) {
-					return winner;
-				}
-
-				// Find and remove the finished task
-				const finishedTaskIdx = runningTasks.findIndex(
-					(t) => taskIdxMap.get(t) === winner.idx,
-				);
-				if (finishedTaskIdx >= 0) {
-					const finishedTask = runningTasks[finishedTaskIdx];
-					if (finishedTask) {
-						runningTasks.splice(finishedTaskIdx, 1);
-						taskIdxMap.delete(finishedTask);
-					}
-				}
-
-				// Check if this is a valid winner
-				if (!requireSuccess || !winner.result[0]) {
-					if (debugEnabled) {
-						debugScope(
-							"[race] winner! task %d/%d won the race",
-							winner.idx + 1,
-							totalTasks,
-						);
-					}
-					return winner.result;
-				}
-
-				// Winner was an error and requireSuccess is true - need to continue
-				if (debugEnabled) {
-					debugScope(
-						"[race] task %d/%d failed (requireSuccess), starting next...",
-						winner.idx + 1,
-						totalTasks,
-					);
-				}
-
-				// Start next task if available
-				if (currentIndex < totalTasks) {
-					const factory = factories[currentIndex];
-					if (factory) {
-						const nextTask = processTask(factory, currentIndex);
-						runningTasks.push(nextTask);
-						taskIdxMap.set(nextTask, currentIndex);
-						currentIndex++;
-					}
-				} else if (runningTasks.length === 0) {
-					// No more tasks to start and none running - all failed
-					if (debugEnabled) {
-						debugScope("[race] all tasks failed");
-					}
-					return [createAggregateError(errors.map((e) => e.error)), undefined];
-				}
-			}
-
-			// Should not reach here, but just in case
-			return [createAggregateError(errors.map((e) => e.error)), undefined];
-		} finally {
-			// Clean up scope - cancels all tasks
-			await s[Symbol.asyncDispose]();
-		}
-	}
-
-	/**
-	 * Run multiple tasks in parallel with optional progress tracking,
-	 * concurrency control, and error handling.
-	 *
-	 * Returns a tuple of Results where each position corresponds to the factory
-	 * at the same index. This preserves individual return types for each task.
-	 *
-	 * @param factories - Array of factory functions that create promises
-	 * @param options - Optional configuration for concurrency, progress, and error handling
+	 * @param factories - Array of factory functions that receive AbortSignal and create promises
+	 * @param options - Optional configuration including concurrency limit, progress callback, and error handling
 	 * @returns A Promise that resolves to a tuple of Results (one per factory)
-	 *
-	 * @example
-	 * ```typescript
-	 * // With type inference - each result is typed individually
-	 * const [userResult, ordersResult] = await s.parallel([
-	 *   (signal) => fetchUser(1, { signal }),      // Result<Error, User>
-	 *   (signal) => fetchOrders({ signal }),       // Result<Error, Order[]>
-	 * ])
-	 *
-	 * const [userErr, user] = userResult
-	 * const [ordersErr, orders] = ordersResult
-	 *
-	 * // With typed errors
-	 * const results = await s.parallel([
-	 *   () => fetchUser(),
-	 *   () => fetchOrders()
-	 * ], { errorClass: DatabaseError })
-	 * // Each result is Result<DatabaseError, T>
-	 * ```
 	 */
-	async parallel<
-		T extends readonly ((signal: AbortSignal) => Promise<unknown>)[],
-		E extends Error = Error,
-	>(
+	async parallel<T extends readonly (() => Promise<unknown>)[]>(
 		factories: T,
 		options?: {
-			/** Maximum concurrent operations (default: unlimited, or scope's concurrency limit) */
 			concurrency?: number;
-			/** Called after each task completes */
 			onProgress?: (
 				completed: number,
 				total: number,
-				result: Result<E, unknown>,
+				result: Result<unknown, unknown>,
 			) => void;
-			/** Continue processing on error (default: false) */
 			continueOnError?: boolean;
-			/** Error class to wrap errors in for typed error handling */
-			errorClass?: new (
-				message: string,
-				options?: { cause?: unknown },
-			) => E;
 		},
-	): Promise<ParallelResults<T, E>> {
+	): Promise<{
+		[K in keyof T]: T[K] extends () => Promise<infer R>
+			? Result<unknown, R>
+			: never;
+	}> {
 		const {
-			concurrency: optionConcurrency,
+			concurrency = 0,
 			onProgress,
-			continueOnError,
+			continueOnError = false,
 		} = options ?? {};
 
-		// Use provided concurrency, or scope's semaphore, or unlimited
-		const scopeConcurrency = this.concurrencySemaphore?.totalPermits ?? 0;
-		const concurrency =
-			optionConcurrency !== undefined
-				? optionConcurrency
-				: scopeConcurrency > 0
-					? scopeConcurrency
-					: 0;
+		if (factories.length === 0) {
+			return [] as unknown as {
+				[K in keyof T]: T[K] extends () => Promise<infer R>
+					? Result<unknown, R>
+					: never;
+			};
+		}
 
 		const total = factories.length;
-
-		if (debugScope.enabled) {
-			debugScope(
-				"[parallel] starting (tasks: %d, concurrency: %d, continueOnError: %s)",
-				total,
-				concurrency > 0 ? concurrency : "unlimited",
-				continueOnError ?? false,
-			);
-		}
-
-		// Check cancellation before starting
-		if (this.abortController.signal.aborted) {
-			throw this.abortController.signal.reason;
-		}
-
-		// Use a fixed-size array to preserve order and types
-		const results = new Array(factories.length);
+		const results: Result<unknown, unknown>[] = new Array(factories.length);
 
 		if (concurrency <= 0 || concurrency >= factories.length) {
 			// No concurrency limit - run all in parallel
-			const childScope = new Scope({
-				signal: this.signal,
-				tracer: this.tracer,
-			});
+			const promises = factories.map((factory, idx) =>
+				this.task(async () => factory()).then(
+					(result): [number, Result<unknown, unknown>] => [idx, result],
+				),
+			);
 
-			try {
-				const promises = factories.map((factory, idx) =>
-					childScope
-						.task(({ signal }) => factory(signal))
-						.then((result): [number, unknown] => [idx, result]),
-				);
+			const settledResults = continueOnError
+				? await Promise.all(promises)
+				: await Promise.all(promises).catch((error) => {
+						return [
+							[-1, [error, undefined]] as [number, Result<unknown, unknown>],
+						];
+					});
 
-				// If not continuing on error, use Promise.all to fail fast
-				const settledResults = continueOnError
-					? await Promise.all(promises)
-					: await Promise.all(promises).catch((error) => {
-							return [[-1, [error, undefined]]];
-						});
-
-				for (const [idx, result] of settledResults as [number, unknown][]) {
-					if (idx === -1) continue;
-					results[idx] = result;
-					if (onProgress) {
-						onProgress(
-							results.filter((r) => r !== undefined).length,
-							total,
-							result as Result<E, unknown>,
-						);
-					}
-					if (!continueOnError && (result as Result<unknown, unknown>)[0]) {
-						break;
-					}
+			for (const [idx, result] of settledResults) {
+				if (idx === -1) continue;
+				results[idx] = result;
+				if (onProgress) {
+					onProgress(
+						results.filter((r) => r !== undefined).length,
+						total,
+						result,
+					);
 				}
-			} finally {
-				await childScope[Symbol.asyncDispose]();
+				if (!continueOnError && result[0]) {
+					break;
+				}
 			}
 		} else {
 			// With concurrency limit
@@ -2450,7 +700,6 @@ export class Scope<
 			let index = 0;
 
 			for (const factory of factories) {
-				// Check cancellation
 				if (this.abortController.signal.aborted) {
 					throw this.abortController.signal.reason;
 				}
@@ -2459,25 +708,25 @@ export class Scope<
 
 				const promise = (async () => {
 					try {
-						const result = await this.task((ctx) => factory(ctx.signal));
+						const result = await this.task(async () => factory());
 						results[currentIndex] = result;
 						if (onProgress) {
 							onProgress(
 								results.filter((r) => r !== undefined).length,
 								total,
-								result as Result<E, unknown>,
+								result,
 							);
 						}
-						if (!continueOnError && (result as Result<unknown, unknown>)[0]) {
+						if (!continueOnError && result[0]) {
 							throw result[0];
 						}
 					} catch (error) {
-						results[currentIndex] = [error, undefined] as unknown;
+						results[currentIndex] = [error, undefined];
 						if (onProgress) {
 							onProgress(results.filter((r) => r !== undefined).length, total, [
 								error,
 								undefined,
-							] as Result<E, unknown>);
+							]);
 						}
 						if (!continueOnError) {
 							throw error;
@@ -2496,68 +745,560 @@ export class Scope<
 				}
 			}
 
-			// Wait for remaining
 			if (continueOnError || results.every((r) => r !== undefined)) {
 				await Promise.all(executing).catch(() => {});
 			}
 		}
 
-		// Fill in any missing results (if we broke early due to !continueOnError)
 		for (let i = 0; i < results.length; i++) {
 			if (results[i] === undefined) {
 				results[i] = [new Error("Task did not complete"), undefined];
 			}
 		}
 
-		if (debugScope.enabled) {
-			debugScope(
-				"[parallel] completed: %d/%d, errors: %d",
-				results.filter((r) => !r[0]).length,
-				total,
-				results.filter((r) => r[0]).length,
-			);
+		return results as {
+			[K in keyof T]: T[K] extends () => Promise<infer R>
+				? Result<unknown, R>
+				: never;
+		};
+	}
+
+	/**
+	 * Race multiple tasks against each other - first to settle wins.
+	 *
+	 * @param factories - Array of factory functions that receive AbortSignal and create promises
+	 * @param options - Optional race configuration including timeout, requireSuccess, and concurrency
+	 * @returns A Promise that resolves to the Result of the winning task
+	 */
+	async race<T>(
+		factories: readonly (() => Promise<T>)[],
+		options?: {
+			timeout?: number;
+			requireSuccess?: boolean;
+			concurrency?: number;
+		},
+	): Promise<Result<unknown, T>> {
+		const totalTasks = factories.length;
+		const requireSuccess = options?.requireSuccess ?? false;
+		const timeout = options?.timeout;
+		const concurrency = options?.concurrency ?? 0;
+
+		if (totalTasks === 0) {
+			return [new Error("Cannot race empty array of factories"), undefined];
 		}
 
-		return results as unknown as ParallelResults<T, E>;
+		let settledCount = 0;
+		let winnerIndex = -1;
+		const errors: { index: number; error: unknown }[] = [];
+
+		// Create combined signal with optional timeout
+		const signals: AbortSignal[] = [this.signal];
+		if (timeout) {
+			signals.push(AbortSignal.timeout(timeout));
+		}
+		const combinedSignal = AbortSignal.any(signals);
+
+		// Create abort promise that returns error as Result
+		const abortPromise = new Promise<Result<unknown, T>>((resolve) => {
+			if (combinedSignal.aborted) {
+				resolve([combinedSignal.reason, undefined]);
+				return;
+			}
+			combinedSignal.addEventListener("abort", () => {
+				resolve([combinedSignal.reason, undefined]);
+			});
+		});
+
+		const executeTask = async (
+			factory: () => Promise<T>,
+			taskIndex: number,
+		): Promise<Result<unknown, T>> => {
+			try {
+				const result = await factory();
+				settledCount++;
+				if (winnerIndex === -1) {
+					winnerIndex = taskIndex;
+				}
+				return [undefined, result] as Success<T>;
+			} catch (error) {
+				settledCount++;
+				return [error as Error, undefined] as Failure<Error>;
+			}
+		};
+
+		// With concurrency limit, create a semaphore
+		const runWithConcurrency = async (): Promise<Result<unknown, T>> => {
+			const semaphore = new Semaphore(concurrency);
+			const tasks: Promise<Result<unknown, T>>[] = [];
+
+			for (let i = 0; i < factories.length; i++) {
+				tasks.push(
+					semaphore.acquire(async () => {
+						if (winnerIndex !== -1) {
+							return [undefined, undefined] as unknown as Result<unknown, T>;
+						}
+						const factory = factories[i];
+						if (!factory) {
+							return [
+								new Error(`Factory at index ${i} is undefined`),
+								undefined,
+							];
+						}
+						return executeTask(factory, i);
+					}),
+				);
+			}
+
+			return Promise.race([abortPromise, Promise.race(tasks)]);
+		};
+
+		// Without concurrency limit, run all at once
+		const runUnlimited = async (): Promise<Result<unknown, T>> => {
+			const tasks = factories.map((factory, index) =>
+				executeTask(factory, index),
+			);
+			return Promise.race([abortPromise, Promise.race(tasks)]);
+		};
+
+		// Main race logic
+		const racePromise =
+			concurrency > 0 && concurrency < factories.length
+				? runWithConcurrency()
+				: runUnlimited();
+
+		// Wait for first result
+		const firstResult = await racePromise;
+
+		// If aborted, return abort reason
+		if (firstResult[0] === combinedSignal.reason) {
+			return firstResult;
+		}
+
+		// If we got a success and don't require success, return it
+		if (!firstResult[0] && !requireSuccess) {
+			return firstResult;
+		}
+
+		// Otherwise need to collect all results to find first success or return all errors
+		const allResults = await Promise.all(
+			factories.map((factory, index) =>
+				executeTask(factory, index).then((result) => ({ index, result })),
+			),
+		);
+
+		for (const { index, result } of allResults) {
+			if (!result[0]) {
+				return result;
+			}
+			errors.push({ index, error: result[0] });
+		}
+
+		return [
+			new AggregateError(
+				errors.map((e) => e.error),
+				`All race competitors failed (${errors.length} errors)`,
+			),
+			undefined,
+		];
+	}
+
+	/**
+	 * Wrap error according to errorClass or systemErrorClass options.
+	 * If no options provided, uses UnknownError for plain errors and non-Error values.
+	 * AbortError is not wrapped - the raw reason is returned.
+	 */
+	private wrapError(error: unknown, options?: TaskOptions<Error>): unknown {
+		// Access error class options with type assertion since TaskOptions is a union
+		interface ErrorClassOptions {
+			errorClass?: new (
+				message: string,
+				options?: { cause?: unknown },
+			) => Error;
+			systemErrorClass?: new (
+				message: string,
+				options?: { cause?: unknown },
+			) => Error;
+		}
+		const opts = options as ErrorClassOptions | undefined;
+		const errorClass = opts?.errorClass;
+		const systemErrorClass = opts?.systemErrorClass;
+
+		// Helper to check if error is a custom Error subclass
+		const isCustomError = error instanceof Error && error.constructor !== Error;
+
+		// If errorClass is specified, wrap ALL errors (including AbortError)
+		if (errorClass) {
+			// Don't re-wrap if already the correct type
+			if (error instanceof errorClass) {
+				return error;
+			}
+			// Wrap the error
+			const message = error instanceof Error ? error.message : String(error);
+			return new errorClass(message, { cause: error });
+		}
+
+		// If systemErrorClass is specified, only wrap plain errors and non-Errors
+		if (systemErrorClass) {
+			// Check if error is already the correct type
+			if (error instanceof systemErrorClass) {
+				return error;
+			}
+			// Check if error has a _tag (tagged errors are preserved)
+			const hasTag =
+				error instanceof Error && "_tag" in error && error._tag !== undefined;
+			if (hasTag) {
+				return error as Error;
+			}
+			// Preserve custom error subclasses
+			if (isCustomError) {
+				return error as Error;
+			}
+			// Wrap plain errors and non-Errors
+			const message = error instanceof Error ? error.message : String(error);
+			return new systemErrorClass(message, { cause: error });
+		}
+
+		// Default behavior: preserve custom errors, wrap plain errors and non-Errors
+		// Don't wrap AbortError - return the raw reason
+		if (error instanceof AbortError) {
+			return error.reason;
+		}
+
+		const hasTag =
+			error instanceof Error && "_tag" in error && error._tag !== undefined;
+		if (hasTag) {
+			return error as Error;
+		}
+		// Don't re-wrap if already UnknownError
+		if (error instanceof UnknownError) {
+			return error;
+		}
+		// Preserve custom error subclasses
+		if (isCustomError) {
+			return error as Error;
+		}
+		// Wrap plain errors and non-Errors in UnknownError
+		const message = error instanceof Error ? error.message : String(error);
+		return new UnknownError(message, { cause: error });
+	}
+
+	private async executeWithRetry<T>(
+		fn: (signal: AbortSignal) => Promise<T>,
+		signal: AbortSignal,
+		retry?: TaskOptions["retry"],
+	): Promise<T> {
+		if (!retry) {
+			return fn(signal);
+		}
+
+		// Handle string retry options by converting to object
+		let retryConfig: {
+			maxRetries?: number;
+			delay?: number | import("./types.js").RetryDelayFn;
+			retryCondition?: (error: unknown) => boolean;
+			onRetry?: (error: unknown, attempt: number) => void;
+		};
+		if (typeof retry === "string") {
+			retryConfig = {
+				maxRetries: 3,
+				delay:
+					retry === "exponential"
+						? exponentialBackoff()
+						: retry === "linear"
+							? 1000
+							: 1000,
+			};
+		} else {
+			retryConfig = retry;
+		}
+
+		const maxRetries = retryConfig.maxRetries ?? 3;
+		const delayFn = retryConfig.delay ?? exponentialBackoff();
+		const retryCondition = retryConfig.retryCondition;
+		const retryCallback = retryConfig.onRetry;
+
+		let lastError: unknown;
+
+		for (let attempt = 0; attempt <= maxRetries; attempt++) {
+			if (signal.aborted) {
+				throw new AbortError(signal.reason);
+			}
+
+			try {
+				return await fn(signal);
+			} catch (error) {
+				lastError = error;
+
+				if (attempt === maxRetries) {
+					throw error;
+				}
+
+				if (retryCondition && !retryCondition(error)) {
+					throw error;
+				}
+
+				// Call onRetry callback before waiting
+				if (retryCallback) {
+					retryCallback(error, attempt + 1);
+				}
+
+				const delayMs =
+					typeof delayFn === "number" ? delayFn : delayFn(attempt + 1, error);
+
+				// Wait for delay, but respect abort signal
+				await new Promise<void>((resolve, reject) => {
+					const timeoutId = setTimeout(resolve, delayMs);
+					const abortHandler = () => {
+						clearTimeout(timeoutId);
+						reject(new AbortError(signal.reason));
+					};
+					if (signal.aborted) {
+						abortHandler();
+					} else {
+						signal.addEventListener("abort", abortHandler, { once: true });
+					}
+				});
+			}
+		}
+
+		throw lastError;
+	}
+
+	provide<K extends string, T>(
+		key: K,
+		value: T | (() => T),
+		dispose?: (value: T) => void | Promise<void>,
+	): Scope<Services & Record<K, T>> {
+		// If value is a function, call it to get the actual value
+		const resolvedValue =
+			typeof value === "function" ? (value as () => T)() : value;
+		(this.services as Record<string, unknown>)[key] = resolvedValue;
+
+		// Track dispose function if provided
+		if (dispose) {
+			if (!this._resourceDisposers) {
+				this._resourceDisposers = [];
+			}
+			const index = ++this._resourceIndex;
+			this._resourceDisposers.push({
+				key,
+				dispose: async () => {
+					try {
+						await dispose(resolvedValue);
+						this.hooks?.onDispose?.(index, undefined);
+					} catch (error) {
+						this.hooks?.onDispose?.(index, error);
+					}
+				},
+				index,
+			});
+		}
+
+		return this as Scope<Services & Record<K, T>>;
+	}
+
+	use<K extends keyof Services>(key: K): Services[K] {
+		return this.services[key];
+	}
+
+	has<K extends keyof Services>(key: K): boolean {
+		if (this.disposed) return false;
+		return key in this.services;
+	}
+
+	override<K extends keyof Services>(
+		key: K,
+		value: Services[K] | (() => Services[K]),
+		dispose?: (value: Services[K]) => void | Promise<void>,
+	): this {
+		if (this.disposed) {
+			throw new Error("Cannot override service on disposed scope");
+		}
+		if (!(key in this.services)) {
+			throw new Error(
+				`Cannot override service '${String(key)}': it was not provided`,
+			);
+		}
+		// If value is a function, call it to get the actual value
+		const resolvedValue =
+			typeof value === "function" ? (value as () => Services[K])() : value;
+		this.services[key] = resolvedValue;
+
+		// Track dispose function if provided
+		if (dispose) {
+			if (!this._resourceDisposers) {
+				this._resourceDisposers = [];
+			}
+			const index = ++this._resourceIndex;
+			this._resourceDisposers.push({
+				key: String(key),
+				dispose: async () => {
+					try {
+						await dispose(resolvedValue);
+						this.hooks?.onDispose?.(index, undefined);
+					} catch (error) {
+						this.hooks?.onDispose?.(index, error);
+					}
+				},
+				index,
+			});
+		}
+
+		return this;
+	}
+
+	channel<T>(capacity?: number, options?: ChannelOptions<T>): Channel<T> {
+		const ch = new Channel<T>(
+			capacity ?? options ?? 0,
+			this.abortController.signal,
+		);
+		this.registerDisposable(ch);
+		return ch;
+	}
+
+	broadcast<T>(): BroadcastChannel<T> {
+		const bc = new BroadcastChannel<T>(this.abortController.signal);
+		this.registerDisposable(bc);
+		return bc;
+	}
+
+	priorityChannel<T>(options: PriorityChannelOptions<T>): PriorityChannel<T> {
+		const pc = new PriorityChannel<T>(options, this.abortController.signal);
+		this.registerDisposable(pc);
+		return pc;
+	}
+
+	semaphore(initialPermits: number): Semaphore {
+		const sem = new Semaphore(initialPermits, this.abortController.signal);
+		this.registerDisposable(sem);
+		return sem;
+	}
+
+	pool<T>(
+		options: import("./types.js").ResourcePoolOptions<T>,
+	): ResourcePool<T> {
+		const pool = new ResourcePool<T>(options, this.abortController.signal);
+		this.registerDisposable(pool);
+		return pool;
+	}
+
+	tokenBucket(options: TokenBucketOptions): TokenBucket {
+		return new TokenBucket(options);
+	}
+
+	poll<T>(
+		fn: (signal: AbortSignal) => Promise<T>,
+		onValue: (value: T) => void | Promise<void>,
+		options?: import("./types.js").PollOptions,
+	): import("./types.js").PollController {
+		return pollFn(fn, onValue, {
+			...options,
+			signal: this.abortController.signal,
+		});
+	}
+
+	async select<T, R>(
+		cases: Map<Channel<T>, (value: T) => Promise<R>>,
+		options?: SelectOptions,
+	): Promise<Result<Error, R>> {
+		// Check for empty cases
+		if (cases.size === 0) {
+			return [new Error("select called with no cases"), undefined];
+		}
+
+		const channels = Array.from(cases.keys());
+
+		// Check if all channels are closed
+		const allClosed = channels.every((ch) => ch.isClosed);
+		if (allClosed) {
+			return [new Error("All channels are closed"), undefined];
+		}
+
+		// Create abort signal with optional timeout
+		const signals: AbortSignal[] = [this.signal];
+		if (options?.timeout) {
+			signals.push(AbortSignal.timeout(options.timeout));
+		}
+		const combinedSignal = AbortSignal.any(signals);
+
+		// Race all channel receives
+		const receivePromises = channels.map(async (ch) => {
+			try {
+				const result = await ch.receive();
+				return { channel: ch, result };
+			} catch (error) {
+				return { channel: ch, error };
+			}
+		});
+
+		// Also create an abort promise
+		const abortPromise = new Promise<{ aborted: true; reason: unknown }>(
+			(resolve) => {
+				if (combinedSignal.aborted) {
+					resolve({ aborted: true, reason: combinedSignal.reason });
+					return;
+				}
+				combinedSignal.addEventListener("abort", () => {
+					resolve({ aborted: true, reason: combinedSignal.reason });
+				});
+			},
+		);
+
+		// Race between receives and abort
+		const winner = await Promise.race([
+			...receivePromises,
+			abortPromise.then((r) => ({ ...r })),
+		]);
+
+		// Check if aborted
+		if ("aborted" in winner && winner.aborted) {
+			return [winner.reason as Error, undefined];
+		}
+
+		// Handle channel error (e.g., closed channel)
+		if ("error" in winner) {
+			return [winner.error as Error, undefined];
+		}
+
+		// At this point, winner must be a channel result
+		const channelResult = winner as {
+			channel: Channel<T>;
+			result: Awaited<T> | undefined;
+		};
+
+		// Get the handler and call it with the received value
+		const handler = cases.get(channelResult.channel);
+		if (!handler) {
+			return [new Error("No handler for channel"), undefined];
+		}
+
+		try {
+			const result = await handler(channelResult.result as T);
+			return [undefined, result] as Success<R>;
+		} catch (error) {
+			return [error as Error, undefined] as Failure<Error>;
+		}
 	}
 
 	/**
 	 * Create a debounced function that delays invoking the provided function
 	 * until after `wait` milliseconds have elapsed since the last time it was invoked.
 	 * Automatically cancelled when the scope is disposed.
-	 *
-	 * @param fn - The function to debounce
-	 * @param options - Debounce options
-	 * @returns A debounced function that returns a Promise
-	 *
-	 * @example
-	 * ```typescript
-	 * await using s = scope()
-	 *
-	 * const search = s.debounce(async (query: string) => {
-	 *   return await fetchSearchResults(query)
-	 * }, { wait: 300 })
-	 *
-	 * // Will only execute after 300ms of no calls
-	 * const [err, results] = await search("hello")
-	 * ```
 	 */
 	debounce<T, Args extends unknown[]>(
 		fn: (...args: Args) => Promise<T>,
-		options: import("./types.js").DebounceOptions = {},
+		options?: DebounceOptions,
 	): (...args: Args) => Promise<Result<unknown, T>> {
-		const wait = options.wait ?? 300;
-		const leading = options.leading ?? false;
-		const trailing = options.trailing ?? true;
+		const wait = options?.wait ?? 300;
+		const leading = options?.leading ?? false;
+		const trailing = options?.trailing ?? true;
 
 		let timeoutId: ReturnType<typeof setTimeout> | undefined;
 		let lastArgs: Args | undefined;
-		let lastCallTime: number | undefined;
 		let resultPromise: Promise<Result<unknown, T>> | undefined;
 		let resolveFn: ((result: Result<unknown, T>) => void) | undefined;
 
 		const invoke = async (args: Args): Promise<void> => {
-			lastCallTime = performance.now();
 			try {
 				const result = await fn(...args);
 				resolveFn?.([undefined, result]);
@@ -2566,7 +1307,7 @@ export class Scope<
 			}
 		};
 
-		const startTimer = (_args: Args): void => {
+		const startTimer = (): void => {
 			timeoutId = setTimeout(() => {
 				if (trailing && lastArgs) {
 					void invoke(lastArgs);
@@ -2578,7 +1319,7 @@ export class Scope<
 
 		// Clean up on scope disposal
 		const cleanupDisposable: AsyncDisposable = {
-			async [Symbol.asyncDispose]() {
+			async [Symbol.asyncDispose](): Promise<void> {
 				if (timeoutId) {
 					clearTimeout(timeoutId);
 					timeoutId = undefined;
@@ -2588,85 +1329,58 @@ export class Scope<
 				}
 			},
 		};
-		this.disposables.push(cleanupDisposable);
+		this.registerDisposable(cleanupDisposable);
 
 		return (...args: Args): Promise<Result<unknown, T>> => {
-			// Check if scope is disposed
+			// If scope is disposed, return error immediately
 			if (this.disposed || this.signal.aborted) {
 				return Promise.resolve([new Error("Scope disposed"), undefined]);
 			}
 
 			lastArgs = args;
-			const now = performance.now();
 
-			// Create a new promise for this call
-			resultPromise = new Promise<Result<unknown, T>>((resolve) => {
+			// Create new promise for this call
+			resultPromise = new Promise((resolve) => {
 				resolveFn = resolve;
 			});
 
-			// Clear existing timeout
+			const shouldCallNow = leading && !timeoutId;
+
 			if (timeoutId) {
 				clearTimeout(timeoutId);
 			}
 
-			// Check for leading edge execution
-			if (leading) {
-				const isFirstCall = lastCallTime === undefined;
-				const timeSinceLastCall = lastCallTime ? now - lastCallTime : wait + 1;
-
-				if (isFirstCall || timeSinceLastCall >= wait) {
-					if (timeoutId) clearTimeout(timeoutId);
-					void invoke(args);
-					startTimer(args);
-					return resultPromise;
-				}
+			if (shouldCallNow) {
+				void invoke(args);
+			} else {
+				startTimer();
 			}
 
-			// Schedule trailing execution
-			startTimer(args);
 			return resultPromise;
 		};
 	}
 
 	/**
 	 * Create a throttled function that only invokes the provided function
-	 * at most once per every `interval` milliseconds.
+	 * at most once per every `wait` milliseconds.
 	 * Automatically cancelled when the scope is disposed.
-	 *
-	 * @param fn - The function to throttle
-	 * @param options - Throttle options
-	 * @returns A throttled function that returns a Promise
-	 *
-	 * @example
-	 * ```typescript
-	 * await using s = scope()
-	 *
-	 * const save = s.throttle(async (data: string) => {
-	 *   await saveToServer(data)
-	 * }, { interval: 1000 })
-	 *
-	 * // Will execute at most once per second
-	 * await save("data1")
-	 * await save("data2") // Throttled, returns same promise
-	 * ```
 	 */
 	throttle<T, Args extends unknown[]>(
 		fn: (...args: Args) => Promise<T>,
-		options: import("./types.js").ThrottleOptions = {},
+		options?: ThrottleOptions,
 	): (...args: Args) => Promise<Result<unknown, T>> {
-		const interval = options.interval ?? 300;
-		const leading = options.leading ?? true;
-		const trailing = options.trailing ?? false;
+		const wait = options?.interval ?? 300;
+		const leading = options?.leading ?? true;
+		const trailing = options?.trailing ?? true;
 
-		let lastInvokeTime = 0;
 		let timeoutId: ReturnType<typeof setTimeout> | undefined;
 		let lastArgs: Args | undefined;
-		let pendingPromise: Promise<Result<unknown, T>> | undefined;
+		let lastCallTime = 0;
+		let resultPromise: Promise<Result<unknown, T>> | undefined;
 		let resolveFn: ((result: Result<unknown, T>) => void) | undefined;
 
 		const invoke = async (args: Args): Promise<void> => {
-			lastInvokeTime = performance.now();
-			pendingPromise = undefined;
+			lastCallTime = Date.now();
 			try {
 				const result = await fn(...args);
 				resolveFn?.([undefined, result]);
@@ -2675,9 +1389,22 @@ export class Scope<
 			}
 		};
 
+		const startTimer = (): void => {
+			const elapsed = Date.now() - lastCallTime;
+			const remaining = Math.max(wait - elapsed, 0);
+
+			timeoutId = setTimeout(() => {
+				if (trailing && lastArgs) {
+					void invoke(lastArgs);
+				}
+				timeoutId = undefined;
+				lastArgs = undefined;
+			}, remaining);
+		};
+
 		// Clean up on scope disposal
 		const cleanupDisposable: AsyncDisposable = {
-			async [Symbol.asyncDispose]() {
+			async [Symbol.asyncDispose](): Promise<void> {
 				if (timeoutId) {
 					clearTimeout(timeoutId);
 					timeoutId = undefined;
@@ -2687,475 +1414,176 @@ export class Scope<
 				}
 			},
 		};
-		this.disposables.push(cleanupDisposable);
+		this.registerDisposable(cleanupDisposable);
 
 		return (...args: Args): Promise<Result<unknown, T>> => {
-			// Check if scope is disposed
+			// If scope is disposed, return error immediately
 			if (this.disposed || this.signal.aborted) {
 				return Promise.resolve([new Error("Scope disposed"), undefined]);
 			}
 
-			const now = performance.now();
-			const timeSinceLastInvoke = now - lastInvokeTime;
-
 			lastArgs = args;
 
-			// Return existing promise if we're still throttled
-			if (timeSinceLastInvoke < interval) {
-				// Schedule trailing execution if needed
-				if (trailing && !timeoutId) {
-					pendingPromise = new Promise<Result<unknown, T>>((resolve) => {
-						resolveFn = resolve;
-					});
-					timeoutId = setTimeout(() => {
-						if (lastArgs) void invoke(lastArgs);
-						timeoutId = undefined;
-					}, interval - timeSinceLastInvoke);
-				}
-				return pendingPromise ?? Promise.resolve([undefined, undefined as T]);
-			}
+			// Create new promise for this call
+			resultPromise = new Promise((resolve) => {
+				resolveFn = resolve;
+			});
 
-			// Clear any pending timeout
-			if (timeoutId) {
-				clearTimeout(timeoutId);
-				timeoutId = undefined;
-			}
+			const now = Date.now();
+			const remaining = lastCallTime + wait - now;
 
-			// Execute immediately if leading edge is enabled
-			if (leading) {
-				pendingPromise = new Promise<Result<unknown, T>>((resolve) => {
-					resolveFn = resolve;
-				});
-				void invoke(args);
-				return pendingPromise;
-			}
-
-			// Schedule for trailing execution
-			if (trailing) {
-				pendingPromise = new Promise<Result<unknown, T>>((resolve) => {
-					resolveFn = resolve;
-				});
-				timeoutId = setTimeout(() => {
-					if (lastArgs) void invoke(lastArgs);
+			if (remaining <= 0 || !lastCallTime) {
+				// Execute immediately
+				if (timeoutId) {
+					clearTimeout(timeoutId);
 					timeoutId = undefined;
-				}, interval);
-				return pendingPromise;
+				}
+				if (leading) {
+					void invoke(args);
+				}
+			} else if (!timeoutId && trailing) {
+				// Schedule trailing execution
+				startTimer();
 			}
 
-			return Promise.resolve([undefined, undefined as T]);
+			return resultPromise;
 		};
 	}
 
 	/**
-	 * Select waits on multiple channel operations.
-	 * Similar to Go's select statement, it blocks until one of the cases can run,
-	 * then executes that case. It chooses one at random if multiple are ready.
-	 *
-	 * @param cases - Map of channels to handler functions. Use a Map for proper channel keys.
-	 * @param options - Optional select configuration including timeout
-	 * @returns A promise that resolves to the result of the selected case
-	 *
-	 * @example
-	 * ```typescript
-	 * await using s = scope()
-	 * const ch1 = s.channel<string>()
-	 * const ch2 = s.channel<number>()
-	 *
-	 * const cases = new Map([
-	 *   [ch1, async (value: string) => ({ type: 'string' as const, value })],
-	 *   [ch2, async (value: number) => ({ type: 'number' as const, value })],
-	 * ])
-	 * const [err, result] = await s.select(cases)
-	 * ```
+	 * Get metrics for the scope.
+	 * NOTE: Metrics have been moved to @go-go-scope/plugin-metrics.
+	 * This method returns undefined. Install the metrics plugin to get metrics.
 	 */
-	async select<T>(
-		cases: Map<Channel<unknown>, (value: unknown) => Promise<T> | T>,
-		options?: SelectOptions,
-	): Promise<Result<unknown, T>> {
-		if (cases.size === 0) {
-			return [new Error("select called with no cases"), undefined];
+	metrics(): undefined {
+		return undefined;
+	}
+
+	async acquireLock(
+		key: string,
+		ttlMs: number,
+	): Promise<{ release: () => Promise<void> } | null> {
+		const provider = this._persistence?.lock;
+		if (!provider) {
+			throw new Error("No lock provider configured");
 		}
-
-		// Convert cases to array for easier processing
-		const channelEntries = Array.from(cases.entries());
-		let closedCount = 0;
-
-		// Create a race between all channel receives with index tracking
-		const createRacePromise = (
-			channel: Channel<unknown>,
-			idx: number,
-		): Promise<{ idx: number; value: unknown } | { closed: true }> =>
-			new Promise((resolve, reject) => {
-				channel
-					.receive()
-					.then((value) => {
-						if (value !== undefined) {
-							resolve({ idx, value });
-						} else {
-							// Channel closed
-							resolve({ closed: true });
-						}
-					})
-					.catch(reject);
-			});
-
-		// Create timeout promise if specified
-		const timeoutPromise = options?.timeout
-			? new Promise<never>((_, reject) => {
-					setTimeout(() => {
-						reject(new Error(`select timeout after ${options.timeout}ms`));
-					}, options.timeout);
-				})
-			: null;
-
-		try {
-			// Keep racing until we get a value or all channels are closed
-			while (true) {
-				const racePromises = channelEntries.map(([channel], idx) =>
-					createRacePromise(channel, idx),
-				);
-
-				// Add timeout to race if specified
-				if (timeoutPromise) {
-					racePromises.push(
-						timeoutPromise as Promise<
-							{ idx: number; value: unknown } | { closed: true }
-						>,
-					);
-				}
-
-				const result = await Promise.race(racePromises);
-
-				if ("closed" in result) {
-					closedCount++;
-					if (closedCount >= channelEntries.length) {
-						return [new Error("All channels closed"), undefined];
-					}
-					// Some channels still open, continue racing
-					continue;
-				}
-
-				// We have a winner with a value
-				const winner = result;
-
-				// Execute the handler for the winning case
-				const entry = channelEntries[winner.idx];
-				if (!entry) {
-					return [new Error("Invalid channel selection"), undefined];
-				}
-				const [, handler] = entry;
-				if (!handler) {
-					return [new Error("Invalid channel handler"), undefined];
-				}
-
-				try {
-					const handlerResult = await handler(winner.value);
-					return [undefined, handlerResult];
-				} catch (error) {
-					return [error, undefined];
-				}
-			}
-		} catch (error) {
-			return [error, undefined];
-		}
+		return provider.acquire(key, ttlMs);
 	}
 
-	/**
-	 * Create a broadcast channel for pub/sub patterns.
-	 * All subscribers receive every message (unlike regular channel where messages are distributed).
-	 *
-	 * @example
-	 * ```typescript
-	 * await using s = scope()
-	 * const broadcast = s.broadcast<string>()
-	 *
-	 * // Subscribe multiple consumers
-	 * s.task(async () => {
-	 *   for await (const msg of broadcast.subscribe()) {
-	 *     console.log('Consumer 1:', msg)
-	 *   }
-	 * })
-	 *
-	 * // Publish messages
-	 * await broadcast.send('hello')
-	 * broadcast.close()
-	 * ```
-	 */
-	broadcast<T>(): BroadcastChannel<T> {
-		const broadcast = new BroadcastChannel<T>(this.signal);
+	onDispose(fn: () => void | Promise<void>): void {
 		this.disposables.push({
-			async [Symbol.asyncDispose]() {
-				await broadcast[Symbol.asyncDispose]();
-			},
+			[Symbol.dispose]: () => {},
+			[Symbol.asyncDispose]: async () => fn(),
 		});
-		return broadcast;
 	}
 
 	/**
-	 * Create a resource pool for managing reusable resources.
-	 * Useful for connection pooling, worker pools, etc.
-	 *
-	 * @example
-	 * ```typescript
-	 * await using s = scope()
-	 * const pool = s.pool({
-	 *   create: () => createDatabaseConnection(),
-	 *   destroy: (conn) => conn.close(),
-	 *   min: 2,
-	 *   max: 10
-	 * })
-	 *
-	 * // Acquire and use a resource
-	 * const conn = await pool.acquire()
-	 * try {
-	 *   await conn.query('SELECT 1')
-	 * } finally {
-	 *   await pool.release(conn)
-	 * }
-	 *
-	 * // Or use execute for automatic release
-	 * await pool.execute(async (conn) => {
-	 *   await conn.query('SELECT 1')
-	 * })
-	 * ```
+	 * Register a callback to be called before each task starts.
+	 * Useful for plugins to track task execution.
 	 */
-	pool<T>(options: ResourcePoolOptions<T>): ResourcePool<T> {
-		const pool = new ResourcePool<T>(options, this.signal);
-		this.disposables.push({
-			async [Symbol.asyncDispose]() {
-				await pool[Symbol.asyncDispose]();
-			},
-		});
-		return pool;
+	onBeforeTask(
+		fn: (name: string, index: number, options?: TaskOptions) => void,
+	): void {
+		this.beforeTaskHooks.push(fn);
 	}
 
 	/**
-	 * Get the profile report for this scope.
-	 * Only available if profiler was enabled in scope options.
+	 * Register a callback to be called after each task completes.
+	 * Useful for plugins to track task execution.
 	 */
-	getProfileReport() {
-		return this.profiler.getReport();
+	onAfterTask(
+		fn: (
+			name: string,
+			duration: number,
+			error?: unknown,
+			index?: number,
+		) => void,
+	): void {
+		this.afterTaskHooks.push(fn);
 	}
 
-	/**
-	 * Register a child scope for metrics aggregation.
-	 * @internal
-	 */
+	registerDisposable(disposable: Disposable | AsyncDisposable): void {
+		this.disposables.push(disposable);
+	}
+
 	registerChild(child: Scope<Record<string, unknown>>): void {
 		this.childScopes.push(child);
 	}
 
-	/**
-	 * Acquire a distributed lock using the configured persistence provider.
-	 *
-	 * Requires a LockProvider to be configured via `persistence` option.
-	 *
-	 * **Important:** The lock uses TTL (time-to-live) as the primary cleanup mechanism.
-	 * The lock will automatically expire after the specified TTL, even if your process
-	 * crashes. This ensures deadlocks cannot occur in distributed scenarios.
-	 *
-	 * The lock is NOT released when the scope disposes - it respects the full TTL.
-	 * Call `release()` only if you want to release the lock early before TTL expires.
-	 *
-	 * @param key - Unique lock identifier
-	 * @param ttl - Time-to-live in milliseconds (default: 30000)
-	 * @returns Lock handle if acquired, null if already locked
-	 *
-	 * @example
-	 * ```typescript
-	 * import { RedisAdapter } from 'go-go-scope/persistence/redis'
-	 *
-	 * const redis = new Redis(process.env.REDIS_URL)
-	 * const persistence = new RedisAdapter(redis)
-	 *
-	 * await using s = scope({ persistence })
-	 *
-	 * // Acquire lock with 5 second TTL
-	 * const lock = await s.acquireLock('resource:123', 5000)
-	 * if (!lock) {
-	 *   console.log('Resource busy')
-	 *   return
-	 * }
-	 *
-	 * // The lock automatically expires after 5 seconds (TTL).
-	 * // This is the primary cleanup mechanism - even if your process crashes,
-	 * // the lock will be released after the TTL expires.
-	 *
-	 * // Optional: Release early if you finish before TTL expires
-	 * await lock.release()
-	 * ```
-	 */
-	async acquireLock(
-		key: string,
-		ttl = 30000,
-	): Promise<import("./persistence/types.js").LockHandle | null> {
-		if (!this._persistence?.lock) {
-			throw new Error(
-				"No LockProvider configured. Pass persistence.lock to scope options.",
+	async [Symbol.asyncDispose](): Promise<void> {
+		if (this.disposed) return;
+		this.disposed = true;
+
+		if (debugScope.enabled) {
+			debugScope("[%s] disposing scope", this.name);
+		}
+
+		// Clear timeout if set
+		if (this.timeoutId) {
+			clearTimeout(this.timeoutId);
+		}
+
+		// Abort all tasks
+		if (!this.abortController.signal.aborted) {
+			const reason = new Error("Scope disposed");
+			this.abortController.abort(reason);
+			// Call onCancel hook
+			this.hooks?.onCancel?.(reason);
+		}
+
+		// Call beforeDispose hook
+		this.hooks?.beforeDispose?.();
+
+		// Dispose all child scopes first
+		for (const child of this.childScopes) {
+			try {
+				await child[Symbol.asyncDispose]();
+			} catch {
+				// Ignore child disposal errors
+			}
+		}
+
+		// Wait for all active tasks to complete
+		const activeTasksArray = Array.from(this.activeTasks);
+		if (activeTasksArray.length > 0) {
+			await Promise.allSettled(
+				activeTasksArray.map((task) => task.catch(() => {})),
 			);
 		}
 
+		// Dispose all disposables in reverse order (LIFO)
+		const disposablesToClean = [...this.disposables].reverse();
+		for (const disposable of disposablesToClean) {
+			if (!disposable) continue;
+			try {
+				if (Symbol.asyncDispose in disposable) {
+					await disposable[Symbol.asyncDispose]();
+				} else if (Symbol.dispose in disposable) {
+					disposable[Symbol.dispose]();
+				}
+			} catch {
+				// Ignore disposal errors
+			}
+		}
+
+		// Dispose resources with custom dispose functions in LIFO order
+		if (this._resourceDisposers) {
+			for (let i = this._resourceDisposers.length - 1; i >= 0; i--) {
+				const disposer = this._resourceDisposers[i];
+				if (!disposer) continue;
+				try {
+					await disposer.dispose();
+				} catch {
+					// Ignore disposal errors - hook already called
+				}
+			}
+		}
+
+		// Call afterDispose hook
+		this.hooks?.afterDispose?.();
+
 		if (debugScope.enabled) {
-			debugScope('[%s] acquiring lock "%s" (ttl: %dms)', this.name, key, ttl);
+			debugScope("[%s] scope disposed", this.name);
 		}
-
-		const lock = await this._persistence.lock.acquire(key, ttl);
-
-		if (debugScope.enabled) {
-			if (lock) {
-				debugScope('[%s] lock "%s" acquired', this.name, key);
-			} else {
-				debugScope('[%s] lock "%s" unavailable', this.name, key);
-			}
-		}
-
-		return lock;
-	}
-
-	/**
-	 * Get a debug visualization of the scope tree.
-	 * Useful for debugging scope hierarchies and active tasks.
-	 *
-	 * @param options - Optional configuration for the output format
-	 * @returns String representation of the scope tree, or Mermaid diagram if format is 'mermaid'
-	 *
-	 * @example
-	 * ```typescript
-	 * console.log(s.debugTree())
-	 * // Scope(api-request) [running]
-	 * //   ├─ Task(fetchUser) - running 1200ms
-	 * //   ├─ Task(fetchOrders) - completed 350ms
-	 * //   └─ ChildScope(cache-refresh)
-	 * //      └─ Task(updateCache) - pending
-	 *
-	 * // Generate Mermaid diagram
-	 * console.log(s.debugTree({ format: 'mermaid' }))
-	 * // graph TD
-	 * //   A[Scope: api-request] --> B[Task: fetchUser]
-	 * //   A --> C[Task: fetchOrders]
-	 * ```
-	 */
-	debugTree(options?: { format?: "text" | "mermaid" }): string {
-		if (options?.format === "mermaid") {
-			return this.buildMermaidTree();
-		}
-		return this.buildDebugTree(0);
-	}
-
-	private buildDebugTree(indent: number): string {
-		const prefix = "  ".repeat(indent);
-		const status = this.disposed ? "disposed" : "running";
-		const lines: string[] = [`${prefix}Scope(${this.name}) [${status}]`];
-
-		// Add active tasks
-		for (const task of this.activeTasks) {
-			const taskStatus = task.isSettled
-				? "completed"
-				: task.isStarted
-					? "running"
-					: "pending";
-			lines.push(`${prefix}  └─ Task(${task.id}) - ${taskStatus}`);
-		}
-
-		// Add child scopes
-		for (const child of this.childScopes) {
-			lines.push(child.buildDebugTree(indent + 1));
-		}
-
-		return lines.join("\n");
-	}
-
-	private buildMermaidTree(): string {
-		const lines = ["graph TD"];
-		const nodeIds = new Map<string, string>();
-		let nodeCounter = 0;
-
-		const getNodeId = (name: string): string => {
-			if (!nodeIds.has(name)) {
-				nodeIds.set(name, String.fromCharCode(65 + nodeCounter++));
-			}
-			const id = nodeIds.get(name);
-			if (!id) {
-				throw new Error(`Node ID not found for ${name}`);
-			}
-			return id;
-		};
-
-		const buildNodes = (
-			scope: Scope<Record<string, unknown>>,
-			parentId?: string,
-		) => {
-			const scopeId = getNodeId(scope.name);
-			const status = scope.disposed ? "🛑" : "🟢";
-			lines.push(`  ${scopeId}["${status} Scope: ${scope.name}"]`);
-
-			if (parentId) {
-				lines.push(`  ${parentId} --> ${scopeId}`);
-			}
-
-			// Add tasks
-			for (const task of scope.activeTasks) {
-				const taskId = getNodeId(`${scope.name}-${task.id}`);
-				const taskStatus = task.isSettled ? "✅" : task.isStarted ? "🔄" : "⏳";
-				lines.push(`  ${taskId}["${taskStatus} Task: ${task.id}"]`);
-				lines.push(`  ${scopeId} --> ${taskId}`);
-			}
-
-			// Recurse into children
-			for (const child of scope.childScopes) {
-				buildNodes(child, scopeId);
-			}
-		};
-
-		buildNodes(this);
-		return lines.join("\n");
-	}
-
-	/**
-	 * Aggregate metrics from this scope and all child scopes.
-	 * Returns combined metrics across the entire scope tree.
-	 *
-	 * @returns Aggregated metrics or undefined if metrics not enabled
-	 */
-	aggregateMetrics(): ScopeMetrics | undefined {
-		if (!this.enableMetrics) return undefined;
-
-		const ownMetrics = this.metrics();
-		if (!ownMetrics) return undefined;
-
-		// Collect metrics from all children recursively
-		const allMetrics: ScopeMetrics[] = [ownMetrics];
-		for (const child of this.childScopes) {
-			const childMetrics = child.aggregateMetrics();
-			if (childMetrics) {
-				allMetrics.push(childMetrics);
-			}
-		}
-
-		// Aggregate
-		const aggregated: ScopeMetrics = {
-			tasksSpawned: allMetrics.reduce((sum, m) => sum + m.tasksSpawned, 0),
-			tasksCompleted: allMetrics.reduce((sum, m) => sum + m.tasksCompleted, 0),
-			tasksFailed: allMetrics.reduce((sum, m) => sum + m.tasksFailed, 0),
-			totalTaskDuration: allMetrics.reduce(
-				(sum, m) => sum + m.totalTaskDuration,
-				0,
-			),
-			avgTaskDuration:
-				allMetrics.reduce((sum, m) => sum + m.avgTaskDuration, 0) /
-				allMetrics.length,
-			p95TaskDuration: Math.max(...allMetrics.map((m) => m.p95TaskDuration)),
-			resourcesRegistered: allMetrics.reduce(
-				(sum, m) => sum + m.resourcesRegistered,
-				0,
-			),
-			resourcesDisposed: allMetrics.reduce(
-				(sum, m) => sum + m.resourcesDisposed,
-				0,
-			),
-			scopeDuration: ownMetrics.scopeDuration,
-		};
-
-		return aggregated;
 	}
 }

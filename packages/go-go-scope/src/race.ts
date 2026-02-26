@@ -97,7 +97,7 @@ export async function race<T>(
 		return [options.signal.reason, undefined];
 	}
 
-	const s = new Scope({ signal: options?.signal, tracer: options?.tracer });
+	const s = new Scope({ signal: options?.signal });
 	let settledCount = 0;
 	let _successCount = 0;
 	let winnerIndex = -1;

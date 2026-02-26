@@ -1,0 +1,70 @@
+{
+	"name": "@go-go-scope/logger",
+	"version": "2.3.0",
+	"description": "Structured logging adapters for go-go-scope (Pino, Winston)",
+	"type": "module",
+	"main": "./dist/index.mjs",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.mts",
+			"default": "./dist/index.mjs"
+		}
+	},
+	"scripts": {
+		"build": "pkgroll --clean-dist",
+		"lint": "biome check --write src/",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"clean": "rm -rf dist",
+		"typecheck": "tsc --noEmit"
+	},
+	"keywords": [
+		"logger",
+		"logging",
+		"pino",
+		"winston",
+		"go-go-scope"
+	],
+	"engines": {
+		"node": ">=24.0.0"
+	},
+	"author": "thelinuxlich",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/thelinuxlich/go-go-scope.git",
+		"directory": "packages/logger"
+	},
+	"files": [
+		"dist/",
+		"README.md"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"go-go-scope": "workspace:*"
+	},
+	"peerDependencies": {
+		"pino": "^8.0.0 || ^9.0.0",
+		"winston": "^3.0.0"
+	},
+	"peerDependenciesMeta": {
+		"pino": {
+			"optional": true
+		},
+		"winston": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.4",
+		"@types/node": "^24",
+		"pkgroll": "^2.26.3",
+		"pino": "^9.0.0",
+		"typescript": "^5.9.3",
+		"vitest": "^4.0.18",
+		"winston": "^3.17.0"
+	}
+}

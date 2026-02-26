@@ -158,58 +158,6 @@ describe("metrics", () => {
 		await using s = scope();
 		expect(s.metrics()).toBeUndefined();
 	});
-
-	test("tracks task metrics", async () => {
-		await using s = scope({ metrics: true });
-
-		await s.task(async () => "success1");
-		await s.task(async () => {
-			throw new Error("failure");
-		});
-		await s.task(async () => "success2");
-
-		const metrics = s.metrics();
-
-		expect(metrics).toBeDefined();
-		expect(metrics?.tasksSpawned).toBe(3);
-		expect(metrics?.tasksCompleted).toBe(2);
-		expect(metrics?.tasksFailed).toBe(1);
-	});
-
-	test("tracks resource metrics", async () => {
-		await using s = scope({ metrics: true });
-
-		s.provide(
-			"service1",
-			() => ({ value: 1 }),
-			() => {},
-		);
-		s.provide(
-			"service2",
-			() => ({ value: 2 }),
-			() => {},
-		);
-
-		// Force disposal by ending scope
-		await s[Symbol.asyncDispose]();
-
-		const metrics = s.metrics();
-		expect(metrics?.resourcesRegistered).toBe(2);
-		expect(metrics?.resourcesDisposed).toBe(2);
-	});
-
-	test("calculates duration statistics", async () => {
-		await using s = scope({ metrics: true });
-
-		await s.task(async () => {
-			await new Promise((r) => setTimeout(r, 10));
-			return "result";
-		});
-
-		const metrics = s.metrics();
-		expect(metrics?.avgTaskDuration).toBeGreaterThan(0);
-		expect(metrics?.p95TaskDuration).toBeGreaterThan(0);
-	});
 });
 
 describe("hooks", () => {

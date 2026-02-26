@@ -1,63 +1,63 @@
 {
-  "name": "@go-go-scope/persistence-dynamodb",
-  "version": "2.2.0",
-  "description": "DynamoDB persistence adapter for go-go-scope - distributed locks, circuit breaker state, and caching",
-  "type": "module",
-  "main": "./dist/index.mjs",
-  "types": "./dist/index.d.mts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.mts",
-      "default": "./dist/index.mjs"
-    }
-  },
-  "scripts": {
-    "build": "pkgroll --clean-dist",
-    "lint": "biome check --write src/",
-    "test": "vitest run --passWithNoTests",
-    "clean": "rm -rf dist",
-    "typecheck": "tsc --noEmit"
-  },
-  "keywords": [
-    "dynamodb",
-    "aws",
-    "persistence",
-    "distributed-locks",
-    "circuit-breaker",
-    "cache",
-    "go-go-scope"
-  ],
-  "engines": {
-    "node": ">=24.0.0"
-  },
-  "author": "thelinuxlich",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/thelinuxlich/go-go-scope.git",
-    "directory": "packages/persistence-dynamodb"
-  },
-  "files": [
-    "dist/",
-    "README.md"
-  ],
-  "publishConfig": {
-    "access": "public"
-  },
-  "dependencies": {
-    "go-go-scope": "workspace:*"
-  },
-  "peerDependencies": {
-    "@aws-sdk/client-dynamodb": "^3.450.0",
-    "@aws-sdk/lib-dynamodb": "^3.450.0"
-  },
-  "devDependencies": {
-    "@aws-sdk/client-dynamodb": "^3.450.0",
-    "@aws-sdk/lib-dynamodb": "^3.450.0",
-    "@biomejs/biome": "^2.4.4",
-    "@types/node": "^24",
-    "pkgroll": "^2.26.3",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
-  }
+	"name": "@go-go-scope/persistence-dynamodb",
+	"version": "2.3.0",
+	"description": "DynamoDB persistence adapter for go-go-scope - distributed locks, circuit breaker state, and caching",
+	"type": "module",
+	"main": "./dist/index.mjs",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.mts",
+			"default": "./dist/index.mjs"
+		}
+	},
+	"scripts": {
+		"build": "pkgroll --clean-dist",
+		"lint": "biome check --write src/",
+		"test": "vitest run --passWithNoTests",
+		"clean": "rm -rf dist",
+		"typecheck": "tsc --noEmit"
+	},
+	"keywords": [
+		"dynamodb",
+		"aws",
+		"persistence",
+		"distributed-locks",
+		"circuit-breaker",
+		"cache",
+		"go-go-scope"
+	],
+	"engines": {
+		"node": ">=24.0.0"
+	},
+	"author": "thelinuxlich",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/thelinuxlich/go-go-scope.git",
+		"directory": "packages/persistence-dynamodb"
+	},
+	"files": [
+		"dist/",
+		"README.md"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"go-go-scope": "workspace:*"
+	},
+	"peerDependencies": {
+		"@aws-sdk/client-dynamodb": "^3.450.0",
+		"@aws-sdk/lib-dynamodb": "^3.450.0"
+	},
+	"devDependencies": {
+		"@aws-sdk/client-dynamodb": "^3.450.0",
+		"@aws-sdk/lib-dynamodb": "^3.450.0",
+		"@biomejs/biome": "^2.4.4",
+		"@types/node": "^24",
+		"pkgroll": "^2.26.3",
+		"typescript": "^5.9.3",
+		"vitest": "^4.0.18"
+	}
 }

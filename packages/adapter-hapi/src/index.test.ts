@@ -97,7 +97,7 @@ describe("hapiGoGoScope", () => {
 	test("applies metrics option", async () => {
 		const { server } = createMockServer();
 
-		await hapiGoGoScope.register(server as any, { metrics: true });
+		await hapiGoGoScope.register(server as any, {});
 
 		const rootScope = server.rootScope!;
 		expect(rootScope.metrics).toBeDefined();

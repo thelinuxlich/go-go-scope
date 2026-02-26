@@ -26,7 +26,10 @@ export interface ScopePlugin {
 	 * Called when the scope is created.
 	 * Can add methods/properties to the scope.
 	 */
-	install<T extends Scope>(scope: T, options: ScopeOptions<Record<string, never>>): void;
+	install<T extends Scope>(
+		scope: T,
+		options: ScopeOptions<Record<string, never>>,
+	): void;
 
 	/**
 	 * Called when the scope is disposed.
@@ -63,9 +66,9 @@ export function registerPlugin(scope: Scope, plugin: ScopePlugin): void {
  */
 export function installPlugins<T extends Scope>(
 	scope: T,
-	options: ScopeOptions<Record<string, never>>,
+	options?: ScopeOptions<Record<string, never>>,
 ): void {
-	if (!options.plugins) return;
+	if (!options?.plugins) return;
 
 	for (const plugin of options.plugins) {
 		if (hasPlugin(scope, plugin.name)) {

@@ -20,8 +20,6 @@ declare module "@hapi/hapi" {
 export interface HapiGoGoScopeOptions {
 	/** Root scope name */
 	name?: string;
-	/** Enable metrics collection */
-	metrics?: boolean;
 	/** Default timeout for all requests */
 	timeout?: number;
 }
@@ -61,10 +59,10 @@ export const hapiGoGoScope: Plugin<HapiGoGoScopeOptions> = {
 	name: "hapi-go-go-scope",
 	version: "2.1.0",
 	register: async (server: Server, options: HapiGoGoScopeOptions) => {
-		const { name = "hapi-app", metrics = false, timeout } = options;
+		const { name = "hapi-app", timeout } = options;
 
 		// Create root application scope
-		const rootScope = scope({ name, metrics });
+		const rootScope = scope({ name });
 		server.rootScope = rootScope;
 
 		// Extend request with scope decoration

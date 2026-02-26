@@ -17,10 +17,16 @@ export {
 } from "./cancellation.js";
 export { Channel } from "./channel.js";
 export { CircuitBreaker } from "./circuit-breaker.js";
-export { DeadlockDetector } from "./deadlock-detector.js";
 export { AbortError, ChannelFullError, UnknownError } from "./errors.js";
 // Re-export standalone functions
 export { scope } from "./factory.js";
+export type { GracefulShutdownOptions } from "./graceful-shutdown.js";
+export {
+	GracefulShutdownController,
+	isShutdownRequested,
+	setupGracefulShutdown,
+	waitForShutdown,
+} from "./graceful-shutdown.js";
 // Re-export idempotency utilities
 export {
 	createIdempotencyProvider,
@@ -28,8 +34,6 @@ export {
 } from "./idempotency.js";
 // Re-export logger
 export { ConsoleLogger, createLogger, NoOpLogger } from "./logger.js";
-// Re-export metrics exporter
-export { exportMetrics, MetricsReporter } from "./metrics-exporter.js";
 export { parallel } from "./parallel.js";
 // Re-export performance utilities
 export {
@@ -55,11 +59,18 @@ export type {
 	PersistenceAdapter,
 	PersistenceAdapterOptions,
 } from "./persistence/types.js";
+export { installPlugins, type ScopePlugin } from "./plugin.js";
 export { poll } from "./poll.js";
-export { Profiler } from "./profiler.js";
+export type {
+	PrioritizedItem,
+	PriorityChannelOptions,
+	PriorityComparator,
+} from "./priority-channel.js";
+export { PriorityChannel } from "./priority-channel.js";
 export { race } from "./race.js";
 // Re-export rate limiting utilities
 export { debounce, throttle } from "./rate-limiting.js";
+export type { HealthCheckResult } from "./resource-pool.js";
 export { ResourcePool } from "./resource-pool.js";
 // Re-export retry strategies
 export {
@@ -75,24 +86,21 @@ export type {
 } from "./scope.js";
 // Re-export scope-related
 export { AsyncDisposableResource, Scope } from "./scope.js";
-// Semaphore is used internally for concurrency limiting, not exported as public API
+export { Semaphore } from "./semaphore.js";
 // Stream is available via @go-go-scope/stream package
 export { getTaskPoolMetrics, resetTaskPoolMetrics, Task } from "./task.js";
+export type { TokenBucketOptions } from "./token-bucket.js";
+export { TokenBucket } from "./token-bucket.js";
 // Re-export types
 export type {
 	BackpressureStrategy,
 	ChannelOptions,
 	CircuitBreakerOptions,
 	CircuitState,
-	Context,
-	DeadlockDetectionOptions,
 	DebounceOptions,
 	FactoryResult,
 	Failure,
-	Histogram,
-	HistogramSnapshot,
 	Logger,
-	MetricsExportOptions,
 	ParallelResults,
 	PersistenceProviders,
 	PollController,
@@ -102,19 +110,12 @@ export type {
 	Result,
 	ScopeHooks,
 	ScopeLoggingOptions,
-	ScopeMetrics,
-	ScopeProfileReport,
 	SelectOptions,
-	Span,
-	SpanOptions,
 	Success,
+	TaskContext,
 	TaskOptions,
-	TaskProfile,
 	ThrottleOptions,
-	Tracer,
 } from "./types.js";
-export { SpanStatusCode } from "./types.js";
-export { type ScopePlugin, installPlugins } from "./plugin.js";
 
 // Testing utilities are available via 'go-go-scope/testing' import
 

@@ -27,8 +27,6 @@ declare global {
 export interface ExpressGoGoScopeOptions {
 	/** Root scope name */
 	name?: string;
-	/** Enable metrics collection */
-	metrics?: boolean;
 	/** Default timeout for all requests */
 	timeout?: number;
 }
@@ -61,10 +59,10 @@ export function goGoScope(
 	app: Application,
 	options: ExpressGoGoScopeOptions = {},
 ): RequestHandler {
-	const { name = "express-app", metrics = false, timeout } = options;
+	const { name = "express-app", timeout } = options;
 
 	// Create root application scope
-	const rootScope = scope({ name, metrics });
+	const rootScope = scope({ name });
 	app.scope = rootScope as Scope;
 
 	// Return middleware that creates request-scoped children

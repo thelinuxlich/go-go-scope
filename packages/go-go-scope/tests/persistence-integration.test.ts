@@ -596,7 +596,7 @@ describe("persistence integration", () => {
       await using s = scope({ name: "no-persistence" });
 
       await expect(s.acquireLock("test", 5000)).rejects.toThrow(
-        "No LockProvider configured"
+        "No lock provider configured"
       );
     });
   });
