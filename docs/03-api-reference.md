@@ -28,21 +28,46 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.pool(options)`](#scopepooloptions)
   - [`scope.getProfileReport()`](#scopegetprofilereport)
   - [`scope.onDispose(callback)`](#scopeondisposecallback)
+  - [`scope.tokenBucket(options)`](#scopetokenbucketoptions)
+- [Additional Classes](#additional-classes)
+  - [`AsyncDisposableResource`](#asyncdisposableresource)
+  - [`TokenBucket`](#tokenbucket)
+  - [`GracefulShutdownController`](#gracefulshutdowncontroller)
+  - [`PerformanceMonitor`](#performancemonitor)
+  - [`MemoryTracker`](#memorytracker)
+- [Utility Functions](#utility-functions)
+  - [`exportMetrics()`](#exportmetricsmetrics-options)
+  - [`createCache()`](#createcache)
+  - [`createIdempotencyProvider()`](#createidempotencyprovider)
+  - [`setupGracefulShutdown()`](#setupgracefulshutdown)
+  - [`isShutdownRequested()`](#isshutdownrequested)
+  - [`waitForShutdown()`](#waitforshutdown)
+  - [`installPlugins()`](#installplugins)
+  - [`benchmark()`](#benchmark)
+  - [`performanceMonitor()`](#performancemonitor)
 - [Types](#types)
   - [Result](#result)
   - [ScopeHooks](#scopehooks)
   - [ScopeMetrics](#scopemetrics-type)
+  - [DisposableScope](#disposablescope)
+  - [ScopePlugin](#scopeplugin)
+  - [GracefulShutdownOptions](#gracefulshutdownoptions)
+  - [TokenBucketOptions](#tokenbucketoptions)
+  - [PrioritizedItem](#prioritizeditem)
+  - [PriorityComparator](#prioritycomparator)
+  - [HealthCheckResult](#healthcheckresult)
 - [Task Properties](#task-properties)
 - [Channel Methods](#channel-methods)
 - [Broadcast Channel Methods](#broadcast-channel-methods)
 - [Resource Pool Methods](#resource-pool-methods)
-- [Utility Functions](#utility-functions)
 - [MetricsReporter Class](#metricsreporter-class)
 - [Logger Interface](#logger-interface)
 - [Additional Types](#additional-types)
 - [Standalone Functions](#standalone-functions)
 - [Cancellation Utilities](#cancellation-utilities)
 - [Retry Strategies](#retry-strategies)
+- [Error Classes](#error-classes)
+- [Additional Types (Extended)](#additional-types-extended)
 
 ---
 
@@ -1778,7 +1803,7 @@ await s.task(() => fetchData())
 
 ---
 
-## Additional Types
+## Additional Types (Extended)
 
 ### ScopeOptions (Extended)
 
@@ -2129,5 +2154,467 @@ await s.task(() => fetchData(), {
     delay: decorrelatedJitter({ initial: 100, max: 30000 }),
   },
 });
+```
+
+---
+
+## Additional Classes
+
+### `scope.tokenBucket(options)`
+
+Create a token bucket rate limiter for controlling API request rates.
+
+```typescript
+const bucket = s.tokenBucket({
+  capacity: 100,      // Maximum burst size
+  refillRate: 100     // Tokens per second
+});
+
+// Acquire token and execute
+await bucket.acquire(1, async () => {
+  await makeApiCall();
+});
+
+// Or check without blocking
+if (await bucket.tryConsume(1)) {
+  await makeApiCall();
+}
+```
+
+**TokenBucket Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `tryConsume(tokens)` | Try to consume tokens without blocking |
+| `acquire(tokens, fn)` | Acquire tokens and execute function |
+| `acquireWithTimeout(tokens, timeoutMs, fn)` | Acquire with timeout |
+| `reset()` | Reset bucket to full capacity |
+| `getTokens()` | Get current token count |
+| `getState()` | Get bucket state |
+
+---
+
+### `AsyncDisposableResource`
+
+A resource wrapper that manages acquire/dispose lifecycle.
+
+```typescript
+import { AsyncDisposableResource } from "go-go-scope";
+
+const resource = new AsyncDisposableResource(
+  async () => await createDatabaseConnection(),
+  async (conn) => await conn.close()
+);
+
+// Acquire the resource
+await using r = await resource.acquire();
+const conn = r.value;
+
+// Use the resource
+await conn.query("SELECT 1");
+
+// Automatically disposed when exiting scope
+```
+
+---
+
+### `GracefulShutdownController`
+
+Handles shutdown signals (SIGTERM, SIGINT) gracefully.
+
+```typescript
+import { setupGracefulShutdown, isShutdownRequested } from "go-go-scope";
+
+await using s = scope();
+
+const shutdown = setupGracefulShutdown(s, {
+  timeout: 30000,
+  onShutdown: async (signal) => {
+    console.log(`Received ${signal}, starting cleanup...`);
+  }
+});
+
+// Check if shutdown requested in tasks
+s.task(async () => {
+  while (!isShutdownRequested(s)) {
+    await processWork();
+  }
+});
+```
+
+**GracefulShutdownController Properties:**
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `isShutdownRequested` | `boolean` | Whether shutdown has been requested |
+| `shutdownComplete` | `Promise<void>` | Promise that resolves when shutdown is complete |
+
+**Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `shutdown(signal?)` | Manually trigger shutdown |
+| `cleanup()` | Remove signal handlers |
+
+---
+
+### `PerformanceMonitor`
+
+Monitor scope performance metrics over time.
+
+```typescript
+import { performanceMonitor } from "go-go-scope";
+
+await using s = scope();
+
+const monitor = performanceMonitor(s, {
+  sampleInterval: 1000,
+  maxSnapshots: 100,
+  trackMemory: true
+});
+
+// Get current metrics
+const metrics = monitor.getMetrics();
+console.log(metrics);
+// { taskCount: 10, activeTaskCount: 2, tasksPerSecond: 5.2, ... }
+
+// Get performance trends
+const trends = monitor.getTrends();
+// { taskRateTrend: 'increasing', durationTrend: 'stable' }
+```
+
+---
+
+### `MemoryTracker`
+
+Track memory usage and detect potential leaks.
+
+```typescript
+import { MemoryTracker } from "go-go-scope";
+
+const tracker = new MemoryTracker(50);
+
+// Take periodic snapshots
+tracker.snapshot();
+
+// Check for leaks
+if (tracker.checkForLeaks(10)) {  // 10% growth threshold
+  console.warn('Potential memory leak!');
+  console.log('Growth rate:', tracker.getGrowthRate(), 'bytes/sec');
+}
+```
+
+---
+
+### `createCache()`
+
+Create an in-memory cache provider.
+
+```typescript
+import { createCache } from "go-go-scope";
+
+const cache = createCache({ maxSize: 1000 });
+
+await cache.set("key", value, 60000);  // TTL in ms
+const value = await cache.get("key");
+const stats = cache.stats();
+```
+
+---
+
+### `createIdempotencyProvider()`
+
+Create an in-memory idempotency provider.
+
+```typescript
+import { createIdempotencyProvider } from "go-go-scope";
+
+const idempotency = createIdempotencyProvider({ maxSize: 1000 });
+
+await using s = scope({
+  persistence: { idempotency }
+});
+
+// Tasks with idempotency key will be cached
+const [err, result] = await s.task(
+  () => processPayment(orderId),
+  { idempotency: { key: `payment:${orderId}`, ttl: 60000 } }
+);
+```
+
+---
+
+### `setupGracefulShutdown()`
+
+Set up graceful shutdown handling for a scope.
+
+```typescript
+import { setupGracefulShutdown } from "go-go-scope";
+
+await using s = scope();
+
+setupGracefulShutdown(s, {
+  signals: ['SIGTERM', 'SIGINT'],
+  timeout: 30000,
+  onShutdown: async (signal) => {
+    console.log(`Received ${signal}, cleaning up...`);
+  },
+  onComplete: () => {
+    console.log('Shutdown complete');
+  }
+});
+```
+
+---
+
+### `isShutdownRequested()`
+
+Check if shutdown has been requested on a scope.
+
+```typescript
+import { isShutdownRequested } from "go-go-scope";
+
+s.task(async () => {
+  while (!isShutdownRequested(s)) {
+    await processWork();
+  }
+});
+```
+
+---
+
+### `waitForShutdown()`
+
+Wait for shutdown to complete on a scope.
+
+```typescript
+import { waitForShutdown } from "go-go-scope";
+
+await using s = scope();
+setupGracefulShutdown(s);
+
+// Wait for shutdown
+await waitForShutdown(s);
+console.log('Shutdown finished');
+```
+
+---
+
+### `installPlugins()`
+
+Install plugins on a scope (usually called internally).
+
+```typescript
+import { installPlugins, type ScopePlugin } from "go-go-scope";
+
+const myPlugin: ScopePlugin = {
+  name: 'my-plugin',
+  install(scope) {
+    // Add methods to scope
+  }
+};
+
+installPlugins(scope, [myPlugin]);
+```
+
+---
+
+### `benchmark()`
+
+Run a performance benchmark.
+
+```typescript
+import { benchmark } from "go-go-scope";
+
+const result = await benchmark(
+  'fetch-data',
+  async () => {
+    await fetchData();
+  },
+  {
+    warmup: 100,
+    iterations: 1000,
+    minDuration: 1000
+  }
+);
+
+console.log(result);
+// { name: 'fetch-data', avgDuration: 1.25, opsPerSecond: 800, ... }
+```
+
+---
+
+### `performanceMonitor()`
+
+Create and start a performance monitor for a scope.
+
+```typescript
+import { performanceMonitor } from "go-go-scope";
+
+const monitor = performanceMonitor(s, {
+  sampleInterval: 1000,
+  trackMemory: true
+});
+
+// Automatically tracks metrics
+// Access via monitor.getMetrics()
+```
+
+---
+
+## Error Classes
+
+### `AbortError`
+
+Error thrown when an operation is aborted via AbortSignal.
+
+```typescript
+import { AbortError } from "go-go-scope";
+
+try {
+  await s.task(async ({ signal }) => {
+    throw new AbortError("Operation cancelled");
+  });
+} catch (err) {
+  if (err instanceof AbortError) {
+    console.log("Operation was aborted:", err.reason);
+  }
+}
+```
+
+---
+
+### `ChannelFullError`
+
+Error thrown when a channel buffer is full with 'error' backpressure strategy.
+
+```typescript
+import { ChannelFullError } from "go-go-scope";
+
+const ch = s.channel<number>(1, { backpressure: 'error' });
+await ch.send(1);
+try {
+  await ch.send(2); // Throws ChannelFullError
+} catch (err) {
+  if (err instanceof ChannelFullError) {
+    console.log("Channel is full");
+  }
+}
+```
+
+---
+
+### `UnknownError`
+
+A catch-all error class for system/infrastructure errors.
+
+```typescript
+import { UnknownError } from "go-go-scope";
+
+const [err, data] = await s.task(() => fetchData());
+if (err instanceof UnknownError) {
+  // System error (network, timeout, etc.)
+  console.error("System failure:", err.message);
+}
+```
+
+---
+
+## Additional Types
+
+### `DisposableScope`
+
+Minimal scope interface for internal use and plugins.
+
+```typescript
+interface DisposableScope {
+  readonly isDisposed: boolean;
+  readonly signal: AbortSignal;
+  registerDisposable(disposable: Disposable | AsyncDisposable): void;
+}
+```
+
+---
+
+### `ScopePlugin`
+
+Interface for creating plugins to extend scope functionality.
+
+```typescript
+interface ScopePlugin {
+  name: string;
+  install(scope: Scope, options: ScopeOptions): void;
+  cleanup?(scope: Scope): void;
+}
+```
+
+---
+
+### `GracefulShutdownOptions`
+
+Options for graceful shutdown configuration.
+
+```typescript
+interface GracefulShutdownOptions {
+  signals?: NodeJS.Signals[];
+  timeout?: number;
+  onShutdown?: (signal: NodeJS.Signals) => void | Promise<void>;
+  onComplete?: () => void | Promise<void>;
+  exit?: boolean;
+  successExitCode?: number;
+  timeoutExitCode?: number;
+}
+```
+
+---
+
+### `TokenBucketOptions`
+
+Options for creating a token bucket rate limiter.
+
+```typescript
+interface TokenBucketOptions {
+  capacity: number;
+  refillRate: number;
+  initialTokens?: number;
+  cache?: CacheProvider;
+  key?: string;
+}
+```
+
+---
+
+### `PrioritizedItem<T>`
+
+Interface for items that have a priority in priority channels.
+
+```typescript
+interface PrioritizedItem<T> {
+  value: T;
+  priority: number;
+}
+```
+
+---
+
+### `PriorityComparator<T>`
+
+Comparator function type for priority channels.
+
+```typescript
+type PriorityComparator<T> = (a: T, b: T) => number;
+```
+
+---
+
+### `HealthCheckResult`
+
+Result of a resource pool health check.
+
+```typescript
+interface HealthCheckResult {
+  healthy: boolean;
+  message?: string;
+}
 ```
 
