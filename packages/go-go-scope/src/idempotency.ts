@@ -4,6 +4,7 @@
  * Provides in-memory and distributed idempotency support for task results.
  */
 
+import { InMemoryCache } from "./cache.js";
 import type { IdempotencyProvider } from "./persistence/types.js";
 
 /**
@@ -24,7 +25,7 @@ interface IdempotencyEntry<T> {
 
 /**
  * In-memory idempotency provider for testing and development.
- * Stores task results in memory with optional TTL support.
+ * Uses InMemoryCache internally for consistent caching behavior.
  *
  * Note: This provider does not persist across process restarts.
  * For production use, use a distributed provider like Redis.
@@ -52,11 +53,10 @@ interface IdempotencyEntry<T> {
 export class InMemoryIdempotencyProvider
 	implements IdempotencyProvider, Disposable
 {
-	private readonly store = new Map<string, IdempotencyEntry<unknown>>();
-	private readonly maxSize: number | undefined;
+	private readonly cache: InMemoryCache;
 
 	constructor(options: InMemoryIdempotencyProviderOptions = {}) {
-		this.maxSize = options.maxSize;
+		this.cache = new InMemoryCache({ maxSize: options.maxSize });
 	}
 
 	/**
@@ -65,20 +65,14 @@ export class InMemoryIdempotencyProvider
 	 * @returns Object with value and optional expiry timestamp, or null if not found/expired
 	 */
 	async get<T>(key: string): Promise<{ value: T; expiresAt?: number } | null> {
-		const entry = this.store.get(key);
+		const entry = await this.cache.get<IdempotencyEntry<T>>(key);
 
 		if (!entry) {
 			return null;
 		}
 
-		// Check if expired
-		if (entry.expiresAt !== undefined && entry.expiresAt < Date.now()) {
-			this.store.delete(key);
-			return null;
-		}
-
 		return {
-			value: entry.value as T,
+			value: entry.value,
 			expiresAt: entry.expiresAt,
 		};
 	}
@@ -90,17 +84,12 @@ export class InMemoryIdempotencyProvider
 	 * @param ttl - Time-to-live in milliseconds (optional)
 	 */
 	async set<T>(key: string, value: T, ttl?: number): Promise<void> {
-		// Evict if at capacity (LRU - remove oldest entries)
-		if (this.maxSize !== undefined && this.store.size >= this.maxSize) {
-			this.evictOldest();
-		}
-
 		const entry: IdempotencyEntry<T> = {
 			value,
 			expiresAt: ttl !== undefined ? Date.now() + ttl : undefined,
 		};
 
-		this.store.set(key, entry as IdempotencyEntry<unknown>);
+		await this.cache.set(key, entry, ttl);
 	}
 
 	/**
@@ -108,21 +97,21 @@ export class InMemoryIdempotencyProvider
 	 * @param key - Cache key
 	 */
 	async delete(key: string): Promise<void> {
-		this.store.delete(key);
+		await this.cache.delete(key);
 	}
 
 	/**
 	 * Clear all cached values
 	 */
 	async clear(): Promise<void> {
-		this.store.clear();
+		await this.cache.clear();
 	}
 
 	/**
 	 * Get the number of cached entries
 	 */
 	get size(): number {
-		return this.store.size;
+		return this.cache.size;
 	}
 
 	/**
@@ -130,45 +119,16 @@ export class InMemoryIdempotencyProvider
 	 * @returns Number of entries removed
 	 */
 	cleanup(): number {
-		const now = Date.now();
-		let removed = 0;
-
-		for (const [key, entry] of this.store.entries()) {
-			if (entry.expiresAt !== undefined && entry.expiresAt < now) {
-				this.store.delete(key);
-				removed++;
-			}
-		}
-
-		return removed;
+		// InMemoryCache handles expiration automatically on access
+		// This method is kept for API compatibility
+		return 0;
 	}
 
 	/**
 	 * Dispose the provider and clean up resources
 	 */
 	[Symbol.dispose](): void {
-		this.store.clear();
-	}
-
-	/**
-	 * Evict the oldest entries when at capacity
-	 */
-	private evictOldest(): void {
-		if (this.maxSize === undefined) return;
-
-		// Remove 10% of entries to make room
-		const entriesToRemove = Math.max(1, Math.floor(this.maxSize * 0.1));
-		const entries = Array.from(this.store.entries());
-
-		// Sort by key (simple eviction strategy)
-		entries.sort((a, b) => a[0].localeCompare(b[0]));
-
-		for (let i = 0; i < entriesToRemove && i < entries.length; i++) {
-			const entry = entries[i];
-			if (entry) {
-				this.store.delete(entry[0]);
-			}
-		}
+		this.cache[Symbol.dispose]();
 	}
 }
 

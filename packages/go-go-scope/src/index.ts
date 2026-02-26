@@ -76,7 +76,6 @@ export { ResourcePool } from "./resource-pool.js";
 export {
 	decorrelatedJitter,
 	exponentialBackoff,
-	fullJitterBackoff,
 	jitter,
 	linear,
 } from "./retry-strategies.js";
@@ -88,7 +87,7 @@ export type {
 export { AsyncDisposableResource, Scope } from "./scope.js";
 export { Semaphore } from "./semaphore.js";
 // Stream is available via @go-go-scope/stream package
-export { getTaskPoolMetrics, resetTaskPoolMetrics, Task } from "./task.js";
+export { Task } from "./task.js";
 export type { TokenBucketOptions } from "./token-bucket.js";
 export { TokenBucket } from "./token-bucket.js";
 // Re-export types
@@ -98,6 +97,7 @@ export type {
 	CircuitBreakerOptions,
 	CircuitState,
 	DebounceOptions,
+	DisposableScope,
 	FactoryResult,
 	Failure,
 	Logger,

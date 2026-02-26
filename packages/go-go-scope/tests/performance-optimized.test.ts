@@ -10,8 +10,6 @@ import {
 	parallel,
 	Channel,
 	Task,
-	getTaskPoolMetrics,
-	resetTaskPoolMetrics,
 	benchmark,
 	MemoryTracker,
 	performanceMonitor,
@@ -39,19 +37,16 @@ describe("Performance Optimizations", () => {
 			expect(value).toBe(42);
 		});
 
-		test("Task pool metrics tracking", async () => {
-			resetTaskPoolMetrics();
-			
+		test("Task creation and execution", async () => {
 			await using s = scope();
+			
+			const results: number[] = [];
 			for (let i = 0; i < 10; i++) {
-				await s.task(() => Promise.resolve(i));
+				const [err, value] = await s.task(() => Promise.resolve(i));
+				if (!err) results.push(value as number);
 			}
 			
-			const metrics = getTaskPoolMetrics();
-			// Pool metrics should be trackable
-			expect(typeof metrics.hits).toBe("number");
-			expect(typeof metrics.misses).toBe("number");
-			expect(typeof metrics.size).toBe("number");
+			expect(results).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
 		});
 
 		test("Task disposal cleanup", async () => {

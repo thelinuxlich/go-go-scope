@@ -37,17 +37,6 @@ const task = s.task(() => fetch('/api/data')); // No AbortController created yet
 await task; // Still no AbortController if signal not used
 ```
 
-#### Object Pooling
-Tasks use internal object pooling to reduce GC pressure:
-
-```typescript
-import { getTaskPoolMetrics, resetTaskPoolMetrics } from 'go-go-scope';
-
-// Check pool efficiency
-const metrics = getTaskPoolMetrics();
-console.log(`Pool hits: ${metrics.hits}, misses: ${metrics.misses}`);
-```
-
 #### Optimized Promise Chains
 Task uses a single `.then()` handler with success/error callbacks instead of `.finally()` to minimize promise chain overhead.
 

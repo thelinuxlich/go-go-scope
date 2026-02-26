@@ -296,23 +296,9 @@ export class Semaphore implements AsyncDisposable {
 	}
 
 	/**
-	 * Get the number of available permits (alias for available).
-	 */
-	get availablePermits(): number {
-		return this.permits;
-	}
-
-	/**
 	 * Get the number of waiting acquirers.
 	 */
 	get waiting(): number {
-		return this.queue.length;
-	}
-
-	/**
-	 * Get the number of waiting acquirers (alias for waiting).
-	 */
-	get waiterCount(): number {
 		return this.queue.length;
 	}
 

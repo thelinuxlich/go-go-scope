@@ -11,6 +11,7 @@ import type { RetryDelayFn } from "./types.js";
  * @param options.max - Maximum delay in ms (default: 30000)
  * @param options.multiplier - Multiplier for each attempt (default: 2)
  * @param options.jitter - Jitter factor 0-1 (default: 0). 0 = no jitter, 1 = full jitter
+ * @param options.fullJitter - Use AWS-style full jitter (random value between 0 and calculated delay)
  * @returns Delay function for retry option
  *
  * @example
@@ -22,6 +23,15 @@ import type { RetryDelayFn } from "./types.js";
  *   }
  * })
  * // Delays: ~100ms, ~200ms, ~400ms, ~800ms, ~1600ms (with ±30% jitter)
+ * 
+ * // With full jitter (AWS-style)
+ * await s.task(() => fetchData(), {
+ *   retry: {
+ *     maxRetries: 5,
+ *     delay: exponentialBackoff({ initial: 100, max: 5000, fullJitter: true })
+ *   }
+ * })
+ * // Delays: 0-100ms, 0-200ms, 0-400ms, etc.
  * ```
  */
 /* #__PURE__ */
@@ -30,11 +40,13 @@ export function exponentialBackoff({
 	max = 30000,
 	multiplier = 2,
 	jitter = 0,
+	fullJitter = false,
 }: {
 	initial?: number;
 	max?: number;
 	multiplier?: number;
 	jitter?: number;
+	fullJitter?: boolean;
 } = {}): RetryDelayFn {
 	return (attempt: number, _error: unknown): number => {
 		// Calculate exponential delay
@@ -43,7 +55,12 @@ export function exponentialBackoff({
 		// Apply max cap
 		const cappedDelay = Math.min(expDelay, max);
 
-		// Apply jitter if specified
+		// Full jitter: random value between 0 and cappedDelay (AWS-style)
+		if (fullJitter) {
+			return Math.floor(Math.random() * cappedDelay);
+		}
+
+		// Apply partial jitter if specified
 		if (jitter > 0) {
 			const jitterAmount = cappedDelay * jitter;
 			const minDelay = Math.max(0, cappedDelay - jitterAmount);
@@ -109,42 +126,7 @@ export function linear(baseDelay: number, increment: number): RetryDelayFn {
 	};
 }
 
-/**
- * Full jitter exponential backoff (AWS-style).
- * More aggressive jitter that picks a random value between 0 and the calculated delay.
- *
- * @param options.initial - Initial delay in ms (default: 100)
- * @param options.max - Maximum delay in ms (default: 30000)
- * @param options.multiplier - Multiplier for each attempt (default: 2)
- * @returns Delay function for retry option
- *
- * @example
- * ```typescript
- * await s.task(() => fetchData(), {
- *   retry: {
- *     maxRetries: 5,
- *     delay: fullJitterBackoff({ initial: 100, max: 5000 })
- *   }
- * })
- * // Delays: 0-100ms, 0-200ms, 0-400ms, etc.
- * ```
- */
-/* #__PURE__ */
-export function fullJitterBackoff({
-	initial = 100,
-	max = 30000,
-	multiplier = 2,
-}: {
-	initial?: number;
-	max?: number;
-	multiplier?: number;
-} = {}): RetryDelayFn {
-	return (attempt: number, _error: unknown): number => {
-		const expDelay = initial * multiplier ** (attempt - 1);
-		const cappedDelay = Math.min(expDelay, max);
-		return Math.floor(Math.random() * cappedDelay);
-	};
-}
+
 
 /**
  * Decorrelated jitter (Microsoft Azure-style).

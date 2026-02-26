@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/plugin-profiler",
-	"version": "2.3.0",
+	"version": "2.3.1",
 	"description": "Task profiling plugin for go-go-scope",
 	"type": "module",
 	"main": "./dist/index.mjs",

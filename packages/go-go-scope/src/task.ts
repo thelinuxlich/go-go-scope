@@ -1,52 +1,9 @@
 /**
  * Task class for go-go-scope
- * Optimized version with reduced object allocations and object pooling
+ * Optimized version with lazy AbortController creation
  */
 
 let taskIdCounter = 0;
-
-// Object pool for task instances to reduce GC pressure
-// Only pool simple tasks that don't have complex cleanup needs
-interface PooledTask {
-	fn: ((signal: AbortSignal) => Promise<unknown>) | undefined;
-	parentSignal: AbortSignal | undefined;
-	promise: Promise<unknown> | undefined;
-	abortController: AbortController | undefined;
-	parentAbortHandler: (() => void) | undefined;
-	settled: boolean;
-	id: number;
-}
-
-// Small pool to avoid memory bloat - tasks are lightweight
-const taskPool: PooledTask[] = [];
-let poolHits = 0;
-let poolMisses = 0;
-
-// Pre-allocated resolved promises for fast paths
-const RESOLVED_TRUE = Promise.resolve(true);
-const RESOLVED_FALSE = Promise.resolve(false);
-const RESOLVED_UNDEFINED = Promise.resolve(undefined);
-
-/**
- * Get performance metrics for the task pool
- * @internal
- */
-export function getTaskPoolMetrics(): {
-	hits: number;
-	misses: number;
-	size: number;
-} {
-	return { hits: poolHits, misses: poolMisses, size: taskPool.length };
-}
-
-/**
- * Reset task pool metrics (useful for testing)
- * @internal
- */
-export function resetTaskPoolMetrics(): void {
-	poolHits = 0;
-	poolMisses = 0;
-}
 
 /**
  * A disposable task that runs within a Scope.
@@ -54,7 +11,6 @@ export function resetTaskPoolMetrics(): void {
  * Execution is lazy - the task only starts when awaited or .then() is called.
  *
  * Optimizations:
- * - Object pooling for frequently created tasks
  * - Lazy AbortController creation
  * - Reduced memory allocations in hot paths
  */
@@ -76,20 +32,6 @@ export class Task<T> implements PromiseLike<T>, Disposable {
 		this.fn = fn;
 		this.parentSignal = parentSignal;
 		// AbortController and event listener are created lazily on first access
-	}
-
-	/**
-	 * Factory method to create tasks with pooling support
-	 * For internal use where tasks are short-lived and simple
-	 * @internal
-	 */
-	static create<T>(
-		fn: (signal: AbortSignal) => Promise<T>,
-		parentSignal: AbortSignal,
-	): Task<T> {
-		// Simple tasks that don't need complex cleanup can use pooling
-		// For now, use direct construction to maintain compatibility
-		return new Task(fn, parentSignal);
 	}
 
 	/**

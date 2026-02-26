@@ -39,13 +39,20 @@ export class CircuitBreaker implements AsyncDisposable {
 		this._failureThreshold = options.failureThreshold ?? 5;
 		this._resetTimeout = options.resetTimeout ?? 30000;
 		this._successThreshold = options.successThreshold ?? 1;
-		this._adaptiveThreshold = options.adaptiveThreshold ?? false;
-		this._minThreshold = options.minThreshold ?? 2;
-		this._maxThreshold = options.maxThreshold ?? 10;
-		this._errorRateWindowMs = options.errorRateWindowMs ?? 60000;
-		this._slidingWindow = options.slidingWindow ?? false;
-		this._slidingWindowSizeMs = options.slidingWindowSizeMs ?? 60000;
-		this.hooks = options;
+		
+		// Advanced options are nested under the 'advanced' property
+		this._adaptiveThreshold = options.advanced?.adaptiveThreshold ?? false;
+		this._minThreshold = options.advanced?.minThreshold ?? 2;
+		this._maxThreshold = options.advanced?.maxThreshold ?? 10;
+		this._errorRateWindowMs = options.advanced?.errorRateWindowMs ?? 60000;
+		this._slidingWindow = options.advanced?.slidingWindow ?? false;
+		this._slidingWindowSizeMs = options.advanced?.slidingWindowSizeMs ?? 60000;
+		
+		// Merge hooks from both locations
+		this.hooks = {
+			...options,
+			onThresholdAdapt: options.advanced?.onThresholdAdapt,
+		};
 	}
 
 	/**

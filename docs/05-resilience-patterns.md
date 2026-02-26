@@ -132,9 +132,22 @@ import {
   exponentialBackoff,  // Exponential with optional jitter
   jitter,              // Fixed delay with jitter
   linear,              // Linear increasing delay
-  fullJitterBackoff,   // AWS-style full jitter
   decorrelatedJitter   // Azure-style decorrelated jitter
 } from 'go-go-scope'
+
+// Exponential backoff with partial jitter
+await s.task(() => fetchData(), {
+  retry: {
+    delay: exponentialBackoff({ initial: 100, max: 5000, jitter: 0.3 })
+  }
+})
+
+// AWS-style full jitter (random value between 0 and calculated delay)
+await s.task(() => fetchData(), {
+  retry: {
+    delay: exponentialBackoff({ initial: 100, max: 5000, fullJitter: true })
+  }
+})
 
 // Jitter - adds randomness to prevent thundering herd
 await s.task(() => fetchData(), {

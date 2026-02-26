@@ -2117,21 +2117,7 @@ await s.task(() => fetchData(), {
 });
 ```
 
-### `fullJitterBackoff(options?)`
-
-AWS-style full jitter (random value between 0 and calculated delay).
-
-```typescript
-import { fullJitterBackoff } from "go-go-scope";
-
-await s.task(() => fetchData(), {
-  retry: {
-    delay: fullJitterBackoff({ initial: 100, max: 30000 }),
-  },
-});
-```
-
-### `decorrelatedJitter(options?)`
+### `decorrelatedJitter(options?)
 
 Azure-style decorrelated jitter.
 

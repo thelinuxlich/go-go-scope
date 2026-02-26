@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/scheduler",
-	"version": "2.3.0",
+	"version": "2.3.1",
 	"description": "Distributed job scheduler for go-go-scope with unified instance API",
 	"type": "module",
 	"main": "./dist/index.mjs",

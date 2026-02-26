@@ -10,6 +10,10 @@ import { CircuitBreaker } from "./circuit-breaker.js";
 import { AbortError, UnknownError } from "./errors.js";
 import { createLogger, createTaskLogger } from "./logger.js";
 import { installPlugins } from "./plugin.js";
+import {
+	debounce as debounceFn,
+	throttle as throttleFn,
+} from "./rate-limiting.js";
 import { poll as pollFn } from "./poll.js";
 import {
 	PriorityChannel,
@@ -1289,75 +1293,7 @@ export class Scope<
 		fn: (...args: Args) => Promise<T>,
 		options?: DebounceOptions,
 	): (...args: Args) => Promise<Result<unknown, T>> {
-		const wait = options?.wait ?? 300;
-		const leading = options?.leading ?? false;
-		const trailing = options?.trailing ?? true;
-
-		let timeoutId: ReturnType<typeof setTimeout> | undefined;
-		let lastArgs: Args | undefined;
-		let resultPromise: Promise<Result<unknown, T>> | undefined;
-		let resolveFn: ((result: Result<unknown, T>) => void) | undefined;
-
-		const invoke = async (args: Args): Promise<void> => {
-			try {
-				const result = await fn(...args);
-				resolveFn?.([undefined, result]);
-			} catch (error) {
-				resolveFn?.([error, undefined]);
-			}
-		};
-
-		const startTimer = (): void => {
-			timeoutId = setTimeout(() => {
-				if (trailing && lastArgs) {
-					void invoke(lastArgs);
-				}
-				timeoutId = undefined;
-				lastArgs = undefined;
-			}, wait);
-		};
-
-		// Clean up on scope disposal
-		const cleanupDisposable: AsyncDisposable = {
-			async [Symbol.asyncDispose](): Promise<void> {
-				if (timeoutId) {
-					clearTimeout(timeoutId);
-					timeoutId = undefined;
-				}
-				if (resolveFn) {
-					resolveFn([new Error("Scope disposed"), undefined]);
-				}
-			},
-		};
-		this.registerDisposable(cleanupDisposable);
-
-		return (...args: Args): Promise<Result<unknown, T>> => {
-			// If scope is disposed, return error immediately
-			if (this.disposed || this.signal.aborted) {
-				return Promise.resolve([new Error("Scope disposed"), undefined]);
-			}
-
-			lastArgs = args;
-
-			// Create new promise for this call
-			resultPromise = new Promise((resolve) => {
-				resolveFn = resolve;
-			});
-
-			const shouldCallNow = leading && !timeoutId;
-
-			if (timeoutId) {
-				clearTimeout(timeoutId);
-			}
-
-			if (shouldCallNow) {
-				void invoke(args);
-			} else {
-				startTimer();
-			}
-
-			return resultPromise;
-		};
+		return debounceFn(this, fn, options);
 	}
 
 	/**
@@ -1369,85 +1305,7 @@ export class Scope<
 		fn: (...args: Args) => Promise<T>,
 		options?: ThrottleOptions,
 	): (...args: Args) => Promise<Result<unknown, T>> {
-		const wait = options?.interval ?? 300;
-		const leading = options?.leading ?? true;
-		const trailing = options?.trailing ?? true;
-
-		let timeoutId: ReturnType<typeof setTimeout> | undefined;
-		let lastArgs: Args | undefined;
-		let lastCallTime = 0;
-		let resultPromise: Promise<Result<unknown, T>> | undefined;
-		let resolveFn: ((result: Result<unknown, T>) => void) | undefined;
-
-		const invoke = async (args: Args): Promise<void> => {
-			lastCallTime = Date.now();
-			try {
-				const result = await fn(...args);
-				resolveFn?.([undefined, result]);
-			} catch (error) {
-				resolveFn?.([error, undefined]);
-			}
-		};
-
-		const startTimer = (): void => {
-			const elapsed = Date.now() - lastCallTime;
-			const remaining = Math.max(wait - elapsed, 0);
-
-			timeoutId = setTimeout(() => {
-				if (trailing && lastArgs) {
-					void invoke(lastArgs);
-				}
-				timeoutId = undefined;
-				lastArgs = undefined;
-			}, remaining);
-		};
-
-		// Clean up on scope disposal
-		const cleanupDisposable: AsyncDisposable = {
-			async [Symbol.asyncDispose](): Promise<void> {
-				if (timeoutId) {
-					clearTimeout(timeoutId);
-					timeoutId = undefined;
-				}
-				if (resolveFn) {
-					resolveFn([new Error("Scope disposed"), undefined]);
-				}
-			},
-		};
-		this.registerDisposable(cleanupDisposable);
-
-		return (...args: Args): Promise<Result<unknown, T>> => {
-			// If scope is disposed, return error immediately
-			if (this.disposed || this.signal.aborted) {
-				return Promise.resolve([new Error("Scope disposed"), undefined]);
-			}
-
-			lastArgs = args;
-
-			// Create new promise for this call
-			resultPromise = new Promise((resolve) => {
-				resolveFn = resolve;
-			});
-
-			const now = Date.now();
-			const remaining = lastCallTime + wait - now;
-
-			if (remaining <= 0 || !lastCallTime) {
-				// Execute immediately
-				if (timeoutId) {
-					clearTimeout(timeoutId);
-					timeoutId = undefined;
-				}
-				if (leading) {
-					void invoke(args);
-				}
-			} else if (!timeoutId && trailing) {
-				// Schedule trailing execution
-				startTimer();
-			}
-
-			return resultPromise;
-		};
+		return throttleFn(this, fn, options);
 	}
 
 	/**

@@ -439,6 +439,11 @@ export interface CircuitBreakerOptions {
 	failureThreshold?: number;
 	/** Time in ms before attempting to close. Default: 30000 */
 	resetTimeout?: number;
+	/**
+	 * Success threshold - number of consecutive successes in half-open state
+	 * before transitioning to closed. Default: 1
+	 */
+	successThreshold?: number;
 	/** Called when circuit breaker state changes */
 	onStateChange?: (
 		from: CircuitBreakerState,
@@ -452,48 +457,31 @@ export interface CircuitBreakerOptions {
 	/** Called when circuit enters half-open state */
 	onHalfOpen?: () => void;
 	/**
-	 * Success threshold - number of consecutive successes in half-open state
-	 * before transitioning to closed. Default: 1
+	 * Advanced configuration options.
+	 * These features are opt-in and not enabled by default.
 	 */
-	successThreshold?: number;
-	/**
-	 * Enable adaptive threshold based on error rate.
-	 * Threshold decreases as error rate increases for faster reaction.
-	 * Default: false
-	 */
-	adaptiveThreshold?: boolean;
-	/**
-	 * Minimum failure threshold when adaptive mode is enabled.
-	 * Default: 2
-	 */
-	minThreshold?: number;
-	/**
-	 * Maximum failure threshold when adaptive mode is enabled.
-	 * Default: 10
-	 */
-	maxThreshold?: number;
-	/**
-	 * Window size in ms for calculating error rate in adaptive mode.
-	 * Default: 60000 (1 minute)
-	 */
-	errorRateWindowMs?: number;
-	/**
-	 * Called when threshold adapts based on error rate
-	 */
-	onThresholdAdapt?: (newThreshold: number, errorRate: number) => void;
-	/**
-	 * Use sliding window for failure counting instead of fixed count.
-	 * When enabled, failures are counted within a time window rather than cumulatively.
-	 * This prevents the circuit from opening due to old failures.
-	 * Default: false
-	 */
-	slidingWindow?: boolean;
-	/**
-	 * Size of the sliding window in milliseconds.
-	 * Only used when slidingWindow is true.
-	 * Default: 60000 (1 minute)
-	 */
-	slidingWindowSizeMs?: number;
+	advanced?: {
+		/**
+		 * Enable adaptive threshold based on error rate.
+		 * Threshold decreases as error rate increases for faster reaction.
+		 */
+		adaptiveThreshold?: boolean;
+		/** Minimum failure threshold when adaptive mode is enabled. Default: 2 */
+		minThreshold?: number;
+		/** Maximum failure threshold when adaptive mode is enabled. Default: 10 */
+		maxThreshold?: number;
+		/** Window size in ms for calculating error rate. Default: 60000 (1 minute) */
+		errorRateWindowMs?: number;
+		/** Called when threshold adapts based on error rate */
+		onThresholdAdapt?: (newThreshold: number, errorRate: number) => void;
+		/**
+		 * Use sliding window for failure counting instead of fixed count.
+		 * When enabled, failures are counted within a time window.
+		 */
+		slidingWindow?: boolean;
+		/** Size of the sliding window in milliseconds. Default: 60000 (1 minute) */
+		slidingWindowSizeMs?: number;
+	};
 }
 
 /**
@@ -590,6 +578,19 @@ export interface ScopeLoggingOptions {
 	logger?: Logger;
 	/** Minimum log level */
 	logLevel?: "debug" | "info" | "warn" | "error";
+}
+
+/**
+ * Minimal scope interface for rate limiting functions.
+ * Used to avoid circular dependencies.
+ */
+export interface DisposableScope {
+	/** Whether the scope has been disposed */
+	readonly isDisposed: boolean;
+	/** AbortSignal for the scope */
+	readonly signal: AbortSignal;
+	/** Register a disposable for cleanup */
+	registerDisposable(disposable: Disposable | AsyncDisposable): void;
 }
 
 /**

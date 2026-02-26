@@ -10,8 +10,6 @@ import {
 	benchmark,
 	Channel,
 	Task,
-	getTaskPoolMetrics,
-	resetTaskPoolMetrics,
 	type Scope,
 } from "../dist/index.mjs";
 
@@ -620,7 +618,7 @@ function printSummary(suites: BenchmarkSuite[]) {
 	}
 
 	// Pool metrics
-	const poolMetrics = getTaskPoolMetrics();
+	// Task pooling metrics removed - pooling not implemented
 	console.log(`\nTask pool metrics:`);
 	console.log(`  Hits: ${poolMetrics.hits}`);
 	console.log(`  Misses: ${poolMetrics.misses}`);
@@ -638,7 +636,7 @@ async function main() {
 	console.log("Optimized performance benchmarks comparing with native patterns\n");
 
 	// Reset pool metrics
-	resetTaskPoolMetrics();
+	// Task pooling metrics removed - pooling not implemented
 
 	const suites: BenchmarkSuite[] = [];
 

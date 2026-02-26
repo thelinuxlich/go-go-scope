@@ -207,24 +207,6 @@ for (let i = 0; i < 100000; i++) {
 }
 ```
 
-### Task Pool Metrics
-
-Monitor task pool performance:
-
-```typescript
-import { getTaskPoolMetrics, resetTaskPoolMetrics } from 'go-go-scope'
-
-// Get current pool statistics
-const metrics = getTaskPoolMetrics()
-console.log(metrics)
-// { hits: 950, misses: 50, size: 100 }
-
-// Reset metrics for testing
-resetTaskPoolMetrics()
-```
-
----
-
 ## Monitoring & Profiling
 
 Built-in tools for performance analysis.

@@ -346,8 +346,8 @@ async function queryDatabase(sql: string) {
 
 | Property | Description |
 |----------|-------------|
-| `available` / `availablePermits` | Number of available permits |
-| `waiting` / `waiterCount` | Number of waiters in queue |
+| `available` | Number of available permits |
+| `waiting` | Number of waiters in queue |
 | `totalPermits` | Total permits (initial capacity) |
 
 ---

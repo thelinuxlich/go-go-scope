@@ -2,8 +2,7 @@
  * Rate limiting utilities for go-go-scope - Debounce and throttle
  */
 
-import type { Scope } from "./scope.js";
-import type { DebounceOptions, Result, ThrottleOptions } from "./types.js";
+import type { DebounceOptions, DisposableScope, Result, ThrottleOptions } from "./types.js";
 
 /**
  * Create a debounced function that delays invoking the provided function
@@ -29,7 +28,7 @@ import type { DebounceOptions, Result, ThrottleOptions } from "./types.js";
  */
 /* #__PURE__ */
 export function debounce<T, Args extends unknown[]>(
-	scope: Scope<Record<string, unknown>>,
+	scope: DisposableScope,
 	fn: (...args: Args) => Promise<T>,
 	options: DebounceOptions = {},
 ): (...args: Args) => Promise<Result<unknown, T>> {
@@ -140,7 +139,7 @@ export function debounce<T, Args extends unknown[]>(
  */
 /* #__PURE__ */
 export function throttle<T, Args extends unknown[]>(
-	scope: Scope<Record<string, unknown>>,
+	scope: DisposableScope,
 	fn: (...args: Args) => Promise<T>,
 	options: ThrottleOptions = {},
 ): (...args: Args) => Promise<Result<unknown, T>> {
