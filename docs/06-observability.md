@@ -6,6 +6,7 @@ Monitor and debug your concurrent applications with metrics, logging, profiling,
 
 - [Metrics](#metrics)
 - [Metrics Export](#metrics-export)
+- [Performance Monitoring](#performance-monitoring)
 - [Structured Logging](#structured-logging)
 - [Task Profiling](#task-profiling)
 - [OpenTelemetry Integration](#opentelemetry-integration)
@@ -132,6 +133,138 @@ reporter.stop()
 
 // Force immediate report
 await reporter.report()
+```
+
+---
+
+## Performance Monitoring
+
+Monitor scope performance with the `PerformanceMonitor` and detect memory leaks with `MemoryTracker`.
+
+### Performance Monitor
+
+Track scope performance metrics over time:
+
+```typescript
+import { scope, performanceMonitor } from 'go-go-scope'
+
+await using s = scope()
+
+// Start monitoring
+const monitor = performanceMonitor(s, {
+  sampleInterval: 1000,  // Sample every second
+  maxSnapshots: 100,     // Keep last 100 snapshots
+  trackMemory: true      // Track memory usage
+})
+
+// Run your tasks
+await s.task(() => fetchData())
+await s.task(() => processData())
+
+// Get current metrics
+const metrics = monitor.getMetrics()
+console.log(metrics)
+// {
+//   taskCount: 2,
+//   activeTaskCount: 0,
+//   channelCount: 0,
+//   childScopeCount: 0,
+//   resourcesRegistered: 0,
+//   resourcesDisposed: 0,
+//   averageTaskDuration: 45.2,
+//   scopeDuration: 1250,
+//   tasksPerSecond: 1.6,
+//   memoryUsage: { used: 12345678, total: 23456789 }
+// }
+
+// Get performance trends
+const trends = monitor.getTrends()
+console.log(trends)
+// { taskRateTrend: 'increasing', durationTrend: 'stable' }
+
+// Get all snapshots for analysis
+const snapshots = monitor.getSnapshots()
+```
+
+### Memory Tracker
+
+Detect memory leaks during development or testing:
+
+```typescript
+import { scope, MemoryTracker } from 'go-go-scope'
+
+await using s = scope()
+
+const tracker = new MemoryTracker(50)  // Keep 50 snapshots
+
+// Take periodic snapshots
+tracker.snapshot()
+
+// After some operations...
+tracker.snapshot()
+tracker.snapshot()
+
+// Check for leaks
+if (tracker.checkForLeaks(10)) {  // 10% growth threshold
+  console.warn('Potential memory leak detected!')
+  console.log('Growth rate:', tracker.getGrowthRate(), 'bytes/sec')
+}
+
+// View memory history
+const history = tracker.getSnapshots()
+```
+
+### Benchmarking
+
+Run benchmarks to measure performance:
+
+```typescript
+import { benchmark } from 'go-go-scope'
+
+const result = await benchmark(
+  'task-execution',
+  async () => {
+    await using s = scope()
+    await s.task(() => fetchUser(1))
+  },
+  {
+    warmup: 100,      // Warmup iterations
+    iterations: 1000, // Benchmark iterations
+    minDuration: 1000 // Minimum duration in ms
+  }
+)
+
+console.log(result)
+// {
+//   name: 'task-execution',
+//   iterations: 1000,
+//   totalDuration: 1250.5,
+//   avgDuration: 1.25,
+//   minDuration: 0.8,
+//   maxDuration: 3.2,
+//   opsPerSecond: 800
+// }
+```
+
+### Use Case: Performance Regression Testing
+
+```typescript
+import { benchmark } from 'go-go-scope'
+
+test('performance should not regress', async () => {
+  const result = await benchmark(
+    'process-order',
+    async () => {
+      await using s = scope()
+      await processOrder(mockOrder)
+    },
+    { iterations: 100 }
+  )
+  
+  // Assert performance hasn't regressed
+  expect(result.avgDuration).toBeLessThan(10)  // < 10ms
+  expect(result.opsPerSecond).toBeGreaterThan(100)  // > 100 ops/sec
+})
 ```
 
 ---

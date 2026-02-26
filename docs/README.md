@@ -39,6 +39,8 @@ Complete guide to structured concurrency in TypeScript.
 |-----|-------------------|
 | [💾 Caching](./17-caching-memoization.md) | Distributed caching, memoization with tasks |
 | [📅 Scheduler](./15-scheduler.md) | Job scheduling with persistence and DLQ |
+| [🛑 Graceful Shutdown](./19-graceful-shutdown.md) | Signal handling for clean process termination |
+| [🔌 Plugins](./20-plugins.md) | Extending scope with custom functionality |
 | [🌊 Stream API Design](./15-stream-api-design.md) | Stream architecture and operator design |
 | [⚖️ Effect Comparison](./16-effect-stream-comparison.md) | Detailed comparison with Effect library |
 

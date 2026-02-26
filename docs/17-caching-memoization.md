@@ -9,6 +9,9 @@ Distributed caching and automatic memoization for expensive operations with TTL 
 - [In-Memory Cache](#in-memory-cache)
 - [Persistent Cache](#persistent-cache)
 - [Memoization with Tasks](#memoization-with-tasks)
+  - [Task Deduplication (`dedupe`)](#task-deduplication-dedupe)
+  - [In-Memory Memoization (`memo`)](#in-memory-memoization-memo)
+  - [Persistent Memoization (`idempotency`)](#persistent-memoization-idempotency)
 - [Cache Operations](#cache-operations)
 - [Advanced Patterns](#advanced-patterns)
 
@@ -160,6 +163,90 @@ await s.persistence.cache.set('feature:flags', flags, 60000)
 
 The most powerful caching feature is automatic memoization through task options. This caches task results and returns them for identical inputs.
 
+### Task Deduplication (`dedupe`)
+
+Prevent duplicate in-flight tasks. When multiple tasks are spawned with the same dedupe key while one is still running, they share the same result.
+
+```typescript
+await using s = scope()
+
+// These two tasks will share the same result
+const t1 = s.task(() => fetchUser(1), { dedupe: 'user:1' })
+const t2 = s.task(() => fetchUser(1), { dedupe: 'user:1' })
+
+const [r1, r2] = await Promise.all([t1, t2])
+// Only one API call was made, both got the same result
+```
+
+**Use cases:**
+- Preventing duplicate API calls
+- Avoiding duplicate database queries
+- Thundering herd protection
+
+```typescript
+// Multiple requests for the same user
+async function getUser(s: Scope, id: number) {
+  return s.task(() => fetchUser(id), { 
+    dedupe: `user:${id}`  // Same key = shared result
+  })
+}
+
+// Even if called 10 times simultaneously, only one fetch happens
+const users = await Promise.all([
+  getUser(s, 1),
+  getUser(s, 1),
+  getUser(s, 1),
+  // ... more concurrent calls
+])
+```
+
+**Note:** Deduplication only affects concurrent in-flight tasks. Once a task completes, a new task with the same key will execute again.
+
+### In-Memory Memoization (`memo`)
+
+Cache successful task results in memory with TTL. Unlike `dedupe`, memo persists results across multiple calls.
+
+```typescript
+await using s = scope()
+
+// First call executes and caches
+const [err1, result1] = await s.task(
+  () => fetchUser(1),
+  { memo: { key: 'user:1', ttl: 60000 } }  // Cache for 60 seconds
+)
+
+// Within 60 seconds, returns cached result
+const [err2, result2] = await s.task(
+  () => fetchUser(1),
+  { memo: { key: 'user:1', ttl: 60000 } }
+)
+// result2 === result1 (from cache, no API call)
+
+// After 60 seconds, executes again
+```
+
+**Key differences from `dedupe`:**
+
+| Feature | `dedupe` | `memo` |
+|---------|----------|--------|
+| Duration | Only while task in-flight | TTL-based persistence |
+| Caches errors | Yes | No (only success) |
+| Storage | In-memory registry | In-memory registry |
+| Use case | Prevent duplicate calls | Cache expensive results |
+
+### Comparison: `dedupe` vs `memo` vs `idempotency`
+
+| Feature | `dedupe` | `memo` | `idempotency` |
+|---------|----------|--------|---------------|
+| Storage | In-memory | In-memory | Persistence provider |
+| Duration | Task lifetime | TTL | TTL |
+| Survives restart | No | No | Yes |
+| Caches errors | Yes | No | No |
+| Distributed | No | No | Yes |
+| Use case | Duplicate prevention | Result caching | Cross-process caching |
+
+### In-Memory Cache with `memo`
+
 ### Basic Memoization
 
 ```typescript
@@ -185,7 +272,7 @@ const [err2, result2] = await s.task(
 // result2 === result1 (cached)
 ```
 
-### Idempotency Key Patterns
+### Persistent Memoization (`idempotency`)
 
 Use structured keys for organized caching:
 
