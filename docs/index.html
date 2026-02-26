@@ -1,0 +1,3292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>go-go-scope - Structured Concurrency for TypeScript</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --primary-light: #818cf8;
+            --secondary: #10b981;
+            --background: #0f172a;
+            --surface: #1e293b;
+            --surface-light: #334155;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --text-subtle: #64748b;
+            --border: #334155;
+            --code-bg: #0d1117;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            --glow: 0 0 40px rgba(99, 102, 241, 0.3);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--background);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--surface);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--surface-light);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+
+        /* Header */
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: var(--text);
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 18px;
+        }
+
+        .logo-text {
+            font-size: 20px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--text), var(--primary-light));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-nav {
+            display: flex;
+            gap: 24px;
+            align-items: center;
+        }
+
+        .header-nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s;
+            font-size: 14px;
+        }
+
+        .header-nav a:hover {
+            color: var(--text);
+        }
+
+        .github-link {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: var(--surface);
+            border-radius: 8px;
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.2s;
+            border: 1px solid var(--border);
+        }
+
+        .github-link:hover {
+            background: var(--surface-light);
+            border-color: var(--primary);
+        }
+
+        /* Layout */
+        .layout {
+            display: flex;
+            min-height: 100vh;
+            padding-top: 64px;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 64px;
+            bottom: 0;
+            width: 300px;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            overflow-y: auto;
+            padding: 24px 0;
+        }
+
+        .search-box {
+            padding: 0 20px 20px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 10px 16px;
+            background: var(--background);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .search-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+
+        .search-input::placeholder {
+            color: var(--text-subtle);
+        }
+
+        .nav-section {
+            margin-bottom: 8px;
+        }
+
+        .nav-section-title {
+            padding: 12px 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-subtle);
+        }
+
+        .nav-link {
+            display: block;
+            padding: 8px 20px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 14px;
+            transition: all 0.2s;
+            border-left: 2px solid transparent;
+        }
+
+        .nav-link:hover {
+            color: var(--text);
+            background: rgba(99, 102, 241, 0.1);
+        }
+
+        .nav-link.active {
+            color: var(--primary-light);
+            background: rgba(99, 102, 241, 0.15);
+            border-left-color: var(--primary);
+        }
+
+        .nav-link.sub {
+            padding-left: 36px;
+            font-size: 13px;
+        }
+
+        /* Main Content */
+        .main {
+            margin-left: 300px;
+            flex: 1;
+            max-width: 1200px;
+            padding: 40px 48px;
+            width: calc(100% - 300px);
+        }
+
+        /* Hero */
+        .hero {
+            text-align: center;
+            padding: 60px 0 80px;
+            position: relative;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 100px;
+            font-size: 14px;
+            color: var(--primary-light);
+            margin-bottom: 24px;
+        }
+
+        .hero h1 {
+            font-size: 56px;
+            font-weight: 700;
+            line-height: 1.1;
+            margin-bottom: 24px;
+            background: linear-gradient(135deg, var(--text) 0%, var(--primary-light) 50%, var(--secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero p {
+            font-size: 20px;
+            color: var(--text-muted);
+            max-width: 600px;
+            margin: 0 auto 40px;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 28px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 16px;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            box-shadow: var(--glow);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 60px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-secondary {
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--surface-light);
+            border-color: var(--primary);
+        }
+
+        /* Content */
+        .content h2 {
+            font-size: 32px;
+            font-weight: 700;
+            margin: 60px 0 24px;
+            color: var(--text);
+        }
+
+        .content h3 {
+            font-size: 24px;
+            font-weight: 600;
+            margin: 48px 0 16px;
+            color: var(--text);
+        }
+
+        .content h4 {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 32px 0 12px;
+            color: var(--text);
+        }
+
+        .content p {
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        .content a {
+            color: var(--primary-light);
+            text-decoration: none;
+        }
+
+        .content a:hover {
+            text-decoration: underline;
+        }
+
+        .content ul, .content ol {
+            color: var(--text-muted);
+            margin-bottom: 16px;
+            padding-left: 24px;
+        }
+
+        .content li {
+            margin-bottom: 8px;
+        }
+
+        .content code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            background: var(--surface);
+            padding: 2px 8px;
+            border-radius: 4px;
+            color: var(--secondary);
+        }
+
+        .content pre {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            overflow-x: auto;
+            margin: 24px 0;
+        }
+
+        .content pre code {
+            background: transparent;
+            padding: 0;
+            color: var(--text);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        /* Code highlighting */
+        .keyword { color: #c792ea; }
+        .string { color: #c3e88d; }
+        .function { color: #82aaff; }
+        .comment { color: #676e95; }
+        .number { color: #f78c6c; }
+        .type { color: #ffcb6b; }
+
+        /* Tables */
+        .content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 24px 0;
+            font-size: 14px;
+            display: table;
+        }
+        
+        .content table th,
+        .content table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .content table th {
+            font-weight: 600;
+            background: var(--surface);
+            color: var(--text);
+        }
+        
+        .content table td {
+            color: var(--text-muted);
+        }
+        
+        .content table tr:hover td {
+            background: rgba(99, 102, 241, 0.05);
+        }
+
+        /* Feature Cards */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            margin: 60px 0;
+        }
+
+        .feature-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 28px;
+            transition: all 0.3s;
+        }
+
+        .feature-card:hover {
+            border-color: var(--primary);
+            transform: translateY(-4px);
+            box-shadow: var(--shadow);
+        }
+
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin-bottom: 16px;
+        }
+
+        .feature-card h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 0 0 8px;
+        }
+
+        .feature-card p {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin: 0;
+        }
+
+        /* Installation */
+        .install-section {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            margin: 40px 0;
+        }
+
+        .install-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 16px;
+        }
+
+        .install-tab {
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .install-tab:hover {
+            color: var(--text);
+            background: var(--surface-light);
+        }
+
+        .install-tab.active {
+            color: var(--primary-light);
+            background: rgba(99, 102, 241, 0.1);
+        }
+
+        .install-code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            color: var(--text);
+            background: var(--code-bg);
+            padding: 16px;
+            border-radius: 8px;
+        }
+
+        /* Quick Start */
+        .quick-start {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(16, 185, 129, 0.1));
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            margin: 40px 0;
+        }
+
+        .quick-start h3 {
+            margin-top: 0;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 100px;
+            padding: 40px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-subtle);
+            font-size: 14px;
+        }
+
+        .footer a {
+            color: var(--text-muted);
+        }
+
+        /* Mobile Responsive */
+        /* Large screens (1440px and up) */
+        @media (min-width: 1440px) {
+            .main {
+                max-width: 1400px;
+                padding: 40px 64px;
+            }
+            
+            .content pre {
+                font-size: 15px;
+                padding: 28px;
+            }
+            
+            .content pre code {
+                font-size: 15px;
+                line-height: 1.7;
+            }
+            
+            .content table {
+                font-size: 15px;
+            }
+            
+            .content table th,
+            .content table td {
+                padding: 14px 20px;
+            }
+            
+            .content h2 {
+                font-size: 34px;
+            }
+            
+            .content h3 {
+                font-size: 26px;
+            }
+        }
+
+        /* Extra large screens (1920px and up) */
+        @media (min-width: 1920px) {
+            .main {
+                max-width: 1600px;
+                padding: 48px 100px;
+            }
+            
+            .content h2 {
+                font-size: 38px;
+            }
+            
+            .content h3 {
+                font-size: 30px;
+            }
+            
+            .content h4 {
+                font-size: 22px;
+            }
+            
+            .content pre {
+                font-size: 16px;
+                padding: 32px;
+            }
+            
+            .content pre code {
+                font-size: 16px;
+                line-height: 1.75;
+            }
+            
+            .content table {
+                font-size: 16px;
+            }
+            
+            .content table th,
+            .content table td {
+                padding: 16px 24px;
+            }
+            
+            .hero h1 {
+                font-size: 64px;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                transform: translateX(-100%);
+                transition: transform 0.3s;
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+
+            .main {
+                margin-left: 0;
+                width: 100%;
+                max-width: none;
+                padding: 24px;
+            }
+
+            .menu-toggle {
+                display: flex;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .hero h1 {
+                font-size: 36px;
+            }
+
+            .hero-buttons {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        /* Search Results */
+        .search-results {
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 20px;
+            right: 20px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            max-height: 400px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+        }
+
+        .search-results.active {
+            display: block;
+        }
+
+        .search-result {
+            display: block;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background 0.2s;
+            user-select: none;
+            -webkit-user-select: none;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .search-result:hover,
+        .search-result:focus {
+            background: rgba(99, 102, 241, 0.15);
+            outline: none;
+        }
+        
+        .search-result:last-child {
+            border-bottom: none;
+        }
+
+        .search-result-title {
+            font-weight: 600;
+            color: var(--text);
+            font-size: 14px;
+        }
+
+        .search-result-desc {
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-top: 4px;
+        }
+
+        /* Section anchor */
+        .section-anchor {
+            position: relative;
+        }
+
+        .section-anchor:hover::before {
+            content: '#';
+            position: absolute;
+            left: -24px;
+            color: var(--primary);
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <a href="#" class="logo">
+            <div class="logo-icon">⚡</div>
+            <span class="logo-text">go-go-scope</span>
+        </a>
+        <nav class="header-nav">
+            <a href="#features">Features</a>
+            <a href="#quickstart">Quick Start</a>
+            <a href="#api">API</a>
+            <a href="https://github.com/thelinuxlich/go-go-scope">GitHub</a>
+        </nav>
+        <a href="https://github.com/thelinuxlich/go-go-scope" class="github-link" target="_blank">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+            </svg>
+            GitHub
+        </a>
+    </header>
+
+    <div class="layout">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="search-box">
+                <input type="text" class="search-input" placeholder="Search documentation..." id="searchInput">
+                <div class="search-results" id="searchResults"></div>
+            </div>
+
+            <nav>
+                <div class="nav-section">
+                    <div class="nav-section-title">Getting Started</div>
+                    <a href="#introduction" class="nav-link">Introduction</a>
+                    <a href="#installation" class="nav-link">Installation</a>
+                    <a href="#quickstart" class="nav-link">Quick Start</a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Core Concepts</div>
+                    <a href="#scope" class="nav-link">Scope</a>
+                    <a href="#task" class="nav-link">Task</a>
+                    <a href="#channels" class="nav-link">Channels</a>
+                    <a href="#cancellation" class="nav-link">Cancellation</a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Examples</div>
+                    <a href="#examples" class="nav-link">Overview</a>
+                    <a href="#examples" class="nav-link sub">Resilient HTTP Client</a>
+                    <a href="#examples" class="nav-link sub">Data Pipeline</a>
+                    <a href="#examples" class="nav-link sub">WebSocket Fan-out</a>
+                    <a href="#examples" class="nav-link sub">DB Transactions</a>
+                    <a href="#examples" class="nav-link sub">Job Scheduler</a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">API Reference</div>
+                    <a href="#api" class="nav-link">Overview</a>
+                    <a href="#types" class="nav-link sub">Core Types</a>
+                    <a href="#functions" class="nav-link sub">Functions</a>
+                    <a href="#scope-class" class="nav-link sub">Scope Class</a>
+                    <a href="#task-class" class="nav-link sub">Task Class</a>
+                    <a href="#channel-class" class="nav-link sub">Channel</a>
+                    <a href="#stream-api" class="nav-link sub">Stream API</a>
+                    <a href="#scheduler-api" class="nav-link sub">Scheduler</a>
+                    <a href="#persistence-types" class="nav-link sub">Persistence</a>
+                    <a href="#plugins" class="nav-link sub">Plugins</a>
+                    <a href="#adapters" class="nav-link sub">Adapters</a>
+                    <a href="#retry-strategies" class="nav-link sub">Retry</a>
+                    <a href="#error-classes" class="nav-link sub">Errors</a>
+                    <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/03-api-reference.md" target="_blank" class="nav-link">Full Reference →</a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Hero Section -->
+            <section class="hero" id="introduction">
+                <div class="hero-badge">
+                    <span>✨</span>
+                    <span>v2.3.1</span>
+                    <span>•</span>
+                    <span>TypeScript 5.2+</span>
+                    <span>•</span>
+                    <span>ES2022</span>
+                </div>
+                <h1>Structured Concurrency<br>for TypeScript</h1>
+                <p>Build reliable concurrent applications with automatic cleanup, cancellation propagation, and explicit resource management using the native <code>using</code> and <code>await using</code> syntax.</p>
+                <div class="hero-buttons">
+                    <a href="#quickstart" class="btn btn-primary">
+                        <span>🚀</span> Get Started
+                    </a>
+                    <a href="https://github.com/thelinuxlich/go-go-scope" class="btn btn-secondary" target="_blank">
+                        <span>⭐</span> Star on GitHub
+                    </a>
+                </div>
+            </section>
+
+            <!-- Features -->
+            <section class="features" id="features">
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3>Native Resource Management</h3>
+                    <p>Uses <code>using</code> and <code>await using</code> syntax for automatic cleanup without callbacks</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Lazy Execution</h3>
+                    <p>Tasks don't start until awaited, giving you full control over execution flow</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3>Cancellation Propagation</h3>
+                    <p>Parent-child scope cancellation with AbortSignal integration throughout</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Observability</h3>
+                    <p>Built-in metrics, OpenTelemetry tracing, and structured logging support</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🛡️</div>
+                    <h3>Resilience Patterns</h3>
+                    <p>Circuit breakers, retry with backoff, and timeout handling built-in</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🌊</div>
+                    <h3>Go-Style Channels</h3>
+                    <p>Buffered channels, priority channels, broadcast channels, and select statements</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔌</div>
+                    <h3>Plugin Architecture</h3>
+                    <p>Extensible with plugins for OpenTelemetry, metrics, profiling, and deadlock detection</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📦</div>
+                    <h3>Framework Adapters</h3>
+                    <p>First-class integrations with Fastify, Express, NestJS, Hono, Elysia, and more</p>
+                </div>
+            </section>
+
+            <!-- Installation -->
+            <section class="install-section" id="installation">
+                <h2>Installation</h2>
+                <div class="install-tabs">
+                    <button class="install-tab active" data-tab="npm">npm</button>
+                    <button class="install-tab" data-tab="pnpm">pnpm</button>
+                    <button class="install-tab" data-tab="yarn">yarn</button>
+                    <button class="install-tab" data-tab="bun">bun</button>
+                </div>
+                <div class="install-code" id="installCode">npm install go-go-scope</div>
+            </section>
+
+            <!-- Quick Start -->
+            <section class="quick-start" id="quickstart">
+                <h3>Quick Start</h3>
+                <pre><code><span class="keyword">import</span> { scope } <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
+
+<span class="comment">// Create a scope for structured concurrency</span>
+<span class="keyword">await using</span> s = <span class="function">scope</span>({ timeout: <span class="number">5000</span> })
+
+<span class="comment">// Spawn tasks - they don't run until awaited</span>
+<span class="keyword">const</span> userTask = s.<span class="function">task</span>(() => <span class="function">fetchUser</span>(<span class="number">1</span>))
+<span class="keyword">const</span> postsTask = s.<span class="function">task</span>(() => <span class="function">fetchPosts</span>(<span class="number">1</span>))
+
+<span class="comment">// Await results - tasks run now</span>
+<span class="keyword">const</span> [userErr, user] = <span class="keyword">await</span> userTask
+<span class="keyword">const</span> [postsErr, posts] = <span class="keyword">await</span> postsTask
+
+<span class="comment">// Results are [error, value] tuples (never throws)</span>
+<span class="keyword">if</span> (userErr) <span class="keyword">return</span> <span class="function">handleError</span>(userErr)
+<span class="keyword">if</span> (postsErr) <span class="keyword">return</span> <span class="function">handleError</span>(postsErr)
+
+<span class="comment">// Use the data</span>
+<span class="function">renderUser</span>(user)
+<span class="function">renderPosts</span>(posts)
+
+<span class="comment">// Automatic cleanup when scope exits!</span></code></pre>
+            </section>
+
+            <!-- Scope Section -->
+            <section id="scope" class="content">
+                <h2 class="section-anchor">The Scope</h2>
+                <p>A <strong>Scope</strong> is a container for async operations. Think of it as a "workspace" for your tasks with automatic cleanup and cancellation propagation.</p>
+                
+                <h3>Key Features</h3>
+                <ul>
+                    <li><strong>Contains tasks</strong> - All tasks are created within a scope</li>
+                    <li><strong>Propagates cancellation</strong> - When the scope ends, tasks are cancelled</li>
+                    <li><strong>Manages resources</strong> - Services you provide are cleaned up automatically</li>
+                    <li><strong>Tracks execution</strong> - Knows what tasks are running</li>
+                    <li><strong>Collects telemetry</strong> - Creates spans for tracing</li>
+                </ul>
+
+                <h3>Creating a Scope</h3>
+                <pre><code><span class="comment">// Simple scope</span>
+<span class="keyword">await using</span> s = <span class="function">scope</span>()
+
+<span class="comment">// With timeout</span>
+<span class="keyword">await using</span> s = <span class="function">scope</span>({ timeout: <span class="number">5000</span> })
+
+<span class="comment">// With OpenTelemetry tracing</span>
+<span class="keyword">await using</span> s = <span class="function">scope</span>({
+  name: <span class="string">'my-operation'</span>,
+  tracer: trace.<span class="function">getTracer</span>(<span class="string">'my-app'</span>)
+})
+
+<span class="comment">// With concurrency limit</span>
+<span class="keyword">await using</span> s = <span class="function">scope</span>({ concurrency: <span class="number">3</span> })
+
+<span class="comment">// With circuit breaker</span>
+<span class="keyword">await using</span> s = <span class="function">scope</span>({
+  circuitBreaker: {
+    failureThreshold: <span class="number">5</span>,
+    resetTimeout: <span class="number">30000</span>
+  }
+})</code></pre>
+            </section>
+
+            <!-- Task Section -->
+            <section id="task" class="content">
+                <h2 class="section-anchor">The Task</h2>
+                <p>A <strong>Task</strong> is a unit of work within a scope. It's like a Promise, but:</p>
+                <ul>
+                    <li><strong>Lazy</strong> - Doesn't start until you await it</li>
+                    <li><strong>Cancellable</strong> - Respects the AbortSignal</li>
+                    <li><strong>Returns a Result</strong> - Never throws, always returns <code>[error, value]</code></li>
+                </ul>
+
+                <h3>Lazy Execution</h3>
+                <pre><code><span class="keyword">await using</span> s = <span class="function">scope</span>()
+
+<span class="comment">// Create tasks (doesn't start yet!)</span>
+<span class="keyword">const</span> primary = s.<span class="function">task</span>(() => <span class="function">fetchFromPrimary</span>())
+<span class="keyword">const</span> fallback = s.<span class="function">task</span>(() => <span class="function">fetchFromFallback</span>())
+
+<span class="comment">// Try primary first</span>
+<span class="keyword">const</span> [err, result] = <span class="keyword">await</span> primary
+<span class="keyword">if</span> (err) {
+  <span class="comment">// Only now does fallback start!</span>
+  <span class="keyword">const</span> [fallbackErr, fallbackResult] = <span class="keyword">await</span> fallback
+  <span class="keyword">return</span> fallbackResult
+}
+<span class="keyword">return</span> result</code></pre>
+
+                <h3>Task Context</h3>
+                <p>Task functions receive a context object with useful properties:</p>
+                <pre><code><span class="keyword">await</span> s.<span class="function">task</span>(<span class="keyword">async</span> ({ services, signal, logger, context }) => {
+  <span class="comment">// services: Your provided services (DI)</span>
+  <span class="comment">// signal: AbortSignal for cancellation</span>
+  <span class="comment">// logger: Structured logger (debug, info, warn, error)</span>
+  <span class="comment">// context: Request-scoped context object from scope</span>
+  
+  logger.<span class="function">info</span>(<span class="string">'Starting operation'</span>, { requestId: context.requestId })
+  
+  <span class="keyword">const</span> data = <span class="keyword">await</span> <span class="function">fetchData</span>({ signal })
+  <span class="keyword">return</span> data
+})</code></pre>
+            </section>
+
+            <!-- Channels Section -->
+            <section id="channels" class="content">
+                <h2 class="section-anchor">Channels</h2>
+                <p>Channels provide Go-style concurrent communication with configurable backpressure strategies.</p>
+
+                <h3>Basic Usage</h3>
+                <pre><code><span class="keyword">await using</span> s = <span class="function">scope</span>()
+<span class="keyword">const</span> ch = s.<span class="function">channel</span>&lt;<span class="type">string</span>&gt;(<span class="number">100</span>)  <span class="comment">// Buffer capacity of 100</span>
+
+<span class="comment">// Producer</span>
+s.<span class="function">task</span>(<span class="keyword">async</span> () => {
+  <span class="keyword">for</span> (<span class="keyword">const</span> log <span class="keyword">of</span> logs) {
+    <span class="keyword">await</span> ch.<span class="function">send</span>(log)  <span class="comment">// Blocks if buffer full (default)</span>
+  }
+  ch.<span class="function">close</span>()
+})
+
+<span class="comment">// Consumer with native async iteration</span>
+<span class="keyword">for await</span> (<span class="keyword">const</span> log <span class="keyword">of</span> ch) {
+  <span class="keyword">await</span> <span class="function">processLog</span>(log)
+}</code></pre>
+
+                <h3>Priority Channels</h3>
+                <pre><code><span class="keyword">const</span> pq = s.<span class="function">priorityChannel</span>&lt;{ value: <span class="type">Task</span>; priority: <span class="type">number</span> }&gt;({
+  capacity: <span class="number">100</span>,
+  comparator: (a, b) => a.priority - b.priority
+})
+
+<span class="comment">// Send tasks with priorities</span>
+<span class="keyword">await</span> pq.<span class="function">send</span>({ value: task1, priority: <span class="number">3</span> })
+<span class="keyword">await</span> pq.<span class="function">send</span>({ value: task2, priority: <span class="number">1</span> })  <span class="comment">// Higher priority</span>
+
+<span class="comment">// Receive in priority order</span>
+<span class="keyword">const</span> item = <span class="keyword">await</span> pq.<span class="function">receive</span>() <span class="comment">// task2 first</span></code></pre>
+            </section>
+
+            <!-- Cancellation Section -->
+            <section id="cancellation" class="content">
+                <h2 class="section-anchor">Cancellation</h2>
+                <p>go-go-scope provides several utilities for handling cancellation:</p>
+
+                <h3>Cancellation Utilities</h3>
+                <pre><code><span class="keyword">import</span> { 
+  throwIfAborted, 
+  onAbort, 
+  abortPromise, 
+  raceSignals 
+} <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
+
+<span class="comment">// Throw if signal is aborted</span>
+<span class="function">throwIfAborted</span>(signal)
+
+<span class="comment">// Register abort callback</span>
+<span class="keyword">const</span> disposable = <span class="function">onAbort</span>(signal, () => {
+  console.<span class="function">log</span>(<span class="string">'Aborted!'</span>)
+})
+
+<span class="comment">// Promise that rejects on abort</span>
+<span class="keyword">await</span> <span class="function">abortPromise</span>(signal)
+
+<span class="comment">// Race multiple signals</span>
+<span class="keyword">const</span> combined = <span class="function">raceSignals</span>([scope.signal, timeoutSignal])</code></pre>
+            </section>
+
+            <!-- Examples Showcase -->
+            <section id="examples" class="content">
+                <h2 class="section-anchor">Examples</h2>
+                <p>Real-world patterns showcasing the power of structured concurrency.</p>
+
+                <h3>🔥 Resilient HTTP Client with Retry & Circuit Breaker</h3>
+                <p>Fetch data with exponential backoff, circuit breaker protection, and graceful fallback - all automatically cleaned up.</p>
+                <pre><code><span class="keyword">import</span> { scope, exponentialBackoff } <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
+
+<span class="keyword">async function</span> <span class="function">fetchUserWithResilience</span>(userId: <span class="type">string</span>) {
+  <span class="keyword">await using</span> s = <span class="function">scope</span>({
+    timeout: <span class="number">30000</span>,
+    circuitBreaker: {
+      failureThreshold: <span class="number">5</span>,
+      resetTimeout: <span class="number">30000</span>,
+      onStateChange: (from, to) => <span class="function">console</span>.<span class="function">log</span>(<span class="string">`Circuit: ${from} → ${to}`</span>)
+    }
+  })
+
+  <span class="comment">// Try primary API with aggressive retry</span>
+  <span class="keyword">const</span> primary = s.<span class="function">task</span>(
+    () => <span class="function">fetch</span>(<span class="string">`https://api.example.com/users/${userId}`</span>),
+    {
+      retry: {
+        maxRetries: <span class="number">5</span>,
+        delay: <span class="function">exponentialBackoff</span>({ initial: <span class="number">100</span>, max: <span class="number">5000</span> }),
+        retryCondition: (err) => err.<span class="function">status</span> >= <span class="number">500</span>
+      }
+    }
+  )
+
+  <span class="comment">// Fallback to cache if API fails</span>
+  <span class="keyword">const</span> fallback = s.<span class="function">task</span>(() => <span class="function">redisGet</span>(<span class="string">`user:${userId}`</span>))
+
+  <span class="comment">// Race them - if primary fails quickly, use cache</span>
+  <span class="keyword">const</span> [err, user] = <span class="keyword">await</span> s.<span class="function">race</span>([
+    () => primary,
+    () => fallback
+  ], { requireSuccess: <span class="keyword">true</span> })
+
+  <span class="keyword">return</span> err ? <span class="keyword">null</span> : user
+  <span class="comment">// Everything cancelled and cleaned up automatically!</span>
+}</code></pre>
+
+                <h3>📊 Parallel Data Processing with Stream Pipeline</h3>
+                <p>Process millions of records with backpressure, batching, and real-time metrics - production-ready data pipeline.</p>
+                <pre><code><span class="keyword">import</span> { scope } <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
+<span class="keyword">import</span> { streamPlugin } <span class="keyword">from</span> <span class="string">'@go-go-scope/stream'</span>
+<span class="keyword">import</span> { metricsPlugin } <span class="keyword">from</span> <span class="string">'@go-go-scope/metrics'</span>
+
+<span class="keyword">async function</span> <span class="function">processDataPipeline</span>(source: <span class="type">AsyncIterable</span>&lt;<span class="type">RawEvent</span>&gt;) {
+  <span class="keyword">await using</span> s = <span class="function">scope</span>({
+    name: <span class="string">'data-pipeline'</span>,
+    plugins: [<span class="function">streamPlugin</span>(), <span class="function">metricsPlugin</span>()],
+    concurrency: <span class="number">10</span>
+  })
+
+  <span class="keyword">const</span> processed = s.<span class="function">counter</span>(<span class="string">'events_processed'</span>)
+  <span class="keyword">const</span> latency = s.<span class="function">histogram</span>(<span class="string">'processing_latency_ms'</span>)
+
+  <span class="keyword">const</span> [err, results] = <span class="keyword">await</span> s.<span class="function">stream</span>(source)
+    .<span class="function">map</span>(<span class="keyword">async</span> (event) => {
+      <span class="keyword">const</span> start = <span class="function">performance.now</span>()
+      <span class="keyword">const</span> enriched = <span class="keyword">await</span> <span class="function">enrichEvent</span>(event)
+      latency.<span class="function">record</span>(<span class="function">performance.now</span>() - start)
+      <span class="keyword">return</span> enriched
+    })
+    .<span class="function">filter</span>(e => e.<span class="function">isValid</span>)
+    .<span class="function">buffer</span>(<span class="number">100</span>)           <span class="comment">// Batch for efficient DB writes</span>
+    .<span class="function">tap</span>((batch) => {
+      processed.<span class="function">inc</span>(batch.<span class="function">length</span>)
+      <span class="function">console</span>.<span class="function">log</span>(<span class="string">`Processed ${batch.length} events`</span>)
+    })
+    .<span class="function">flatMap</span>(<span class="keyword">async</span> (batch) => {
+      <span class="comment">// Parallel database inserts with concurrency limit</span>
+      <span class="keyword">const</span> [, results] = <span class="keyword">await</span> s.<span class="function">parallel</span>(
+        batch.<span class="function">map</span>(e => () => <span class="function">dbInsert</span>(e)),
+        { concurrency: <span class="number">5</span> }
+      )
+      <span class="keyword">return</span> results
+    })
+    .<span class="function">take</span>(<span class="number">10000</span>)          <span class="comment">// Limit to 10k events</span>
+    .<span class="function">toArray</span>()            <span class="comment">// Collect results</span>
+
+  <span class="keyword">if</span> (err) <span class="function">console</span>.<span class="function">error</span>(<span class="string">'Pipeline failed:'</span>, err)
+  <span class="keyword">else</span> <span class="function">console</span>.<span class="function">log</span>(<span class="string">`Completed: ${processed.value()} events`</span>)
+  
+  <span class="keyword">return</span> results
+}</code></pre>
+
+                <h3>🔄 Real-time WebSocket Fan-out with Channels</h3>
+                <p>Broadcast real-time updates to thousands of clients with automatic cleanup when connections drop.</p>
+                <pre><code><span class="keyword">import</span> { scope } <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
+
+<span class="keyword">async function</span> <span class="function">runWebSocketServer</span>(wss: <span class="type">WebSocketServer</span>) {
+  <span class="keyword">await using</span> serverScope = <span class="function">scope</span>({ name: <span class="string">'ws-server'</span> })
+
+  <span class="comment">// Broadcast channel for price updates</span>
+  <span class="keyword">const</span> prices = serverScope.<span class="function">broadcast</span>&lt;<span class="type">PriceUpdate</span>&gt;()
+
+  <span class="comment">// Poll external API for price changes</span>
+  <span class="keyword">const</span> poller = serverScope.<span class="function">poll</span>(
+    () => <span class="function">fetchPrices</span>(),
+    (update) => prices.<span class="function">send</span>(update),
+    { interval: <span class="number">1000</span> }
+  )
+
+  <span class="comment">// Handle client connections</span>
+  wss.<span class="function">on</span>(<span class="string">'connection'</span>, (ws, req) => {
+    <span class="comment">// Each client gets its own scope</span>
+    serverScope.<span class="function">task</span>(<span class="keyword">async</span> () => {
+      <span class="keyword">await using</span> clientScope = <span class="function">scope</span>({
+        parent: serverScope,
+        name: <span class="string">`client-${req.socket.remotePort}`</span>
+      })
+
+      <span class="comment">// Subscribe to relevant symbols</span>
+      <span class="keyword">const</span> symbols = <span class="keyword">new</span> <span class="type">Set</span>&lt;<span class="type">string</span>&gt;()
+      
+      <span class="keyword">await</span> prices.<span class="function">subscribe</span>((update) => {
+        <span class="keyword">if</span> (symbols.<span class="function">has</span>(update.symbol)) {
+          ws.<span class="function">send</span>(<span class="type">JSON</span>.<span class="function">stringify</span>(update))
+        }
+      })
+
+      <span class="comment">// Handle client messages</span>
+      ws.<span class="function">on</span>(<span class="string">'message'</span>, (data) => {
+        <span class="keyword">const</span> msg = <span class="type">JSON</span>.<span class="function">parse</span>(data.<span class="function">toString</span>())
+        <span class="keyword">if</span> (msg.<span class="function">action</span> === <span class="string">'subscribe'</span>) {
+          symbols.<span class="function">add</span>(msg.<span class="function">symbol</span>)
+        }
+      })
+
+      <span class="comment">// Cleanup on disconnect - automatic!</span>
+      <span class="keyword">await</span> <span class="keyword">new</span> <span class="type">Promise</span>((resolve) => ws.<span class="function">on</span>(<span class="string">'close'</span>, resolve))
+    })
+  })
+
+  <span class="comment">// Server runs until SIGTERM</span>
+  <span class="keyword">await</span> <span class="function">waitForShutdown</span>()
+  <span class="comment">// All clients disconnected, polling stopped, resources freed</span>
+}</code></pre>
+
+                <h3>🗄️ Database Transaction with Connection Pooling</h3>
+                <p>Complex multi-table transaction with connection pooling, automatic rollback, and deadlock detection.</p>
+                <pre><code><span class="keyword">import</span> { scope } <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
+<span class="keyword">import</span> { deadlockDetectorPlugin } <span class="keyword">from</span> <span class="string">'@go-go-scope/deadlock-detector'</span>
+
+<span class="keyword">async function</span> <span class="function">transferFunds</span>(
+  fromId: <span class="type">string</span>,
+  toId: <span class="type">string</span>,
+  amount: <span class="type">number</span>
+) {
+  <span class="keyword">await using</span> s = <span class="function">scope</span>({
+    name: <span class="string">'transfer'</span>,
+    timeout: <span class="number">10000</span>,
+    plugins: [<span class="function">deadlockDetectorPlugin</span>({ timeout: <span class="number">5000</span> })]
+  })
+
+  <span class="comment">// Provide database pool as a service</span>
+  <span class="keyword">await</span> s.<span class="function">provide</span>(<span class="string">'db'</span>, 
+    () => <span class="function">createConnection</span>(),
+    (conn) => conn.<span class="function">end</span>()
+  )
+
+  <span class="comment">// Create connection pool</span>
+  <span class="keyword">const</span> pool = s.<span class="function">pool</span>({
+    factory: () => s.<span class="function">use</span>(<span class="string">'db'</span>),
+    min: <span class="number">2</span>, max: <span class="number">10</span>,
+    acquireTimeout: <span class="number">5000</span>
+  })
+
+  <span class="keyword">return</span> pool.<span class="function">execute</span>(<span class="keyword">async</span> (conn) => {
+    <span class="keyword">await</span> conn.<span class="function">query</span>(<span class="string">'BEGIN'</span>)
+
+    <span class="keyword">try</span> {
+      <span class="comment">// Deduct from sender</span>
+      <span class="keyword">const</span> [err1] = <span class="keyword">await</span> s.<span class="function">task</span>(() =>
+        conn.<span class="function">query</span>(<span class="string">'UPDATE accounts SET balance = balance - $1 WHERE id = $2'</span>,
+          [amount, fromId]
+        )
+      )
+      <span class="keyword">if</span> (err1) <span class="keyword">throw</span> err1
+
+      <span class="comment">// Add to receiver</span>
+      <span class="keyword">const</span> [err2] = <span class="keyword">await</span> s.<span class="function">task</span>(() =>
+        conn.<span class="function">query</span>(<span class="string">'UPDATE accounts SET balance = balance + $1 WHERE id = $2'</span>,
+          [amount, toId]
+        )
+      )
+      <span class="keyword">if</span> (err2) <span class="keyword">throw</span> err2
+
+      <span class="comment">// Record transaction</span>
+      <span class="keyword">await</span> s.<span class="function">task</span>(() =>
+        conn.<span class="function">query</span>(
+          <span class="string">'INSERT INTO transactions (from_id, to_id, amount) VALUES ($1, $2, $3)'</span>,
+          [fromId, toId, amount]
+        )
+      )
+
+      <span class="keyword">await</span> conn.<span class="function">query</span>(<span class="string">'COMMIT'</span>)
+      <span class="keyword">return</span> { success: <span class="keyword">true</span> }
+    } <span class="keyword">catch</span> (error) {
+      <span class="keyword">await</span> conn.<span class="function">query</span>(<span class="string">'ROLLBACK'</span>)
+      <span class="keyword">return</span> { success: <span class="keyword">false</span>, error }
+    }
+  })
+  <span class="comment">// Pool drained, connections closed automatically</span>
+}</code></pre>
+
+                <h3>🚀 Distributed Job Scheduler with Persistence</h3>
+                <p>Production-ready cron job scheduler with distributed locking, idempotency, and circuit breaker.</p>
+                <pre><code><span class="keyword">import</span> { Scheduler } <span class="keyword">from</span> <span class="string">'@go-go-scope/scheduler'</span>
+<span class="keyword">import</span> { RedisIdempotencyAdapter } <span class="keyword">from</span> <span class="string">'@go-go-scope/persistence-redis'</span>
+
+<span class="keyword">async function</span> <span class="function">setupScheduledJobs</span>() {
+  <span class="keyword">const</span> scheduler = <span class="keyword">new</span> <span class="type">Scheduler</span>({
+    storage: <span class="keyword">await</span> <span class="function">createPostgresStorage</span>(),
+    checkInterval: <span class="number">5000</span>,  <span class="comment">// Check every 5 seconds</span>
+    persistence: {
+      idempotency: <span class="keyword">new</span> <span class="type">RedisIdempotencyAdapter</span>(redis)
+    }
+  })
+
+  <span class="comment">// Daily report generation</span>
+  <span class="keyword">await</span> scheduler.<span class="function">createSchedule</span>({
+    name: <span class="string">'daily-report'</span>,
+    cron: <span class="string">'0 6 * * *'</span>,  <span class="comment">// 6 AM daily</span>
+    timezone: <span class="string">'America/New_York'</span>,
+    handler: <span class="keyword">async</span> (job, { scope }) => {
+      <span class="comment">// Each job runs in its own scope</span>
+      <span class="keyword">await using</span> s = scope
+
+      <span class="keyword">const</span> [err, report] = <span class="keyword">await</span> s.<span class="function">task</span>(
+        () => <span class="function">generateReport</span>(job.<span class="function">payload</span>.<span class="function">date</span>),
+        {
+          <span class="comment">// Idempotent - won't run twice for same date</span>
+          idempotency: { key: <span class="string">`report:${job.payload.date}`</span>, ttl: <span class="number">86400000</span> },
+          retry: <span class="string">'exponential'</span>,
+          timeout: <span class="number">300000</span>  <span class="comment">// 5 minutes</span>
+        }
+      )
+
+      <span class="keyword">if</span> (err) {
+        <span class="function">console</span>.<span class="function">error</span>(<span class="string">'Report failed:'</span>, err)
+        <span class="keyword">throw</span> err  <span class="comment">// Will retry based on schedule config</span>
+      }
+
+      <span class="keyword">await</span> s.<span class="function">task</span>(() => <span class="function">emailReport</span>(report))
+    },
+    options: {
+      maxRetries: <span class="number">3</span>,
+      retryDelay: <span class="number">60000</span>,  <span class="comment">// 1 minute between retries</span>
+      timeout: <span class="number">600000</span>        <span class="comment">// 10 minute total timeout</span>
+    }
+  })
+
+  <span class="comment">// Health check endpoint</span>
+  scheduler.<span class="function">on</span>(<span class="string">'jobFailed'</span>, ({ job, error, permanent }) => {
+    <span class="keyword">if</span> (permanent) {
+      <span class="function">alertPagerDuty</span>(<span class="string">`Job ${job.scheduleName} permanently failed: ${error}`</span>)
+    }
+  })
+
+  <span class="keyword">await</span> scheduler.<span class="function">start</span>()
+  <span class="function">console</span>.<span class="function">log</span>(<span class="string">'Scheduler running'</span>)
+}
+</code></pre>
+
+                <div style="margin: 40px 0; padding: 24px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(16, 185, 129, 0.1)); border: 1px solid var(--border); border-radius: 12px;">
+                    <p style="margin: 0; color: var(--text-muted);">💡 <strong>Want more?</strong> Check out the <a href="https://github.com/thelinuxlich/go-go-scope/tree/main/examples" style="color: var(--primary-light);" target="_blank">examples directory</a> for complete working samples including OpenTelemetry tracing, Prometheus metrics, and framework integrations.</p>
+                </div>
+            </section>
+
+<!-- API Reference Section for go-go-scope -->
+<!-- This file contains the complete API documentation to replace the API section in docs/index.html -->
+
+<section id="api" class="content">
+    <h2 class="section-anchor">API Reference</h2>
+    <p>Complete reference for all exports from <code>go-go-scope</code> and its companion packages.</p>
+
+    <h3 id="types">Core Types</h3>
+
+    <h4 id="result-type" class="section-anchor"><code>Result&lt;E, T&gt;</code></h4>
+    <p>Result tuple for type-safe error handling. Tasks always return <code>[error, value]</code> tuples - they never throw.</p>
+    <pre><code><span class="keyword">type</span> <span class="type">Result</span>&lt;E, T&gt; = readonly [E | <span class="keyword">undefined</span>, T | <span class="keyword">undefined</span>]
+<span class="keyword">type</span> <span class="type">Success</span>&lt;T&gt; = readonly [<span class="keyword">undefined</span>, T]
+<span class="keyword">type</span> <span class="type">Failure</span>&lt;E&gt; = readonly [E, <span class="keyword">undefined</span>]</code></pre>
+
+    <h4 id="scopeoptions-type" class="section-anchor"><code>ScopeOptions&lt;TServices&gt;</code></h4>
+    <p>Configuration options for creating a scope.</p>
+    <pre><code><span class="keyword">interface</span> <span class="type">ScopeOptions</span>&lt;TServices <span class="keyword">extends</span> Record&lt;<span class="type">string</span>, <span class="type">unknown</span>&gt;&gt; {
+  <span class="comment">/** Timeout in milliseconds - scope aborts after this duration */</span>
+  timeout?: <span class="type">number</span>
+  
+  <span class="comment">/** Parent AbortSignal to link cancellation */</span>
+  signal?: <span class="type">AbortSignal</span>
+  
+  <span class="comment">/** Scope name for tracing and debugging */</span>
+  name?: <span class="type">string</span>
+  
+  <span class="comment">/** Maximum concurrent tasks (creates Semaphore) */</span>
+  concurrency?: <span class="type">number</span>
+  
+  <span class="comment">/** Circuit breaker configuration for all tasks */</span>
+  circuitBreaker?: <span class="type">CircuitBreakerOptions</span>
+  
+  <span class="comment">/** Parent scope to inherit signal, services, and options */</span>
+  parent?: <span class="type">Scope</span>&lt;TServices&gt;
+  
+  <span class="comment">/** Lifecycle hooks for scope events */</span>
+  hooks?: <span class="type">ScopeHooks</span>
+  
+  <span class="comment">/** Custom logger for structured logging */</span>
+  logger?: <span class="type">Logger</span>
+  
+  <span class="comment">/** Minimum log level (debug, info, warn, error) */</span>
+  logLevel?: <span class="type">"debug"</span> | <span class="type">"info"</span> | <span class="type">"warn"</span> | <span class="type">"error"</span>
+  
+  <span class="comment">/** Persistence providers for distributed features */</span>
+  persistence?: <span class="type">PersistenceProviders</span>
+  
+  <span class="comment">/** Default TTL for idempotency keys (ms) */</span>
+  idempotency?: { defaultTTL?: <span class="type">number</span> }
+  
+  <span class="comment">/** Task pooling configuration for reduced GC */</span>
+  taskPooling?: { enabled?: <span class="type">boolean</span>; maxSize?: <span class="type">number</span> }
+  
+  <span class="comment">/** Request-scoped context accessible in tasks */</span>
+  context?: <span class="type">Record</span>&lt;<span class="type">string</span>, <span class="type">unknown</span>&gt;
+  
+  <span class="comment">/** Plugins to extend scope functionality */</span>
+  plugins?: <span class="type">ScopePlugin</span>[]
+}</code></pre>
+
+    <h4 id="taskoptions-type" class="section-anchor"><code>TaskOptions&lt;E&gt;</code></h4>
+    <p>Options for spawning a task. <code>errorClass</code> and <code>systemErrorClass</code> are mutually exclusive.</p>
+    <pre><code><span class="keyword">interface</span> <span class="type">TaskOptionsBase</span> {
+  <span class="comment">/** OpenTelemetry tracing options */</span>
+  otel?: {
+    name?: <span class="type">string</span>
+    attributes?: <span class="type">Record</span>&lt;<span class="type">string</span>, <span class="type">unknown</span>&gt;
+  }
+  
+  <span class="comment">/** Retry configuration */</span>
+  retry?: {
+    maxRetries?: <span class="type">number</span>      <span class="comment">// Default: 3</span>
+    delay?: <span class="type">number</span> | <span class="type">RetryDelayFn</span>  <span class="comment">// Delay between retries</span>
+    retryCondition?: (error: <span class="type">unknown</span>) => <span class="type">boolean</span>
+    onRetry?: (error: <span class="type">unknown</span>, attempt: <span class="type">number</span>) => <span class="type">void</span>
+  } | <span class="type">"exponential"</span> | <span class="type">"linear"</span> | <span class="type">"fixed"</span>
+  
+  <span class="comment">/** Task timeout in milliseconds */</span>
+  timeout?: <span class="type">number</span>
+  
+  <span class="comment">/** Cleanup function after task completes */</span>
+  onCleanup?: () => <span class="type">void</span> | <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
+  
+  <span class="comment">/** Deduplication key - in-flight tasks share results */</span>
+  dedupe?: <span class="type">string</span> | <span class="type">symbol</span>
+  
+  <span class="comment">/** Memoization config - caches successful results */</span>
+  memo?: { key: <span class="type">string</span> | <span class="type">symbol</span>; ttl: <span class="type">number</span> }
+  
+  <span class="comment">/** Error context for debugging */</span>
+  errorContext?: <span class="type">Record</span>&lt;<span class="type">string</span>, <span class="type">unknown</span>&gt;
+  
+  <span class="comment">/** Idempotency config (requires persistence provider) */</span>
+  idempotency?: {
+    key: <span class="type">string</span> | ((...args: <span class="type">unknown</span>[]) => <span class="type">string</span>)
+    ttl?: <span class="type">number</span>
+  }
+}
+
+<span class="comment">/** Wraps ALL errors in the provided class */</span>
+<span class="keyword">interface</span> <span class="type">TaskOptionsWithErrorClass</span>&lt;E&gt; <span class="keyword">extends</span> <span class="type">TaskOptionsBase</span> {
+  errorClass: <span class="type">ErrorConstructor</span>&lt;E&gt;
+  systemErrorClass?: <span class="keyword">never</span>
+}
+
+<span class="comment">/** Only wraps untagged (system) errors */</span>
+<span class="keyword">interface</span> <span class="type">TaskOptionsWithSystemErrorClass</span>&lt;E&gt; <span class="keyword">extends</span> <span class="type">TaskOptionsBase</span> {
+  errorClass?: <span class="keyword">never</span>
+  systemErrorClass: <span class="type">ErrorConstructor</span>&lt;E&gt;
+}
+
+<span class="keyword">type</span> <span class="type">TaskOptions</span>&lt;E&gt; = <span class="type">TaskOptionsWithErrorClass</span>&lt;E&gt; | 
+                       <span class="type">TaskOptionsWithSystemErrorClass</span>&lt;E&gt; | 
+                       <span class="type">TaskOptionsBase</span></code></pre>
+
+    <h4 id="circuitbreakeroptions-type" class="section-anchor"><code>CircuitBreakerOptions</code></h4>
+    <p>Configuration for circuit breaker fault tolerance.</p>
+    <pre><code><span class="keyword">interface</span> <span class="type">CircuitBreakerOptions</span> {
+  <span class="comment">/** Failures before opening circuit. Default: 5 */</span>
+  failureThreshold?: <span class="type">number</span>
+  
+  <span class="comment">/** Time before attempting reset (ms). Default: 30000 */</span>
+  resetTimeout?: <span class="type">number</span>
+  
+  <span class="comment">/** Consecutive successes to close from half-open. Default: 1 */</span>
+  successThreshold?: <span class="type">number</span>
+  
+  <span class="comment">/** Called on state change */</span>
+  onStateChange?: (
+    from: <span class="type">CircuitState</span>,
+    to: <span class="type">CircuitState</span>,
+    failureCount: <span class="type">number</span>
+  ) => <span class="type">void</span>
+  
+  <span class="comment">/** Called when circuit opens */</span>
+  onOpen?: (failureCount: <span class="type">number</span>) => <span class="type">void</span>
+  
+  <span class="comment">/** Called when circuit closes */</span>
+  onClose?: () => <span class="type">void</span>
+  
+  <span class="comment">/** Called when entering half-open */</span>
+  onHalfOpen?: () => <span class="type">void</span>
+  
+  <span class="comment">/** Advanced configuration */</span>
+  advanced?: {
+    <span class="comment">/** Enable adaptive threshold based on error rate */</span>
+    adaptiveThreshold?: <span class="type">boolean</span>
+    minThreshold?: <span class="type">number</span>           <span class="comment">// Default: 2</span>
+    maxThreshold?: <span class="type">number</span>           <span class="comment">// Default: 10</span>
+    errorRateWindowMs?: <span class="type">number</span>      <span class="comment">// Default: 60000</span>
+    onThresholdAdapt?: (newThreshold: <span class="type">number</span>, errorRate: <span class="type">number</span>) => <span class="type">void</span>
+    
+    <span class="comment">/** Use sliding window for failure counting */</span>
+    slidingWindow?: <span class="type">boolean</span>
+    slidingWindowSizeMs?: <span class="type">number</span>  <span class="comment">// Default: 60000</span>
+  }
+}
+
+<span class="keyword">type</span> <span class="type">CircuitState</span> = <span class="string">"closed"</span> | <span class="string">"open"</span> | <span class="string">"half-open"</span></code></pre>
+
+    <h4 id="channeloptions-type" class="section-anchor"><code>ChannelOptions&lt;T&gt;</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">ChannelOptions</span>&lt;T&gt; {
+  <span class="comment">/** Buffer capacity. Default: 0 (unbuffered) */</span>
+  capacity?: <span class="type">number</span>
+  
+  <span class="comment">/** Backpressure strategy. Default: 'block' */</span>
+  backpressure?: <span class="type">BackpressureStrategy</span>
+  
+  <span class="comment">/** Called when value is dropped due to backpressure */</span>
+  onDrop?: (value: T) => <span class="type">void</span>
+  
+  <span class="comment">/** Time window for 'sample' strategy (ms). Default: 1000 */</span>
+  sampleWindow?: <span class="type">number</span>
+}
+
+<span class="keyword">type</span> <span class="type">BackpressureStrategy</span> = 
+  | <span class="string">"block"</span>        <span class="comment">// Wait until space available (default)</span>
+  | <span class="string">"drop-oldest"</span>  <span class="comment">// Remove oldest item to make room</span>
+  | <span class="string">"drop-latest"</span>  <span class="comment">// Drop new item when full</span>
+  | <span class="string">"error"</span>        <span class="comment">// Throw ChannelFullError when full</span>
+  | <span class="string">"sample"</span>       <span class="comment">// Keep only values within time window</span></code></pre>
+
+    <h4 id="resourcepooloptions-type" class="section-anchor"><code>ResourcePoolOptions&lt;T&gt;</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">ResourcePoolOptions</span>&lt;T&gt; {
+  <span class="comment">/** Factory function to create a resource */</span>
+  create: () => <span class="type">Promise</span>&lt;T&gt;
+  
+  <span class="comment">/** Cleanup function to destroy a resource */</span>
+  destroy: (resource: T) => <span class="type">Promise</span>&lt;<span class="type">void</span>&gt; | <span class="type">void</span>
+  
+  <span class="comment">/** Minimum number of resources to maintain. Default: 0 */</span>
+  min?: <span class="type">number</span>
+  
+  <span class="comment">/** Maximum number of resources (required) */</span>
+  max: <span class="type">number</span>
+  
+  <span class="comment">/** Max time to wait for resource (ms). Default: 30000 */</span>
+  acquireTimeout?: <span class="type">number</span>
+  
+  <span class="comment">/** Optional health check function */</span>
+  healthCheck?: (resource: T) => <span class="type">Promise</span>&lt;{ 
+    healthy: <span class="type">boolean</span>; 
+    message?: <span class="type">string</span> 
+  }&gt;
+  
+  <span class="comment">/** Health check interval (ms). Default: 30000 */</span>
+  healthCheckInterval?: <span class="type">number</span>
+}</code></pre>
+
+    <h4 id="debounceoptions-type" class="section-anchor"><code>DebounceOptions</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">DebounceOptions</span> {
+  <span class="comment">/** Wait time in milliseconds. Default: 300 */</span>
+  wait?: <span class="type">number</span>
+  
+  <span class="comment">/** Trigger on leading edge. Default: false */</span>
+  leading?: <span class="type">boolean</span>
+  
+  <span class="comment">/** Trigger on trailing edge. Default: true */</span>
+  trailing?: <span class="type">boolean</span>
+}</code></pre>
+
+    <h4 id="throttleoptions-type" class="section-anchor"><code>ThrottleOptions</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">ThrottleOptions</span> {
+  <span class="comment">/** Interval in milliseconds. Default: 300 */</span>
+  interval?: <span class="type">number</span>
+  
+  <span class="comment">/** Trigger on leading edge. Default: true */</span>
+  leading?: <span class="type">boolean</span>
+  
+  <span class="comment">/** Trigger on trailing edge. Default: false */</span>
+  trailing?: <span class="type">boolean</span>
+}</code></pre>
+
+    <h4 id="raceoptions-type" class="section-anchor"><code>RaceOptions</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">RaceOptions</span> {
+  <span class="comment">/** Signal to cancel the race */</span>
+  signal?: <span class="type">AbortSignal</span>
+  
+  <span class="comment">/** Only successful results count as winners */</span>
+  requireSuccess?: <span class="type">boolean</span>
+  
+  <span class="comment">/** Timeout for the race (ms) */</span>
+  timeout?: <span class="type">number</span>
+  
+  <span class="comment">/** Max concurrent tasks during race */</span>
+  concurrency?: <span class="type">number</span>
+}</code></pre>
+
+    <h4 id="polloptions-type" class="section-anchor"><code>PollOptions</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">PollOptions</span> {
+  <span class="comment">/** Interval between polls (ms). Default: 5000 */</span>
+  interval?: <span class="type">number</span>
+  
+  <span class="comment">/** Signal to cancel polling */</span>
+  signal?: <span class="type">AbortSignal</span>
+  
+  <span class="comment">/** Run immediately on start. Default: true */</span>
+  immediate?: <span class="type">boolean</span>
+}</code></pre>
+
+    <h4 id="selectoptions-type" class="section-anchor"><code>SelectOptions</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">SelectOptions</span> {
+  <span class="comment">/** Timeout in milliseconds */</span>
+  timeout?: <span class="type">number</span>
+}</code></pre>
+
+    <h4 id="scopehooks-type" class="section-anchor"><code>ScopeHooks</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">ScopeHooks</span> {
+  beforeTask?: (
+    taskName: <span class="type">string</span>,
+    taskIndex: <span class="type">number</span>,
+    options?: <span class="type">TaskOptions</span>
+  ) => <span class="type">void</span>
+  
+  afterTask?: (
+    taskName: <span class="type">string</span>,
+    durationMs: <span class="type">number</span>,
+    error?: <span class="type">unknown</span>,
+    taskIndex?: <span class="type">number</span>
+  ) => <span class="type">void</span>
+  
+  onCancel?: (reason: <span class="type">unknown</span>) => <span class="type">void</span>
+  onDispose?: (resourceIndex: <span class="type">number</span>, error?: <span class="type">unknown</span>) => <span class="type">void</span>
+  beforeDispose?: () => <span class="type">void</span>
+  afterDispose?: () => <span class="type">void</span>
+}</code></pre>
+
+    <h4 id="logger-type" class="section-anchor"><code>Logger</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">Logger</span> {
+  debug: (message: <span class="type">string</span>, ...args: <span class="type">unknown</span>[]) => <span class="type">void</span>
+  info: (message: <span class="type">string</span>, ...args: <span class="type">unknown</span>[]) => <span class="type">void</span>
+  warn: (message: <span class="type">string</span>, ...args: <span class="type">unknown</span>[]) => <span class="type">void</span>
+  error: (message: <span class="type">string</span>, ...args: <span class="type">unknown</span>[]) => <span class="type">void</span>
+}</code></pre>
+
+    <h4 id="taskcontext-type" class="section-anchor"><code>TaskContext&lt;Services&gt;</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">TaskContext</span>&lt;Services <span class="keyword">extends</span> Record&lt;<span class="type">string</span>, <span class="type">unknown</span>&gt;&gt; {
+  services: Services           <span class="comment">// Services from the scope</span>
+  signal: <span class="type">AbortSignal</span>         <span class="comment">// Cancellation signal</span>
+  logger: <span class="type">Logger</span>             <span class="comment">// Task-scoped logger</span>
+  context: <span class="type">Record</span>&lt;<span class="type">string</span>, <span class="type">unknown</span>&gt;  <span class="comment">// Scope context</span>
+}</code></pre>
+
+    <h4 id="disposablescope-type" class="section-anchor"><code>DisposableScope</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">DisposableScope</span> {
+  <span class="keyword">readonly</span> signal: <span class="type">AbortSignal</span>
+  <span class="keyword">readonly</span> isDisposed: <span class="type">boolean</span>
+  registerDisposable(disposable: <span class="type">Disposable</span> | <span class="type">AsyncDisposable</span>): <span class="type">void</span>
+}</code></pre>
+
+    <h4 id="scopeplugin-type" class="section-anchor"><code>ScopePlugin</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">ScopePlugin</span> {
+  name: <span class="type">string</span>
+  install&lt;T <span class="keyword">extends</span> <span class="type">Scope</span>&gt;(scope: T, options: <span class="type">ScopeOptions</span>): <span class="type">void</span>
+  cleanup?(scope: <span class="type">Scope</span>): <span class="type">void</span>
+}</code></pre>
+
+    <h4 id="pollcontroller-type" class="section-anchor"><code>PollController</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">PollController</span> <span class="keyword">extends</span> <span class="type">Disposable</span> {
+  start(): <span class="type">void</span>
+  stop(): <span class="type">void</span>
+  status(): {
+    running: <span class="type">boolean</span>
+    pollCount: <span class="type">number</span>
+    timeUntilNext: <span class="type">number</span>
+    lastPollTime?: <span class="type">number</span>
+    nextPollTime?: <span class="type">number</span>
+  }
+}</code></pre>
+
+    <h4 id="parallelresults-type" class="section-anchor"><code>ParallelResults&lt;T, E&gt;</code></h4>
+    <pre><code><span class="keyword">type</span> <span class="type">ParallelResults</span>&lt;
+  T <span class="keyword">extends</span> readonly ((signal: <span class="type">AbortSignal</span>) => <span class="type">Promise</span>&lt;<span class="type">unknown</span>&gt;)[]
+&gt; = {
+  [K <span class="keyword">in</span> keyof T]: T[K] <span class="keyword">extends</span> () => <span class="type">Promise</span>&lt;infer R&gt;
+    ? <span class="type">Result</span>&lt;<span class="type">unknown</span>, R&gt;
+    : <span class="keyword">never</span>
+}</code></pre>
+
+    <h4 id="retrydelayfn-type" class="section-anchor"><code>RetryDelayFn</code></h4>
+    <pre><code><span class="keyword">type</span> <span class="type">RetryDelayFn</span> = (attempt: <span class="type">number</span>, error: <span class="type">unknown</span>) => <span class="type">number</span></code></pre>
+
+    <h4 id="spanstatuscode-enum" class="section-anchor"><code>SpanStatusCode</code></h4>
+    <pre><code><span class="keyword">enum</span> <span class="type">SpanStatusCode</span> {
+  UNSET = <span class="number">0</span>
+  OK = <span class="number">1</span>
+  ERROR = <span class="number">2</span>
+}</code></pre>
+
+    <h3 id="functions">Functions</h3>
+
+    <h4 id="scope-function" class="section-anchor"><code>scope(options?)</code></h4>
+    <p>Factory function that creates a new Scope for structured concurrency.</p>
+    <pre><code><span class="keyword">function</span> <span class="function">scope</span>&lt;TServices <span class="keyword">extends</span> Record&lt;<span class="type">string</span>, <span class="type">unknown</span>&gt;&gt;(
+  options?: <span class="type">ScopeOptions</span>&lt;TServices&gt;
+): <span class="type">Scope</span>&lt;TServices&gt;</code></pre>
+
+    <h4 id="debounce-function" class="section-anchor"><code>debounce(scope, fn, options?)</code></h4>
+    <p>Create a debounced function that delays execution until after wait milliseconds.</p>
+    <pre><code><span class="keyword">function</span> <span class="function">debounce</span>&lt;T, Args <span class="keyword">extends</span> <span class="type">unknown</span>[]&gt;(
+  scope: <span class="type">DisposableScope</span>,
+  fn: (...args: Args) => <span class="type">Promise</span>&lt;T&gt;,
+  options?: <span class="type">DebounceOptions</span>
+): (...args: Args) => <span class="type">Promise</span>&lt;<span class="type">Result</span>&lt;<span class="type">unknown</span>, T&gt;&gt;</code></pre>
+
+    <h4 id="throttle-function" class="section-anchor"><code>throttle(scope, fn, options?)</code></h4>
+    <p>Create a throttled function that executes at most once per interval.</p>
+    <pre><code><span class="keyword">function</span> <span class="function">throttle</span>&lt;T, Args <span class="keyword">extends</span> <span class="type">unknown</span>[]&gt;(
+  scope: <span class="type">DisposableScope</span>,
+  fn: (...args: Args) => <span class="type">Promise</span>&lt;T&gt;,
+  options?: <span class="type">ThrottleOptions</span>
+): (...args: Args) => <span class="type">Promise</span>&lt;<span class="type">Result</span>&lt;<span class="type">unknown</span>, T&gt;&gt;</code></pre>
+
+    <h4 id="poll-function" class="section-anchor"><code>poll(fn, onValue, options?)</code></h4>
+    <p>Poll a function at regular intervals with structured concurrency.</p>
+    <pre><code><span class="keyword">function</span> <span class="function">poll</span>&lt;T&gt;(
+  fn: (signal: <span class="type">AbortSignal</span>) => <span class="type">Promise</span>&lt;T&gt;,
+  onValue: (value: T) => <span class="type">void</span> | <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;,
+  options?: <span class="type">PollOptions</span>
+): <span class="type">PollController</span></code></pre>
+
+    <h4 id="exponentialbackoff-function" class="section-anchor"><code>exponentialBackoff(options?)</code></h4>
+    <p>Creates an exponential backoff delay function for retries.</p>
+    <pre><code><span class="keyword">function</span> <span class="function">exponentialBackoff</span>(options?: {
+  initial?: <span class="type">number</span>      <span class="comment">// Default: 100</span>
+  max?: <span class="type">number</span>          <span class="comment">// Default: 30000</span>
+  multiplier?: <span class="type">number</span>   <span class="comment">// Default: 2</span>
+  jitter?: <span class="type">number</span>       <span class="comment">// Default: 0 (0-1)</span>
+  fullJitter?: <span class="type">boolean</span>  <span class="comment">// AWS-style full jitter</span>
+}): <span class="type">RetryDelayFn</span></code></pre>
+
+    <h4 id="jitter-function" class="section-anchor"><code>jitter(baseDelay, jitterFactor?)</code></h4>
+    <p>Creates a fixed delay with jitter for retries.</p>
+    <pre><code><span class="keyword">function</span> <span class="function">jitter</span>(
+  baseDelay: <span class="type">number</span>,
+  jitterFactor?: <span class="type">number</span>  <span class="comment">// Default: 0.1</span>
+): <span class="type">RetryDelayFn</span></code></pre>
+
+    <h4 id="linear-function" class="section-anchor"><code>linear(baseDelay, increment)</code></h4>
+    <p>Creates a linear increasing delay function for retries.</p>
+    <pre><code><span class="keyword">function</span> <span class="function">linear</span>(
+  baseDelay: <span class="type">number</span>,
+  increment: <span class="type">number</span>
+): <span class="type">RetryDelayFn</span></code></pre>
+
+    <h4 id="decorrelatedjitter-function" class="section-anchor"><code>decorrelatedJitter(options?)</code></h4>
+    <p>Creates a decorrelated jitter delay function (Azure-style).</p>
+    <pre><code><span class="keyword">function</span> <span class="function">decorrelatedJitter</span>(options?: {
+  initial?: <span class="type">number</span>  <span class="comment">// Default: 100</span>
+  max?: <span class="type">number</span>      <span class="comment">// Default: 30000</span>
+}): <span class="type">RetryDelayFn</span></code></pre>
+
+    <h4 id="createcache-function" class="section-anchor"><code>createCache(options?)</code></h4>
+    <p>Creates an in-memory cache with TTL and LRU support.</p>
+    <pre><code><span class="keyword">function</span> <span class="function">createCache</span>(options?: { maxSize?: <span class="type">number</span> }): <span class="type">InMemoryCache</span></code></pre>
+
+    <h4 id="setupgracefulshutdown-function" class="section-anchor"><code>setupGracefulShutdown(scope, options?)</code></h4>
+    <p>Sets up graceful shutdown handling for a scope.</p>
+    <pre><code><span class="keyword">function</span> <span class="function">setupGracefulShutdown</span>(
+  scope: <span class="type">Scope</span>,
+  options?: <span class="type">GracefulShutdownOptions</span>
+): <span class="type">GracefulShutdownController</span></code></pre>
+
+    <h4 id="isshutdownrequested-function" class="section-anchor"><code>isShutdownRequested(scope)</code></h4>
+    <p>Check if shutdown has been requested on a scope.</p>
+    <pre><code><span class="keyword">function</span> <span class="function">isShutdownRequested</span>(scope: <span class="type">Scope</span>): <span class="type">boolean</span></code></pre>
+
+    <h4 id="waitforshutdown-function" class="section-anchor"><code>waitForShutdown(scope)</code></h4>
+    <p>Wait for shutdown signal on a scope.</p>
+    <pre><code><span class="keyword">function</span> <span class="function">waitForShutdown</span>(scope: <span class="type">Scope</span>): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;</code></pre>
+
+    <h4 id="performancemonitor-function" class="section-anchor"><code>performanceMonitor(scope, options?)</code></h4>
+    <p>Create a performance monitor for a scope.</p>
+    <pre><code><span class="keyword">function</span> <span class="function">performanceMonitor</span>(
+  scope: <span class="type">Scope</span>,
+  options?: <span class="type">PerformanceMonitorOptions</span>
+): <span class="type">PerformanceMonitor</span></code></pre>
+
+    <h4 id="benchmark-function" class="section-anchor"><code>benchmark(name, fn, options?)</code></h4>
+    <p>Run a performance benchmark.</p>
+    <pre><code><span class="keyword">function</span> <span class="function">benchmark</span>(
+  name: <span class="type">string</span>,
+  fn: () => <span class="type">Promise</span>&lt;<span class="type">void</span>&gt; | <span class="type">void</span>,
+  options?: <span class="type">BenchmarkOptions</span>
+): <span class="type">Promise</span>&lt;<span class="type">BenchmarkResult</span>&gt;</code></pre>
+
+    <h4 id="installplugins-function" class="section-anchor"><code>installPlugins(scope, options)</code></h4>
+    <p>Install plugins on a scope.</p>
+    <pre><code><span class="keyword">function</span> <span class="function">installPlugins</span>(
+  scope: <span class="type">Scope</span>,
+  options?: <span class="type">ScopeOptions</span>
+): <span class="type">void</span></code></pre>
+
+    <h3 id="scope-class">Scope Class</h3>
+    <p>The main class for structured concurrency. Implements <code>AsyncDisposable</code>.</p>
+
+    <h4>Properties</h4>
+    <table>
+        <thead>
+            <tr><th>Property</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>signal</code></td><td><code>AbortSignal</code></td><td>Scope's cancellation signal</td></tr>
+            <tr><td><code>isDisposed</code></td><td><code>boolean</code></td><td>Whether scope has been disposed</td></tr>
+            <tr><td><code>scopeName</code></td><td><code>string</code></td><td>Scope name for debugging</td></tr>
+            <tr><td><code>concurrency</code></td><td><code>number | undefined</code></td><td>Concurrency limit if set</td></tr>
+            <tr><td><code>circuitBreaker</code></td><td><code>CircuitBreakerOptions | undefined</code></td><td>Circuit breaker config</td></tr>
+            <tr><td><code>servicesMap</code></td><td><code>Services</code></td><td>Available services</td></tr>
+            <tr><td><code>persistence</code></td><td><code>PersistenceProviders | undefined</code></td><td>Persistence providers</td></tr>
+            <tr><td><code>requestContext</code></td><td><code>Record&lt;string, unknown&gt;</code></td><td>Request-scoped context</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Methods</h4>
+
+    <h5 id="scope-task" class="section-anchor"><code>scope.task(fn, options?)</code></h5>
+    <p>Create a lazy task within the scope. Tasks don't execute until awaited.</p>
+    <pre><code><span class="function">task</span>&lt;T, E <span class="keyword">extends</span> <span class="type">Error</span>&gt;(
+  fn: (ctx: <span class="type">TaskContext</span>&lt;Services&gt;) => <span class="type">Promise</span>&lt;T&gt;,
+  options?: <span class="type">TaskOptions</span>&lt;E&gt;
+): <span class="type">Task</span>&lt;<span class="type">Result</span>&lt;E, T&gt;&gt;</code></pre>
+
+    <h5 id="scope-provide" class="section-anchor"><code>scope.provide(key, factory, cleanup?)</code></h5>
+    <p>Provide a service to the scope's dependency injection container.</p>
+    <pre><code><span class="function">provide</span>&lt;K <span class="keyword">extends</span> <span class="type">string</span>, T&gt;(
+  key: K,
+  factory: () => <span class="type">Promise</span>&lt;T&gt; | T,
+  cleanup?: (value: T) => <span class="type">Promise</span>&lt;<span class="type">void</span>&gt; | <span class="type">void</span>
+): <span class="type">Promise</span>&lt;<span class="type">Scope</span>&lt;Services & { [P <span class="keyword">in</span> K]: T }&gt;&gt;</code></pre>
+
+    <h5 id="scope-use" class="section-anchor"><code>scope.use(key)</code></h5>
+    <p>Retrieve a previously provided service.</p>
+    <pre><code><span class="function">use</span>&lt;K <span class="keyword">extends</span> keyof Services&gt;(key: K): Services[K]</code></pre>
+
+    <h5 id="scope-has" class="section-anchor"><code>scope.has(key)</code></h5>
+    <p>Check if a service exists in the scope.</p>
+    <pre><code><span class="function">has</span>(key: <span class="type">string</span>): <span class="type">boolean</span></code></pre>
+
+    <h5 id="scope-override" class="section-anchor"><code>scope.override(key, factory, cleanup?)</code></h5>
+    <p>Override an existing service (for testing/mocking).</p>
+    <pre><code><span class="function">override</span>&lt;K <span class="keyword">extends</span> <span class="type">string</span>, T&gt;(
+  key: K,
+  factory: () => <span class="type">Promise</span>&lt;T&gt; | T,
+  cleanup?: (value: T) => <span class="type">Promise</span>&lt;<span class="type">void</span>&gt; | <span class="type">void</span>
+): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;</code></pre>
+
+    <h5 id="scope-race" class="section-anchor"><code>scope.race(factories, options?)</code></h5>
+    <p>Race multiple tasks - first to settle wins, losers are cancelled.</p>
+    <pre><code><span class="function">race</span>&lt;T&gt;(
+  factories: readonly (() => <span class="type">Promise</span>&lt;T&gt;)[],
+  options?: { timeout?: <span class="type">number</span>; requireSuccess?: <span class="type">boolean</span>; concurrency?: <span class="type">number</span> }
+): <span class="type">Promise</span>&lt;<span class="type">Result</span>&lt;<span class="type">unknown</span>, T&gt;&gt;</code></pre>
+
+    <h5 id="scope-parallel" class="section-anchor"><code>scope.parallel(factories, options?)</code></h5>
+    <p>Execute tasks in parallel with optional concurrency limit.</p>
+    <pre><code><span class="function">parallel</span>&lt;T <span class="keyword">extends</span> readonly (() => <span class="type">Promise</span>&lt;<span class="type">unknown</span>&gt;)[]&gt;(
+  factories: T,
+  options?: {
+    concurrency?: <span class="type">number</span>
+    onProgress?: (completed: <span class="type">number</span>, total: <span class="type">number</span>, result: <span class="type">Result</span>) => <span class="type">void</span>
+    continueOnError?: <span class="type">boolean</span>
+  }
+): <span class="type">Promise</span>&lt;<span class="type">ParallelResults</span>&lt;T&gt;&gt;</code></pre>
+
+    <h5 id="scope-channel" class="section-anchor"><code>scope.channel(capacityOrOptions?)</code></h5>
+    <p>Create a Go-style buffered channel.</p>
+    <pre><code><span class="function">channel</span>&lt;T&gt;(
+  capacityOrOptions?: <span class="type">number</span> | <span class="type">ChannelOptions</span>&lt;T&gt;
+): <span class="type">Channel</span>&lt;T&gt;</code></pre>
+
+    <h5 id="scope-prioritychannel" class="section-anchor"><code>scope.priorityChannel(options?)</code></h5>
+    <p>Create a priority queue channel.</p>
+    <pre><code><span class="function">priorityChannel</span>&lt;T <span class="keyword">extends</span> <span class="type">PrioritizedItem</span>&gt;(
+  options?: <span class="type">PriorityChannelOptions</span>&lt;T&gt;
+): <span class="type">PriorityChannel</span>&lt;T&gt;</code></pre>
+
+    <h5 id="scope-broadcast" class="section-anchor"><code>scope.broadcast()</code></h5>
+    <p>Create a broadcast channel for pub/sub patterns.</p>
+    <pre><code><span class="function">broadcast</span>&lt;T&gt;(): <span class="type">BroadcastChannel</span>&lt;T&gt;</code></pre>
+
+    <h5 id="scope-poll" class="section-anchor"><code>scope.poll(fn, onValue, options?)</code></h5>
+    <p>Start interval polling with cleanup control.</p>
+    <pre><code><span class="function">poll</span>&lt;T&gt;(
+  fn: (signal: <span class="type">AbortSignal</span>) => <span class="type">Promise</span>&lt;T&gt;,
+  onValue: (value: T) => <span class="type">void</span> | <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;,
+  options?: <span class="type">PollOptions</span>
+): <span class="type">PollController</span></code></pre>
+
+    <h5 id="scope-debounce" class="section-anchor"><code>scope.debounce(fn, options?)</code></h5>
+    <p>Create a debounced function.</p>
+    <pre><code><span class="function">debounce</span>&lt;T, Args <span class="keyword">extends</span> <span class="type">unknown</span>[]&gt;(
+  fn: (...args: Args) => <span class="type">Promise</span>&lt;T&gt;,
+  options?: <span class="type">DebounceOptions</span>
+): (...args: Args) => <span class="type">Promise</span>&lt;<span class="type">Result</span>&lt;<span class="type">unknown</span>, T&gt;&gt;</code></pre>
+
+    <h5 id="scope-throttle" class="section-anchor"><code>scope.throttle(fn, options?)</code></h5>
+    <p>Create a throttled function.</p>
+    <pre><code><span class="function">throttle</span>&lt;T, Args <span class="keyword">extends</span> <span class="type">unknown</span>[]&gt;(
+  fn: (...args: Args) => <span class="type">Promise</span>&lt;T&gt;,
+  options?: <span class="type">ThrottleOptions</span>
+): (...args: Args) => <span class="type">Promise</span>&lt;<span class="type">Result</span>&lt;<span class="type">unknown</span>, T&gt;&gt;</code></pre>
+
+    <h5 id="scope-select" class="section-anchor"><code>scope.select(cases, options?)</code></h5>
+    <p>Go-style select statement for channel operations.</p>
+    <pre><code><span class="function">select</span>(
+  cases: <span class="type">SelectCase</span>[],
+  options?: <span class="type">SelectOptions</span>
+): <span class="type">Promise</span>&lt;<span class="type">SelectResult</span>&gt;</code></pre>
+
+    <h5 id="scope-pool" class="section-anchor"><code>scope.pool(options)</code></h5>
+    <p>Create a managed resource pool.</p>
+    <pre><code><span class="function">pool</span>&lt;T&gt;(options: <span class="type">ResourcePoolOptions</span>&lt;T&gt;): <span class="type">ResourcePool</span>&lt;T&gt;</code></pre>
+
+    <h5 id="scope-tokenbucket" class="section-anchor"><code>scope.tokenBucket(options)</code></h5>
+    <p>Create a token bucket rate limiter.</p>
+    <pre><code><span class="function">tokenBucket</span>(options: <span class="type">TokenBucketOptions</span>): <span class="type">TokenBucket</span></code></pre>
+
+    <h5 id="scope-metrics" class="section-anchor"><code>scope.metrics()</code></h5>
+    <p>Get collected metrics for the scope.</p>
+    <pre><code><span class="function">metrics</span>(): <span class="type">ScopeMetrics</span></code></pre>
+
+    <h5 id="scope-ondispose" class="section-anchor"><code>scope.onDispose(callback)</code></h5>
+    <p>Register a cleanup callback for scope disposal.</p>
+    <pre><code><span class="function">onDispose</span>(callback: () => <span class="type">void</span> | <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;): <span class="type">void</span></code></pre>
+
+    <h5 id="scope-stream" class="section-anchor"><code>scope.stream(source)</code></h5>
+    <p>Create a Stream from an async iterable (requires stream plugin).</p>
+    <pre><code><span class="function">stream</span>&lt;T&gt;(source: <span class="type">AsyncIterable</span>&lt;T&gt;): <span class="type">Stream</span>&lt;T&gt;</code></pre>
+
+    <h3 id="task-class">Task Class</h3>
+    <p>Lazy, disposable Promise-like object. Implements <code>PromiseLike&lt;T&gt;</code> and <code>Disposable</code>.</p>
+
+    <h4>Properties</h4>
+    <table>
+        <thead>
+            <tr><th>Property</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>id</code></td><td><code>number</code></td><td>Unique task identifier</td></tr>
+            <tr><td><code>signal</code></td><td><code>AbortSignal</code></td><td>Task's cancellation signal</td></tr>
+            <tr><td><code>isStarted</code></td><td><code>boolean</code></td><td>Whether task has started</td></tr>
+            <tr><td><code>isSettled</code></td><td><code>boolean</code></td><td>Whether task has completed</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>then()</code></td>
+                <td><code>then&lt;TResult1, TResult2&gt;(onfulfilled?, onrejected?)</code></td>
+                <td>Promise-like then handler</td>
+            </tr>
+            <tr>
+                <td><code>catch()</code></td>
+                <td><code>catch&lt;TResult&gt;(onrejected?)</code></td>
+                <td>Promise-like catch handler</td>
+            </tr>
+            <tr>
+                <td><code>finally()</code></td>
+                <td><code>finally(onfinally?)</code></td>
+                <td>Promise-like finally handler</td>
+            </tr>
+            <tr>
+                <td><code>[Symbol.dispose]</code></td>
+                <td><code>() => void</code></td>
+                <td>Dispose without executing</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 id="channel-class">Channel Class</h3>
+    <p>Go-style buffered channel. Implements <code>AsyncIterable&lt;T&gt;</code> and <code>AsyncDisposable</code>.</p>
+
+    <h4>Properties</h4>
+    <table>
+        <thead>
+            <tr><th>Property</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>isClosed</code></td><td><code>boolean</code></td><td>Whether channel is closed</td></tr>
+            <tr><td><code>size</code></td><td><code>number</code></td><td>Current buffer size</td></tr>
+            <tr><td><code>cap</code></td><td><code>number</code></td><td>Buffer capacity</td></tr>
+            <tr><td><code>strategy</code></td><td><code>BackpressureStrategy</code></td><td>Current backpressure strategy</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>send()</code></td>
+                <td><code>send(value: T): Promise&lt;boolean&gt;</code></td>
+                <td>Send a value (blocks with 'block' strategy)</td>
+            </tr>
+            <tr>
+                <td><code>receive()</code></td>
+                <td><code>receive(): Promise&lt;T | undefined&gt;</code></td>
+                <td>Receive a value</td>
+            </tr>
+            <tr>
+                <td><code>close()</code></td>
+                <td><code>close(): void</code></td>
+                <td>Close the channel</td>
+            </tr>
+            <tr>
+                <td><code>map()</code></td>
+                <td><code>map&lt;R&gt;(fn: (value: T) => R): Channel&lt;R&gt;</code></td>
+                <td>Transform values</td>
+            </tr>
+            <tr>
+                <td><code>filter()</code></td>
+                <td><code>filter(predicate): Channel&lt;T&gt;</code></td>
+                <td>Filter values</td>
+            </tr>
+            <tr>
+                <td><code>reduce()</code></td>
+                <td><code>reduce&lt;R&gt;(fn, initial): Promise&lt;R&gt;</code></td>
+                <td>Reduce to single value</td>
+            </tr>
+            <tr>
+                <td><code>take()</code></td>
+                <td><code>take(count): Channel&lt;T&gt;</code></td>
+                <td>Take first n values</td>
+            </tr>
+            <tr>
+                <td><code>[Symbol.asyncIterator]</code></td>
+                <td><code>() => AsyncIterator&lt;T&gt;</code></td>
+                <td>Async iterable protocol</td>
+            </tr>
+            <tr>
+                <td><code>[Symbol.asyncDispose]</code></td>
+                <td><code>() => Promise&lt;void&gt;</code></td>
+                <td>Async disposal</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 id="broadcastchannel-class">BroadcastChannel Class</h3>
+    <p>Pub/sub broadcast channel. All subscribers receive every message.</p>
+
+    <h4>Properties</h4>
+    <table>
+        <thead>
+            <tr><th>Property</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>isClosed</code></td><td><code>boolean</code></td><td>Whether channel is closed</td></tr>
+            <tr><td><code>subscriberCount</code></td><td><code>number</code></td><td>Number of active subscribers</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>subscribe()</code></td>
+                <td><code>subscribe(): AsyncIterable&lt;T&gt;</code></td>
+                <td>Subscribe to messages</td>
+            </tr>
+            <tr>
+                <td><code>send()</code></td>
+                <td><code>send(value: T): Promise&lt;boolean&gt;</code></td>
+                <td>Broadcast to all subscribers</td>
+            </tr>
+            <tr>
+                <td><code>close()</code></td>
+                <td><code>close(): void</code></td>
+                <td>Close the channel</td>
+            </tr>
+            <tr>
+                <td><code>[Symbol.asyncDispose]</code></td>
+                <td><code>() => Promise&lt;void&gt;</code></td>
+                <td>Async disposal</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 id="resourcepool-class">ResourcePool Class</h3>
+    <p>Managed pool of resources with automatic lifecycle.</p>
+
+    <h4>Properties</h4>
+    <table>
+        <thead>
+            <tr><th>Property</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>stats</code></td><td><code>PoolStats</code></td><td>Pool statistics</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>initialize()</code></td>
+                <td><code>initialize(): Promise&lt;void&gt;</code></td>
+                <td>Initialize pool with min resources</td>
+            </tr>
+            <tr>
+                <td><code>acquire()</code></td>
+                <td><code>acquire(): Promise&lt;T&gt;</code></td>
+                <td>Acquire a resource</td>
+            </tr>
+            <tr>
+                <td><code>release()</code></td>
+                <td><code>release(resource: T): Promise&lt;void&gt;</code></td>
+                <td>Release a resource back to pool</td>
+            </tr>
+            <tr>
+                <td><code>execute()</code></td>
+                <td><code>execute&lt;R&gt;(fn): Promise&lt;R&gt;</code></td>
+                <td>Execute with auto-acquire/release</td>
+            </tr>
+            <tr>
+                <td><code>checkHealth()</code></td>
+                <td><code>checkHealth(): Promise&lt;number&gt;</code></td>
+                <td>Run health checks, return unhealthy count</td>
+            </tr>
+            <tr>
+                <td><code>[Symbol.asyncDispose]</code></td>
+                <td><code>() => Promise&lt;void&gt;</code></td>
+                <td>Dispose all resources</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 id="circuitbreaker-class">CircuitBreaker Class</h3>
+    <p>Fault tolerance via circuit breaker pattern.</p>
+
+    <h4>Properties</h4>
+    <table>
+        <thead>
+            <tr><th>Property</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>currentState</code></td><td><code>CircuitState</code></td><td>Current circuit state</td></tr>
+            <tr><td><code>failureCount</code></td><td><code>number</code></td><td>Current failure count</td></tr>
+            <tr><td><code>successCount</code></td><td><code>number</code></td><td>Consecutive successes (half-open)</td></tr>
+            <tr><td><code>failureThreshold</code></td><td><code>number</code></td><td>Threshold for opening</td></tr>
+            <tr><td><code>successThreshold</code></td><td><code>number</code></td><td>Threshold for closing from half-open</td></tr>
+            <tr><td><code>resetTimeout</code></td><td><code>number</code></td><td>Time before reset attempt</td></tr>
+            <tr><td><code>isAdaptiveEnabled</code></td><td><code>boolean</code></td><td>Whether adaptive threshold is on</td></tr>
+            <tr><td><code>isSlidingWindowEnabled</code></td><td><code>boolean</code></td><td>Whether sliding window is on</td></tr>
+            <tr><td><code>errorRate</code></td><td><code>number</code></td><td>Current error rate (0-1)</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>execute()</code></td>
+                <td><code>execute&lt;T&gt;(fn): Promise&lt;T&gt;</code></td>
+                <td>Execute with circuit protection</td>
+            </tr>
+            <tr>
+                <td><code>reset()</code></td>
+                <td><code>reset(): void</code></td>
+                <td>Manually reset to closed state</td>
+            </tr>
+            <tr>
+                <td><code>[Symbol.asyncDispose]</code></td>
+                <td><code>() => Promise&lt;void&gt;</code></td>
+                <td>Dispose the circuit breaker</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 id="tokenbucket-class">TokenBucket Class</h3>
+    <p>Token bucket rate limiter supporting local and distributed modes.</p>
+
+    <h4>Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>getTokens()</code></td>
+                <td><code>getTokens(): Promise&lt;number&gt;</code></td>
+                <td>Get current token count</td>
+            </tr>
+            <tr>
+                <td><code>tryConsume()</code></td>
+                <td><code>tryConsume(tokens?): Promise&lt;boolean&gt;</code></td>
+                <td>Try to consume tokens (non-blocking)</td>
+            </tr>
+            <tr>
+                <td><code>acquire()</code></td>
+                <td><code>acquire&lt;T&gt;(tokens, fn): Promise&lt;T&gt;</code></td>
+                <td>Acquire tokens and execute function</td>
+            </tr>
+            <tr>
+                <td><code>acquireWithTimeout()</code></td>
+                <td><code>acquireWithTimeout&lt;T&gt;(tokens, timeoutMs, fn)</code></td>
+                <td>Acquire with timeout</td>
+            </tr>
+            <tr>
+                <td><code>reset()</code></td>
+                <td><code>reset(): Promise&lt;void&gt;</code></td>
+                <td>Reset to full capacity</td>
+            </tr>
+            <tr>
+                <td><code>getState()</code></td>
+                <td><code>getState()</code></td>
+                <td>Get bucket state</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 id="asyncdisposableresource-class">AsyncDisposableResource Class</h3>
+    <p>Resource wrapper with automatic lifecycle management.</p>
+    <pre><code><span class="keyword">class</span> <span class="type">AsyncDisposableResource</span>&lt;T&gt; <span class="keyword">implements</span> <span class="type">AsyncDisposable</span> {
+  <span class="keyword">constructor</span>(
+    acquireFn: () => <span class="type">Promise</span>&lt;T&gt;,
+    disposeFn: (resource: T) => <span class="type">Promise</span>&lt;<span class="type">void</span>&gt; | <span class="type">void</span>
+  )
+  
+  <span class="function">acquire</span>(): <span class="type">Promise</span>&lt;T&gt;
+  <span class="keyword">async</span> [<span class="type">Symbol</span>.asyncDispose](): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
+}</code></pre>
+
+    <h3 id="gracefulshutdowncontroller-class">GracefulShutdownController Class</h3>
+    <p>Manages graceful application shutdown.</p>
+
+    <h4>Properties</h4>
+    <table>
+        <thead>
+            <tr><th>Property</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>isShutdownRequested</code></td><td><code>boolean</code></td><td>Whether shutdown was requested</td></tr>
+            <tr><td><code>shutdownComplete</code></td><td><code>Promise&lt;void&gt;</code></td><td>Resolves when shutdown complete</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>shutdown()</code></td>
+                <td><code>shutdown(signal?): Promise&lt;void&gt;</code></td>
+                <td>Manually trigger shutdown</td>
+            </tr>
+            <tr>
+                <td><code>cleanup()</code></td>
+                <td><code>cleanup(): void</code></td>
+                <td>Remove signal handlers</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 id="performancemonitor-class">PerformanceMonitor Class</h3>
+    <p>Monitors task execution performance.</p>
+
+    <h4>Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>start()</code></td>
+                <td><code>start(): void</code></td>
+                <td>Start monitoring</td>
+            </tr>
+            <tr>
+                <td><code>stop()</code></td>
+                <td><code>stop(): void</code></td>
+                <td>Stop monitoring</td>
+            </tr>
+            <tr>
+                <td><code>takeSnapshot()</code></td>
+                <td><code>takeSnapshot(): PerformanceSnapshot</code></td>
+                <td>Take manual snapshot</td>
+            </tr>
+            <tr>
+                <td><code>getMetrics()</code></td>
+                <td><code>getMetrics(): PerformanceMetrics</code></td>
+                <td>Get current metrics</td>
+            </tr>
+            <tr>
+                <td><code>getSnapshots()</code></td>
+                <td><code>getSnapshots(): PerformanceSnapshot[]</code></td>
+                <td>Get all snapshots</td>
+            </tr>
+            <tr>
+                <td><code>getTrends()</code></td>
+                <td><code>getTrends(): Trends</code></td>
+                <td>Get performance trends</td>
+            </tr>
+            <tr>
+                <td><code>[Symbol.dispose]</code></td>
+                <td><code>() => void</code></td>
+                <td>Dispose monitor</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 id="memorytracker-class">MemoryTracker Class</h3>
+    <p>Tracks memory usage across operations.</p>
+
+    <h4>Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>snapshot()</code></td>
+                <td><code>snapshot(): number</code></td>
+                <td>Take memory snapshot, return heap used</td>
+            </tr>
+            <tr>
+                <td><code>checkForLeaks()</code></td>
+                <td><code>checkForLeaks(thresholdPercent?): boolean</code></td>
+                <td>Check for memory leaks</td>
+            </tr>
+            <tr>
+                <td><code>getGrowthRate()</code></td>
+                <td><code>getGrowthRate(): number</code></td>
+                <td>Get memory growth (bytes/sec)</td>
+            </tr>
+            <tr>
+                <td><code>getSnapshots()</code></td>
+                <td><code>getSnapshots()</code></td>
+                <td>Get all snapshots</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 id="stream-api">Stream API (@go-go-scope/stream)</h3>
+    <p>Lazy async iterable processing with 50+ operations. Import via:</p>
+    <pre><code><span class="keyword">import</span> { streamPlugin } <span class="keyword">from</span> <span class="string">'@go-go-scope/stream'</span>
+
+<span class="keyword">await using</span> s = <span class="function">scope</span>({ plugins: [streamPlugin] })
+<span class="keyword">const</span> stream = s.<span class="function">stream</span>(source)</code></pre>
+
+    <h4>Stream Class</h4>
+    <p>Implements <code>AsyncIterable&lt;T&gt;</code> and <code>AsyncDisposable</code>.</p>
+
+    <h4>Transformation Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>map()</code></td><td><code>map&lt;R&gt;(fn: (v, i) => R): Stream&lt;R&gt;</code></td><td>Transform each value</td></tr>
+            <tr><td><code>filter()</code></td><td><code>filter(predicate): Stream&lt;T&gt;</code></td><td>Filter values</td></tr>
+            <tr><td><code>flatMap()</code></td><td><code>flatMap&lt;R&gt;(fn): Stream&lt;R&gt;</code></td><td>Map and flatten</td></tr>
+            <tr><td><code>flat()</code></td><td><code>flat&lt;R&gt;(): Stream&lt;R&gt;</code></td><td>Flatten one level</td></tr>
+            <tr><td><code>tap()</code></td><td><code>tap(fn): Stream&lt;T&gt;</code></td><td>Side effect without modifying</td></tr>
+            <tr><td><code>filterMap()</code></td><td><code>filterMap&lt;R&gt;(fn): Stream&lt;R&gt;</code></td><td>Map and filter in one</td></tr>
+            <tr><td><code>groupAdjacentBy()</code></td><td><code>groupAdjacentBy&lt;K&gt;(keyFn): Stream&lt;T[]&gt;</code></td><td>Group consecutive elements</td></tr>
+            <tr><td><code>collect()</code></td><td><code>collect&lt;R&gt;(pf): Stream&lt;R&gt;</code></td><td>Collect with partial function</td></tr>
+            <tr><td><code>collectWhile()</code></td><td><code>collectWhile&lt;R&gt;(pf): Stream&lt;R&gt;</code></td><td>Collect while defined</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Slicing Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>take()</code></td><td><code>take(n): Stream&lt;T&gt;</code></td><td>Take first n elements</td></tr>
+            <tr><td><code>takeWhile()</code></td><td><code>takeWhile(predicate): Stream&lt;T&gt;</code></td><td>Take while predicate true</td></tr>
+            <tr><td><code>takeUntil()</code></td><td><code>takeUntil(predicate): Stream&lt;T&gt;</code></td><td>Take until predicate (inclusive)</td></tr>
+            <tr><td><code>drop()</code></td><td><code>drop(n): Stream&lt;T&gt;</code></td><td>Drop first n elements</td></tr>
+            <tr><td><code>skip()</code></td><td><code>skip(n): Stream&lt;T&gt;</code></td><td>Alias for drop()</td></tr>
+            <tr><td><code>dropWhile()</code></td><td><code>dropWhile(predicate): Stream&lt;T&gt;</code></td><td>Drop while predicate true</td></tr>
+            <tr><td><code>dropUntil()</code></td><td><code>dropUntil(predicate): Stream&lt;T&gt;</code></td><td>Drop until predicate (inclusive)</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Buffering Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>buffer()</code></td><td><code>buffer(size): Stream&lt;T[]&gt;</code></td><td>Buffer into chunks</td></tr>
+            <tr><td><code>bufferTime()</code></td><td><code>bufferTime(windowMs): Stream&lt;T[]&gt;</code></td><td>Buffer by time window</td></tr>
+            <tr><td><code>bufferTimeOrCount()</code></td><td><code>bufferTimeOrCount(windowMs, count)</code></td><td>Buffer by time or size</td></tr>
+            <tr><td><code>grouped()</code></td><td><code>grouped(size): Stream&lt;T[]&gt;</code></td><td>Alias for buffer()</td></tr>
+            <tr><td><code>groupedWithin()</code></td><td><code>groupedWithin(size, windowMs)</code></td><td>Group by size or time</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Deduplication Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>distinct()</code></td><td><code>distinct(): Stream&lt;T&gt;</code></td><td>Remove duplicates (===)</td></tr>
+            <tr><td><code>distinctBy()</code></td><td><code>distinctBy&lt;K&gt;(keyFn): Stream&lt;T&gt;</code></td><td>Deduplicate by key</td></tr>
+            <tr><td><code>distinctAdjacent()</code></td><td><code>distinctAdjacent(): Stream&lt;T&gt;</code></td><td>Remove consecutive duplicates</td></tr>
+            <tr><td><code>distinctAdjacentBy()</code></td><td><code>distinctAdjacentBy&lt;K&gt;(keyFn)</code></td><td>Consecutive dedup by key</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Combination Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>prepend()</code></td><td><code>prepend(...values): Stream&lt;T&gt;</code></td><td>Prepend values</td></tr>
+            <tr><td><code>append()</code></td><td><code>append(...values): Stream&lt;T&gt;</code></td><td>Append values</td></tr>
+            <tr><td><code>concat()</code></td><td><code>concat(other): Stream&lt;T&gt;</code></td><td>Concatenate streams</td></tr>
+            <tr><td><code>intersperse()</code></td><td><code>intersperse(separator): Stream&lt;T&gt;</code></td><td>Add separator between values</td></tr>
+            <tr><td><code>merge()</code></td><td><code>merge(other): Stream&lt;T&gt;</code></td><td>Interleave values</td></tr>
+            <tr><td><code>zip()</code></td><td><code>zip&lt;R&gt;(other): Stream&lt;[T, R]&gt;</code></td><td>Pair elements</td></tr>
+            <tr><td><code>zipWith()</code></td><td><code>zipWith&lt;R, Z&gt;(other, fn)</code></td><td>Zip with combining function</td></tr>
+            <tr><td><code>zipWithIndex()</code></td><td><code>zipWithIndex(): Stream&lt;[T, number]&gt;</code></td><td>Add index</td></tr>
+            <tr><td><code>zipLatest()</code></td><td><code>zipLatest&lt;R&gt;(other)</code></td><td>Use latest values</td></tr>
+            <tr><td><code>zipAll()</code></td><td><code>zipAll&lt;R, D&gt;(other, defaultSelf, defaultOther)</code></td><td>Zip with defaults</td></tr>
+            <tr><td><code>interleave()</code></td><td><code>interleave(...others): Stream&lt;T&gt;</code></td><td>Round-robin from streams</td></tr>
+            <tr><td><code>cross()</code></td><td><code>cross&lt;R&gt;(other): Stream&lt;[T, R]&gt;</code></td><td>Cartesian product</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Time-based Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>delay()</code></td><td><code>delay(ms): Stream&lt;T&gt;</code></td><td>Add delay between elements</td></tr>
+            <tr><td><code>spaced()</code></td><td><code>spaced(delayMs): Stream&lt;T&gt;</code></td><td>Alias for delay()</td></tr>
+            <tr><td><code>throttle()</code></td><td><code>throttle({limit, interval})</code></td><td>Rate limit stream</td></tr>
+            <tr><td><code>debounce()</code></td><td><code>debounce(ms): Stream&lt;T&gt;</code></td><td>Debounce stream</td></tr>
+            <tr><td><code>timeout()</code></td><td><code>timeout(durationMs): Stream&lt;T&gt;</code></td><td>Stream-level timeout</td></tr>
+            <tr><td><code>sample()</code></td><td><code>sample(intervalMs): Stream&lt;T&gt;</code></td><td>Sample at intervals</td></tr>
+            <tr><td><code>auditTime()</code></td><td><code>auditTime(durationMs)</code></td><td>Emit last after silence</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Advanced Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>switchMap()</code></td><td><code>switchMap&lt;R&gt;(fn): Stream&lt;R&gt;</code></td><td>Cancel previous on new emission</td></tr>
+            <tr><td><code>concatMap()</code></td><td><code>concatMap&lt;R&gt;(fn): Stream&lt;R&gt;</code></td><td>Sequential flatMap</td></tr>
+            <tr><td><code>exhaustMap()</code></td><td><code>exhaustMap&lt;R&gt;(fn): Stream&lt;R&gt;</code></td><td>Ignore during processing</td></tr>
+            <tr><td><code>share()</code></td><td><code>share(options?): Stream&lt;T&gt;</code></td><td>Multicast to subscribers</td></tr>
+            <tr><td><code>pairwise()</code></td><td><code>pairwise(): Stream&lt;[T?, T]&gt;</code></td><td>Emit [prev, current] tuples</td></tr>
+            <tr><td><code>window()</code></td><td><code>window(size): Stream&lt;T[]&gt;</code></td><td>Sliding window</td></tr>
+            <tr><td><code>scan()</code></td><td><code>scan&lt;R&gt;(fn, initial): Stream&lt;R&gt;</code></td><td>Running fold</td></tr>
+            <tr><td><code>partition()</code></td><td><code>partition(predicate): [Stream, Stream]</code></td><td>Split into two streams</td></tr>
+            <tr><td><code>splitAt()</code></td><td><code>splitAt(n): [Stream, Stream]</code></td><td>Split at position</td></tr>
+            <tr><td><code>broadcast()</code></td><td><code>broadcast(n): Stream[]</code></td><td>Broadcast to n streams</td></tr>
+            <tr><td><code>groupByKey()</code></td><td><code>groupByKey&lt;K&gt;(keyFn)</code></td><td>Group into substreams</td></tr>
+            <tr><td><code>pipe()</code></td><td><code>pipe(...fns): Stream&lt;U&gt;</code></td><td>Functional composition</td></tr>
+            <tr><td><code>retry()</code></td><td><code>retry(options?): Stream&lt;T&gt;</code></td><td>Retry on failure</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Error Handling Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>catchAll()</code></td><td><code>catchAll&lt;R&gt;(handler): Stream&lt;T | R&gt;</code></td><td>Catch and recover</td></tr>
+            <tr><td><code>orElse()</code></td><td><code>orElse&lt;R&gt;(fallback): Stream&lt;T | R&gt;</code></td><td>Fallback on error</td></tr>
+            <tr><td><code>orElseIfEmpty()</code></td><td><code>orElseIfEmpty&lt;R&gt;(fallback)</code></td><td>Fallback if empty</td></tr>
+            <tr><td><code>orElseSucceed()</code></td><td><code>orElseSucceed(fallback): Stream&lt;T&gt;</code></td><td>Fallback value on error</td></tr>
+            <tr><td><code>tapError()</code></td><td><code>tapError(fn): Stream&lt;T&gt;</code></td><td>Side effect on error</td></tr>
+            <tr><td><code>mapError()</code></td><td><code>mapError(fn): Stream&lt;T&gt;</code></td><td>Transform error</td></tr>
+            <tr><td><code>ensuring()</code></td><td><code>ensuring(cleanup): Stream&lt;T&gt;</code></td><td>Cleanup on completion</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Terminal Operations</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>toArray()</code></td><td><code>toArray(): Promise&lt;Result&lt;unknown, T[]&gt;&gt;</code></td><td>Collect to array</td></tr>
+            <tr><td><code>drain()</code></td><td><code>drain(): Promise&lt;Result&gt;</code></td><td>Consume without collecting</td></tr>
+            <tr><td><code>runDrain()</code></td><td><code>runDrain(): Promise&lt;Result&gt;</code></td><td>Alias for drain()</td></tr>
+            <tr><td><code>forEach()</code></td><td><code>forEach(fn): Promise&lt;Result&gt;</code></td><td>Execute for each value</td></tr>
+            <tr><td><code>fold()</code></td><td><code>fold&lt;R&gt;(initial, fn): Promise&lt;Result&gt;</code></td><td>Fold to single value</td></tr>
+            <tr><td><code>reduce()</code></td><td><code>reduce(fn): Promise&lt;Result&gt;</code></td><td>Reduce without initial</td></tr>
+            <tr><td><code>count()</code></td><td><code>count(): Promise&lt;Result&gt;</code></td><td>Count elements</td></tr>
+            <tr><td><code>sum()</code></td><td><code>sum(): Promise&lt;Result&lt;unknown, number&gt;&gt;</code></td><td>Sum numeric values</td></tr>
+            <tr><td><code>runSum()</code></td><td><code>runSum(): Promise&lt;Result&gt;</code></td><td>Alias for sum()</td></tr>
+            <tr><td><code>avg()</code></td><td><code>avg(): Promise&lt;Result&gt;</code></td><td>Average of numeric values</td></tr>
+            <tr><td><code>first()</code></td><td><code>first(): Promise&lt;Result&gt;</code></td><td>Get first element</td></tr>
+            <tr><td><code>runHead()</code></td><td><code>runHead(): Promise&lt;Result&gt;</code></td><td>Alias for first()</td></tr>
+            <tr><td><code>last()</code></td><td><code>last(): Promise&lt;Result&gt;</code></td><td>Get last element</td></tr>
+            <tr><td><code>runLast()</code></td><td><code>runLast(): Promise&lt;Result&gt;</code></td><td>Alias for last()</td></tr>
+            <tr><td><code>find()</code></td><td><code>find(predicate): Promise&lt;Result&gt;</code></td><td>Find matching element</td></tr>
+            <tr><td><code>elementAt()</code></td><td><code>elementAt(index): Promise&lt;Result&gt;</code></td><td>Get element at index</td></tr>
+            <tr><td><code>some()</code></td><td><code>some(predicate): Promise&lt;Result&gt;</code></td><td>Check if any match</td></tr>
+            <tr><td><code>every()</code></td><td><code>every(predicate): Promise&lt;Result&gt;</code></td><td>Check if all match</td></tr>
+            <tr><td><code>includes()</code></td><td><code>includes(value): Promise&lt;Result&gt;</code></td><td>Check if includes value</td></tr>
+            <tr><td><code>groupBy()</code></td><td><code>groupBy&lt;K&gt;(keyFn)</code></td><td>Group to Map</td></tr>
+            <tr><td><code>max()</code></td><td><code>max(): Promise&lt;Result&gt;</code></td><td>Maximum value</td></tr>
+            <tr><td><code>min()</code></td><td><code>min(): Promise&lt;Result&gt;</code></td><td>Minimum value</td></tr>
+        </tbody>
+    </table>
+
+    <h3 id="scheduler-api">Scheduler API (@go-go-scope/scheduler)</h3>
+    <p>Production-ready distributed job scheduler. Import via:</p>
+    <pre><code><span class="keyword">import</span> { Scheduler } <span class="keyword">from</span> <span class="string">'@go-go-scope/scheduler'</span></code></pre>
+
+    <h4>Scheduler Types</h4>
+    <pre><code><span class="comment">// Schedule states</span>
+<span class="keyword">enum</span> <span class="type">ScheduleState</span> {
+  ACTIVE = <span class="string">"active"</span>,
+  PAUSED = <span class="string">"paused"</span>,
+  DISABLED = <span class="string">"disabled"</span>
+}
+
+<span class="comment">// Job status</span>
+<span class="keyword">type</span> <span class="type">JobStatus</span> = <span class="string">"pending"</span> | <span class="string">"running"</span> | <span class="string">"completed"</span> | <span class="string">"failed"</span> | <span class="string">"cancelled"</span>
+
+<span class="comment">// Stale job behavior</span>
+<span class="keyword">enum</span> <span class="type">StaleJobBehavior</span> {
+  RUN = <span class="string">"run"</span>,
+  SKIP = <span class="string">"skip"</span>,
+  FAIL = <span class="string">"fail"</span>
+}</code></pre>
+
+    <h4>SchedulerOptions Interface</h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">SchedulerOptions</span> {
+  scope?: <span class="type">Scope</span>                    <span class="comment">// Parent scope</span>
+  storage?: <span class="type">JobStorage</span>            <span class="comment">// Storage backend</span>
+  checkInterval?: <span class="type">number</span>          <span class="comment">// Poll interval (ms)</span>
+  autoStart?: <span class="type">boolean</span>             <span class="comment">// Auto-start on creation</span>
+  deadLetterQueue?: <span class="type">DeadLetterQueueOptions</span>
+  staleThreshold?: <span class="type">number</span>        <span class="comment">// Stale detection (ms)</span>
+  staleJobBehavior?: <span class="type">StaleJobBehavior</span>
+  defaultTimezone?: <span class="type">string</span>        <span class="comment">// IANA timezone</span>
+  tracer?: <span class="type">Tracer</span>                 <span class="comment">// OpenTelemetry tracer</span>
+  logger?: <span class="type">Logger</span>
+  hooks?: <span class="type">SchedulerHooks</span>
+  metrics?: <span class="type">boolean</span>
+  deadlockThreshold?: <span class="type">number</span>     <span class="comment">// Deadlock detection (ms)</span>
+  onDeadlock?: (job: <span class="type">Job</span>, duration: <span class="type">number</span>) => <span class="type">void</span>
+  enableLeaderElection?: <span class="type">boolean</span>
+  leaderHeartbeatInterval?: <span class="type">number</span>
+  leaderElectionTimeout?: <span class="type">number</span>
+  onBecomeLeader?: () => <span class="type">void</span>
+  onStepDown?: () => <span class="type">void</span>
+  enableWebUI?: <span class="type">boolean</span>
+  webUIPort?: <span class="type">number</span>
+  webUIHost?: <span class="type">string</span>
+  webUIApiKey?: <span class="type">string</span>
+}</code></pre>
+
+    <h4>Scheduler Class</h4>
+    <p>Production-ready distributed job scheduler. Implements <code>AsyncDisposable</code>.</p>
+
+    <h4>Properties</h4>
+    <table>
+        <thead>
+            <tr><th>Property</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>version</code></td><td><code>string</code></td><td>Scheduler version</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Methods - Admin Operations</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>createSchedule()</code></td>
+                <td><code>createSchedule&lt;Name&gt;(name, options): Promise&lt;Schedule&gt;</code></td>
+                <td>Create a schedule (admin only)</td>
+            </tr>
+            <tr>
+                <td><code>deleteSchedule()</code></td>
+                <td><code>deleteSchedule(name): Promise&lt;boolean&gt;</code></td>
+                <td>Delete a schedule</td>
+            </tr>
+            <tr>
+                <td><code>updateSchedule()</code></td>
+                <td><code>updateSchedule(name, options): Promise&lt;Schedule&gt;</code></td>
+                <td>Update a schedule</td>
+            </tr>
+            <tr>
+                <td><code>pauseSchedule()</code></td>
+                <td><code>pauseSchedule(name): Promise&lt;Schedule&gt;</code></td>
+                <td>Pause a schedule</td>
+            </tr>
+            <tr>
+                <td><code>resumeSchedule()</code></td>
+                <td><code>resumeSchedule(name): Promise&lt;Schedule&gt;</code></td>
+                <td>Resume a schedule</td>
+            </tr>
+            <tr>
+                <td><code>disableSchedule()</code></td>
+                <td><code>disableSchedule(name): Promise&lt;Schedule&gt;</code></td>
+                <td>Disable a schedule</td>
+            </tr>
+            <tr>
+                <td><code>triggerSchedule()</code></td>
+                <td><code>triggerSchedule&lt;Name&gt;(name, payload?, options?)</code></td>
+                <td>Trigger schedule immediately</td>
+            </tr>
+            <tr>
+                <td><code>scheduleJob()</code></td>
+                <td><code>scheduleJob&lt;Name&gt;(name, payload?, options?)</code></td>
+                <td>Schedule one-time job</td>
+            </tr>
+            <tr>
+                <td><code>cancelJob()</code></td>
+                <td><code>cancelJob(jobId): Promise&lt;boolean&gt;</code></td>
+                <td>Cancel a pending job</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h4>Methods - Query Operations</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>getSchedule()</code></td>
+                <td><code>getSchedule(name): Promise&lt;Schedule | null&gt;</code></td>
+                <td>Get schedule by name</td>
+            </tr>
+            <tr>
+                <td><code>listSchedules()</code></td>
+                <td><code>listSchedules(): Promise&lt;Schedule[]&gt;</code></td>
+                <td>List all schedules</td>
+            </tr>
+            <tr>
+                <td><code>getScheduleStats()</code></td>
+                <td><code>getScheduleStats(name): Promise&lt;ScheduleStats&gt;</code></td>
+                <td>Get schedule statistics</td>
+            </tr>
+            <tr>
+                <td><code>getAllScheduleStats()</code></td>
+                <td><code>getAllScheduleStats(): Promise&lt;ScheduleStats[]&gt;</code></td>
+                <td>Get stats for all schedules</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h4>Methods - Worker Operations</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>onSchedule()</code></td>
+                <td><code>onSchedule&lt;Name&gt;(name, handler): void</code></td>
+                <td>Register job handler</td>
+            </tr>
+            <tr>
+                <td><code>offSchedule()</code></td>
+                <td><code>offSchedule(name): boolean</code></td>
+                <td>Remove job handler</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h4>Methods - Lifecycle</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>start()</code></td>
+                <td><code>start(): void</code></td>
+                <td>Start scheduler polling</td>
+            </tr>
+            <tr>
+                <td><code>stop()</code></td>
+                <td><code>stop(): Promise&lt;void&gt;</code></td>
+                <td>Stop scheduler</td>
+            </tr>
+            <tr>
+                <td><code>getStatus()</code></td>
+                <td><code>getStatus(): Status</code></td>
+                <td>Get scheduler status</td>
+            </tr>
+            <tr>
+                <td><code>getWebUIUrl()</code></td>
+                <td><code>getWebUIUrl(): string | null</code></td>
+                <td>Get Web UI URL if enabled</td>
+            </tr>
+            <tr>
+                <td><code>[Symbol.asyncDispose]</code></td>
+                <td><code>() => Promise&lt;void&gt;</code></td>
+                <td>Stop and cleanup</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h4>Events</h4>
+    <pre><code>scheduler.<span class="function">on</span>(<span class="string">'scheduleCreated'</span>, ({ schedule }) => { })
+scheduler.<span class="function">on</span>(<span class="string">'jobStarted'</span>, ({ job, instanceId }) => { })
+scheduler.<span class="function">on</span>(<span class="string">'jobCompleted'</span>, ({ job, duration }) => { })
+scheduler.<span class="function">on</span>(<span class="string">'jobFailed'</span>, ({ job, error, permanent }) => { })
+<span class="comment">// ... and many more - see SchedulerEvents type</span></code></pre>
+
+    <h3 id="persistence-types">Persistence Types</h3>
+
+    <h4 id="lockprovider-type" class="section-anchor"><code>LockProvider</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">LockProvider</span> {
+  <span class="function">acquire</span>(key: <span class="type">string</span>, ttl: <span class="type">number</span>, owner?: <span class="type">string</span>): <span class="type">Promise</span>&lt;<span class="type">LockHandle</span> | <span class="keyword">null</span>&gt;
+  <span class="function">extend</span>(key: <span class="type">string</span>, ttl: <span class="type">number</span>, owner: <span class="type">string</span>): <span class="type">Promise</span>&lt;<span class="type">boolean</span>&gt;
+  <span class="function">forceRelease</span>(key: <span class="type">string</span>): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
+}</code></pre>
+
+    <h4 id="lockhandle-type" class="section-anchor"><code>LockHandle</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">LockHandle</span> {
+  <span class="function">release</span>(): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
+  <span class="function">extend</span>(ttl: <span class="type">number</span>): <span class="type">Promise</span>&lt;<span class="type">boolean</span>&gt;
+  <span class="function">isValid</span>(): <span class="type">Promise</span>&lt;<span class="type">boolean</span>&gt;
+}</code></pre>
+
+    <h4 id="circuitbreakerstateprovider-type" class="section-anchor"><code>CircuitBreakerStateProvider</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">CircuitBreakerStateProvider</span> {
+  <span class="function">getState</span>(key: <span class="type">string</span>): <span class="type">Promise</span>&lt;<span class="type">CircuitBreakerPersistedState</span> | <span class="keyword">null</span>&gt;
+  <span class="function">setState</span>(key: <span class="type">string</span>, state: <span class="type">CircuitBreakerPersistedState</span>): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
+  <span class="function">recordFailure</span>(key: <span class="type">string</span>, maxFailures: <span class="type">number</span>): <span class="type">Promise</span>&lt;<span class="type">number</span>&gt;
+  <span class="function">recordSuccess</span>(key: <span class="type">string</span>): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
+  <span class="function">subscribe</span>?(key: <span class="type">string</span>, callback): () => <span class="type">void</span>
+}</code></pre>
+
+    <h4 id="idempotencyprovider-type" class="section-anchor"><code>IdempotencyProvider</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">IdempotencyProvider</span> {
+  <span class="function">get</span>&lt;T&gt;(key: <span class="type">string</span>): <span class="type">Promise</span>&lt;{ value: T; expiresAt?: <span class="type">number</span> } | <span class="keyword">null</span>&gt;
+  <span class="function">set</span>&lt;T&gt;(key: <span class="type">string</span>, value: T, ttl?: <span class="type">number</span>): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
+  <span class="function">delete</span>(key: <span class="type">string</span>): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
+}</code></pre>
+
+    <h4 id="cacheprovider-type" class="section-anchor"><code>CacheProvider</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">CacheProvider</span> {
+  <span class="function">get</span>&lt;T&gt;(key: <span class="type">string</span>): <span class="type">Promise</span>&lt;T | <span class="keyword">null</span>&gt;
+  <span class="function">set</span>&lt;T&gt;(key: <span class="type">string</span>, value: T, ttl?: <span class="type">number</span>): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
+  <span class="function">delete</span>(key: <span class="type">string</span>): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
+  <span class="function">has</span>(key: <span class="type">string</span>): <span class="type">Promise</span>&lt;<span class="type">boolean</span>&gt;
+  <span class="function">clear</span>(): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
+  <span class="function">keys</span>(pattern?: <span class="type">string</span>): <span class="type">Promise</span>&lt;<span class="type">string</span>[]&gt;
+}</code></pre>
+
+    <h4 id="persistenceproviders-type" class="section-anchor"><code>PersistenceProviders</code></h4>
+    <pre><code><span class="keyword">interface</span> <span class="type">PersistenceProviders</span> {
+  lock?: <span class="type">LockProvider</span>
+  circuitBreaker?: <span class="type">CircuitBreakerStateProvider</span>
+  cache?: <span class="type">CacheProvider</span>
+  idempotency?: <span class="type">IdempotencyProvider</span>
+}</code></pre>
+
+    <h3 id="error-classes">Error Classes</h3>
+
+    <h4 id="aborterror-class" class="section-anchor"><code>AbortError</code></h4>
+    <p>Internal marker for abort signal reasons.</p>
+    <pre><code><span class="keyword">class</span> <span class="type">AbortError</span> <span class="keyword">extends</span> <span class="type">Error</span> {
+  readonly _tag = <span class="string">"AbortError"</span>
+  readonly reason: <span class="type">unknown</span>
+  <span class="keyword">constructor</span>(reason: <span class="type">unknown</span>)
+}</code></pre>
+
+    <h4 id="unknownerror-class" class="section-anchor"><code>UnknownError</code></h4>
+    <p>Catch-all error for system/infrastructure errors.</p>
+    <pre><code><span class="keyword">class</span> <span class="type">UnknownError</span> <span class="keyword">extends</span> <span class="type">Error</span> {
+  readonly _tag = <span class="string">"UnknownError"</span>
+  <span class="keyword">constructor</span>(message: <span class="type">string</span>, options?: { cause?: <span class="type">unknown</span> })
+}</code></pre>
+
+    <h4 id="channelfullerror-class" class="section-anchor"><code>ChannelFullError</code></h4>
+    <p>Thrown when channel buffer is full with 'error' strategy.</p>
+    <pre><code><span class="keyword">class</span> <span class="type">ChannelFullError</span> <span class="keyword">extends</span> <span class="type">Error</span> {
+  readonly _tag = <span class="string">"ChannelFullError"</span>
+  <span class="keyword">constructor</span>(message?: <span class="type">string</span>)
+}</code></pre>
+
+    <h3 id="plugins">Plugins</h3>
+    <p>Plugins extend scope functionality. Install from <code>@go-go-scope/*</code> packages.</p>
+
+    <h4 id="opentelemetry-plugin" class="section-anchor"><code>@go-go-scope/opentelemetry</code></h4>
+    <p>OpenTelemetry integration for distributed tracing.</p>
+    <pre><code><span class="keyword">import</span> { opentelemetryPlugin } <span class="keyword">from</span> <span class="string">'@go-go-scope/opentelemetry'</span>
+<span class="keyword">import</span> { NodeSDK } <span class="keyword">from</span> <span class="string">'@opentelemetry/sdk-node'</span>
+
+<span class="comment">// Setup OpenTelemetry SDK</span>
+<span class="keyword">const</span> sdk = <span class="keyword">new</span> <span class="type">NodeSDK</span>({ ... })
+<span class="keyword">await</span> sdk.<span class="function">start</span>()
+
+<span class="comment">// Use plugin</span>
+<span class="keyword">await using</span> s = <span class="function">scope</span>({
+  plugins: [<span class="function">opentelemetryPlugin</span>(sdk.<span class="function">getTracer</span>(<span class="string">'my-app'</span>))]
+})
+
+<span class="comment">// Access span and context</span>
+console.<span class="function">log</span>(s.<span class="function">otelSpan</span>)
+console.<span class="function">log</span>(s.<span class="function">otelContext</span>)</code></pre>
+
+    <h4 id="metrics-plugin" class="section-anchor"><code>@go-go-scope/metrics</code></h4>
+    <p>Advanced metrics collection with counters, gauges, and histograms.</p>
+    <pre><code><span class="keyword">import</span> { metricsPlugin } <span class="keyword">from</span> <span class="string">'@go-go-scope/metrics'</span>
+
+<span class="keyword">await using</span> s = <span class="function">scope</span>({
+  plugins: [<span class="function">metricsPlugin</span>()]
+})
+
+<span class="comment">// Create metrics</span>
+<span class="keyword">const</span> counter = s.<span class="function">counter</span>(<span class="string">'requests_total'</span>)
+<span class="keyword">const</span> gauge = s.<span class="function">gauge</span>(<span class="string">'active_connections'</span>)
+<span class="keyword">const</span> histogram = s.<span class="function">histogram</span>(<span class="string">'request_duration_ms'</span>)
+
+<span class="comment">// Record values</span>
+counter.<span class="function">inc</span>()
+gauge.<span class="function">set</span>(<span class="number">42</span>)
+histogram.<span class="function">record</span>(<span class="number">150</span>)
+
+<span class="comment">// Get snapshot</span>
+<span class="keyword">const</span> snapshot = histogram.<span class="function">snapshot</span>()
+console.<span class="function">log</span>(snapshot.<span class="function">p99</span>)  <span class="comment">// 99th percentile</span></code></pre>
+
+    <h4 id="profiler-plugin" class="section-anchor"><code>@go-go-scope/profiler</code></h4>
+    <p>Task performance profiling with pipeline stage timing.</p>
+    <pre><code><span class="keyword">import</span> { profilerPlugin } <span class="keyword">from</span> <span class="string">'@go-go-scope/profiler'</span>
+
+<span class="keyword">await using</span> s = <span class="function">scope</span>({
+  plugins: [<span class="function">profilerPlugin</span>({ enabled: <span class="keyword">true</span> })]
+})
+
+<span class="comment">// Run tasks</span>
+<span class="keyword">await</span> s.<span class="function">task</span>(() => <span class="function">fetchData</span>())
+<span class="keyword">await</span> s.<span class="function">task</span>(() => <span class="function">processData</span>(), { retry: <span class="number">3</span> })
+
+<span class="comment">// Get profile report</span>
+<span class="keyword">const</span> report = s.<span class="function">getProfileReport</span>()
+console.<span class="function">log</span>(report.<span class="function">statistics</span>.<span class="function">avgTotalDuration</span>)</code></pre>
+
+    <h4 id="deadlock-detector-plugin" class="section-anchor"><code>@go-go-scope/deadlock-detector</code></h4>
+    <p>Detect potential deadlocks by monitoring task wait times.</p>
+    <pre><code><span class="keyword">import</span> { deadlockDetectorPlugin } <span class="keyword">from</span> <span class="string">'@go-go-scope/deadlock-detector'</span>
+
+<span class="keyword">await using</span> s = <span class="function">scope</span>({
+  plugins: [
+    <span class="function">deadlockDetectorPlugin</span>({
+      timeout: <span class="number">30000</span>,  <span class="comment">// 30 seconds</span>
+      onDeadlock: (tasks) => {
+        console.<span class="function">error</span>(<span class="string">'Potential deadlock:'</span>, tasks)
+      }
+    })
+  ]
+})</code></pre>
+
+    <h3 id="adapters">Framework Adapters</h3>
+    <p>Adapters integrate go-go-scope with popular web frameworks.</p>
+
+    <h4 id="adapter-fastify" class="section-anchor"><code>@go-go-scope/adapter-fastify</code></h4>
+    <pre><code><span class="keyword">import</span> { fastifyGoGoScope } <span class="keyword">from</span> <span class="string">'@go-go-scope/adapter-fastify'</span>
+
+<span class="keyword">const</span> app = <span class="function">fastify</span>()
+<span class="keyword">await</span> app.<span class="function">register</span>(fastifyGoGoScope, { 
+  name: <span class="string">'my-api'</span>,
+  timeout: <span class="number">30000</span> 
+})
+
+app.<span class="function">get</span>(<span class="string">'/users/:id'</span>, <span class="keyword">async</span> (request, reply) => {
+  <span class="comment">// request.scope is automatically created</span>
+  <span class="keyword">const</span> [err, user] = <span class="keyword">await</span> request.<span class="function">scope</span>.<span class="function">task</span>(
+    () => <span class="function">fetchUser</span>(request.<span class="function">params</span>.<span class="function">id</span>),
+    { retry: <span class="string">'exponential'</span>, timeout: <span class="number">5000</span> }
+  )
+  
+  <span class="keyword">if</span> (err) {
+    <span class="keyword">return</span> reply.<span class="function">code</span>(<span class="number">500</span>).<span class="function">send</span>({ error: err.<span class="function">message</span> })
+  }
+  <span class="keyword">return</span> user
+})</code></pre>
+
+    <h4 id="adapter-express" class="section-anchor"><code>@go-go-scope/adapter-express</code></h4>
+    <pre><code><span class="keyword">import</span> { goGoScope, closeScope } <span class="keyword">from</span> <span class="string">'@go-go-scope/adapter-express'</span>
+
+<span class="keyword">const</span> app = <span class="function">express</span>()
+app.<span class="function">use</span>(<span class="function">goGoScope</span>(app, { name: <span class="string">'my-api'</span> }))
+
+app.<span class="function">get</span>(<span class="string">'/users/:id'</span>, <span class="keyword">async</span> (req, res) => {
+  <span class="keyword">const</span> [err, user] = <span class="keyword">await</span> req.<span class="function">scope</span>.<span class="function">task</span>(
+    () => <span class="function">fetchUser</span>(req.<span class="function">params</span>.<span class="function">id</span>)
+  )
+  
+  <span class="keyword">if</span> (err) {
+    <span class="keyword">return</span> res.<span class="function">status</span>(<span class="number">500</span>).<span class="function">json</span>({ error: err.<span class="function">message</span> })
+  }
+  res.<span class="function">json</span>(user)
+})
+
+<span class="comment">// Graceful shutdown</span>
+process.<span class="function">on</span>(<span class="string">'SIGTERM'</span>, <span class="keyword">async</span> () => {
+  <span class="keyword">await</span> <span class="function">closeScope</span>(app)
+  server.<span class="function">close</span>()
+})</code></pre>
+
+    <h4 id="adapter-nestjs" class="section-anchor"><code>@go-go-scope/adapter-nestjs</code></h4>
+    <pre><code><span class="keyword">import</span> { GoGoScopeModule, Task, GoGoScopeService } <span class="keyword">from</span> <span class="string">'@go-go-scope/adapter-nestjs'</span>
+
+@<span class="type">Module</span>({
+  imports: [<span class="type">GoGoScopeModule</span>.<span class="function">forRoot</span>({ name: <span class="string">'my-app'</span> })]
+})
+<span class="keyword">class</span> <span class="type">AppModule</span> {}
+
+@<span class="type">Injectable</span>()
+<span class="keyword">class</span> <span class="type">UserService</span> {
+  <span class="keyword">constructor</span>(<span class="keyword">private</span> scopeService: <span class="type">GoGoScopeService</span>) {}
+
+  @<span class="type">Task</span>({ retry: <span class="string">'exponential'</span>, timeout: <span class="number">5000</span> })
+  <span class="keyword">async</span> <span class="function">getUser</span>(id: <span class="type">string</span>) {
+    <span class="keyword">return</span> <span class="function">fetchUser</span>(id)  <span class="comment">// Automatically wrapped in task</span>
+  }
+}</code></pre>
+
+    <h4 id="adapter-hono" class="section-anchor"><code>@go-go-scope/adapter-hono</code></h4>
+    <pre><code><span class="keyword">import</span> { goGoScope, getScope } <span class="keyword">from</span> <span class="string">'@go-go-scope/adapter-hono'</span>
+
+<span class="keyword">const</span> app = <span class="keyword">new</span> <span class="type">Hono</span>()
+app.<span class="function">use</span>(<span class="function">goGoScope</span>({ name: <span class="string">'my-api'</span> }))
+
+app.<span class="function">get</span>(<span class="string">'/users/:id'</span>, <span class="keyword">async</span> (c) => {
+  <span class="keyword">const</span> scope = <span class="function">getScope</span>(c)
+  <span class="keyword">const</span> [err, user] = <span class="keyword">await</span> scope.<span class="function">task</span>(
+    () => <span class="function">fetchUser</span>(c.<span class="function">req</span>.<span class="function">param</span>(<span class="string">'id'</span>))
+  )
+  
+  <span class="keyword">if</span> (err) {
+    <span class="keyword">return</span> c.<span class="function">json</span>({ error: err.<span class="function">message</span> }, <span class="number">500</span>)
+  }
+  <span class="keyword">return</span> c.<span class="function">json</span>(user)
+})</code></pre>
+
+    <h4 id="adapter-elysia" class="section-anchor"><code>@go-go-scope/adapter-elysia</code></h4>
+    <pre><code><span class="keyword">import</span> { goGoScope } <span class="keyword">from</span> <span class="string">'@go-go-scope/adapter-elysia'</span>
+
+<span class="keyword">const</span> app = <span class="keyword">new</span> <span class="type">Elysia</span>()
+  .<span class="function">use</span>(<span class="function">goGoScope</span>({ name: <span class="string">'my-api'</span> }))
+  .<span class="function">get</span>(<span class="string">'/users/:id'</span>, <span class="keyword">async</span> ({ scope, params }) => {
+    <span class="keyword">const</span> [err, user] = <span class="keyword">await</span> scope.<span class="function">task</span>(
+      () => <span class="function">fetchUser</span>(params.<span class="function">id</span>)
+    )
+    
+    <span class="keyword">if</span> (err) {
+      <span class="keyword">return</span> { error: err.<span class="function">message</span> }
+    }
+    <span class="keyword">return</span> user
+  })</code></pre>
+
+    <h4 id="adapter-hapi" class="section-anchor"><code>@go-go-scope/adapter-hapi</code></h4>
+    <pre><code><span class="keyword">import</span> { hapiGoGoScope } <span class="keyword">from</span> <span class="string">'@go-go-scope/adapter-hapi'</span>
+
+<span class="keyword">const</span> server = <span class="type">Hapi</span>.<span class="function">server</span>({ port: <span class="number">3000</span> })
+<span class="keyword">await</span> server.<span class="function">register</span>({
+  plugin: hapiGoGoScope,
+  options: { name: <span class="string">'my-api'</span> }
+})
+
+server.<span class="function">route</span>({
+  method: <span class="string">'GET'</span>,
+  path: <span class="string">'/users/{id}'</span>,
+  <span class="function">handler</span>: <span class="keyword">async</span> (request) => {
+    <span class="keyword">const</span> [err, user] = <span class="keyword">await</span> request.<span class="function">scope</span>.<span class="function">task</span>(
+      () => <span class="function">fetchUser</span>(request.<span class="function">params</span>.<span class="function">id</span>)
+    )
+    <span class="keyword">return</span> err ? { error: err.<span class="function">message</span> } : user
+  }
+})</code></pre>
+
+    <h4 id="adapter-koa" class="section-anchor"><code>@go-go-scope/adapter-koa</code></h4>
+    <pre><code><span class="keyword">import</span> { koaGoGoScope } <span class="keyword">from</span> <span class="string">'@go-go-scope/adapter-koa'</span>
+
+<span class="keyword">const</span> app = <span class="keyword">new</span> <span class="type">Koa</span>()
+app.<span class="function">use</span>(<span class="function">koaGoGoScope</span>({ name: <span class="string">'my-api'</span> }))
+
+app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) => {
+  <span class="keyword">const</span> scope = ctx.<span class="function">state</span>.<span class="function">scope</span>
+  <span class="keyword">const</span> [err, user] = <span class="keyword">await</span> scope.<span class="function">task</span>(
+    () => <span class="function">fetchUser</span>(ctx.<span class="function">params</span>.<span class="function">id</span>)
+  )
+  
+  ctx.<span class="function">body</span> = err ? { error: err.<span class="function">message</span> } : user
+})</code></pre>
+
+    <div style="margin: 40px 0; padding: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px;">
+        <p style="margin: 0; color: var(--text-muted);">📚 This API reference is comprehensive but not exhaustive. For more examples and patterns, see the <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/03-api-reference.md" style="color: var(--primary-light);" target="_blank">full markdown documentation</a> and <a href="https://github.com/thelinuxlich/go-go-scope/tree/main/examples" style="color: var(--primary-light);" target="_blank">examples directory</a>.</p>
+    </div>
+</section>
+            <!-- Footer -->
+            <footer class="footer">
+                <p>Released under the MIT License • Made with ❤️ by <a href="https://github.com/thelinuxlich" target="_blank">thelinuxlich</a></p>
+                <p style="margin-top: 8px;">
+                    <a href="https://github.com/thelinuxlich/go-go-scope" target="_blank">GitHub</a> • 
+                    <a href="https://www.npmjs.com/package/go-go-scope" target="_blank">npm</a> • 
+                    <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/03-api-reference.md" target="_blank">API Reference</a>
+                </p>
+            </footer>
+        </main>
+    </div>
+
+    <script>
+        // Tab switching for installation
+        const tabs = document.querySelectorAll('.install-tab');
+        const code = document.getElementById('installCode');
+        const commands = {
+            npm: 'npm install go-go-scope',
+            pnpm: 'pnpm add go-go-scope',
+            yarn: 'yarn add go-go-scope',
+            bun: 'bun add go-go-scope'
+        };
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                code.textContent = commands[tab.dataset.tab];
+            });
+        });
+
+        // Search functionality
+        const searchInput = document.getElementById('searchInput');
+        const searchResults = document.getElementById('searchResults');
+        
+
+
+        const docs = [
+            // Getting Started
+            { title: 'Introduction', desc: 'Overview of go-go-scope', href: '#introduction' },
+            { title: 'Installation', desc: 'How to install the package', href: '#installation' },
+            { title: 'Quick Start', desc: 'Get started in 5 minutes', href: '#quickstart' },
+            // Examples
+            { title: 'Examples', desc: 'Real-world usage patterns', href: '#examples' },
+            { title: 'Resilient HTTP Client', desc: 'Retry & circuit breaker pattern', href: '#examples' },
+            { title: 'Data Pipeline', desc: 'Stream processing with metrics', href: '#examples' },
+            { title: 'WebSocket Fan-out', desc: 'Real-time broadcasting', href: '#examples' },
+            { title: 'DB Transactions', desc: 'Connection pooling & transactions', href: '#examples' },
+            { title: 'Job Scheduler', desc: 'Distributed cron jobs', href: '#examples' },
+            // Core Concepts
+            { title: 'The Scope', desc: 'Understanding scopes', href: '#scope' },
+            { title: 'The Task', desc: 'Working with tasks', href: '#task' },
+            { title: 'Channels', desc: 'Go-style channels', href: '#channels' },
+            { title: 'Cancellation', desc: 'Cancellation utilities', href: '#cancellation' },
+            // API Reference - Core Types
+            { title: 'API Reference', desc: 'Complete API documentation', href: '#api' },
+            { title: 'Result&lt;E,T&gt;', desc: 'Result tuple type', href: '#result-type' },
+            { title: 'ScopeOptions', desc: 'Scope configuration options', href: '#scopeoptions-type' },
+            { title: 'TaskOptions', desc: 'Task configuration options', href: '#taskoptions-type' },
+            { title: 'CircuitBreakerOptions', desc: 'Circuit breaker configuration', href: '#circuitbreakeroptions-type' },
+            { title: 'CircuitState', desc: 'Circuit breaker states', href: '#circuitstate-type' },
+            { title: 'ChannelOptions', desc: 'Channel configuration', href: '#channeloptions-type' },
+            { title: 'ResourcePoolOptions', desc: 'Resource pool configuration', href: '#resourcepooloptions-type' },
+            { title: 'DebounceOptions', desc: 'Debounce configuration', href: '#debounceoptions-type' },
+            { title: 'ThrottleOptions', desc: 'Throttle configuration', href: '#throttleoptions-type' },
+            { title: 'RaceOptions', desc: 'Race configuration', href: '#raceoptions-type' },
+            { title: 'PollOptions', desc: 'Poll configuration', href: '#polloptions-type' },
+            { title: 'SelectOptions', desc: 'Select configuration', href: '#selectoptions-type' },
+            { title: 'BackpressureStrategy', desc: 'Channel backpressure strategies', href: '#backpressurestrategy-type' },
+            { title: 'ScopeHooks', desc: 'Lifecycle hooks', href: '#scopehooks-type' },
+            { title: 'Logger', desc: 'Logger interface', href: '#logger-interface' },
+            { title: 'TaskContext', desc: 'Task context object', href: '#taskcontext-type' },
+            { title: 'RetryStrategies', desc: 'Built-in retry strategies', href: '#retrystrategies-type' },
+            { title: 'DisposableScope', desc: 'Minimal scope interface', href: '#disposablescope-type' },
+            { title: 'ScopePlugin', desc: 'Plugin interface', href: '#scopeplugin-type' },
+            // Scope Methods
+            { title: 'scope()', desc: 'Create a new scope', href: '#scope-function' },
+            { title: 'scope.task()', desc: 'Create a task', href: '#scope-task' },
+            { title: 'scope.provide()', desc: 'Provide a service', href: '#scope-provide' },
+            { title: 'scope.use()', desc: 'Use a service', href: '#scope-use' },
+            { title: 'scope.has()', desc: 'Check service exists', href: '#scope-has' },
+            { title: 'scope.override()', desc: 'Override a service', href: '#scope-override' },
+            { title: 'scope.race()', desc: 'Race multiple tasks', href: '#scope-race' },
+            { title: 'scope.parallel()', desc: 'Parallel execution', href: '#scope-parallel' },
+            { title: 'scope.channel()', desc: 'Create a channel', href: '#scope-channel' },
+            { title: 'scope.poll()', desc: 'Polling utility', href: '#scope-poll' },
+            { title: 'scope.debounce()', desc: 'Debounce function', href: '#scope-debounce' },
+            { title: 'scope.throttle()', desc: 'Throttle function', href: '#scope-throttle' },
+            { title: 'scope.select()', desc: 'Select statement', href: '#scope-select' },
+            { title: 'scope.broadcast()', desc: 'Create broadcast channel', href: '#scope-broadcast' },
+            { title: 'scope.priorityChannel()', desc: 'Priority channel', href: '#scope-prioritychannel' },
+            { title: 'scope.pool()', desc: 'Resource pool', href: '#scope-pool' },
+            { title: 'scope.metrics()', desc: 'Get metrics', href: '#scope-metrics' },
+            { title: 'scope.onDispose()', desc: 'Register cleanup', href: '#scope-ondispose' },
+            { title: 'scope.stream()', desc: 'Create stream', href: '#scope-stream' },
+            // Classes
+            { title: 'Task', desc: 'Task class', href: '#task-class' },
+            { title: 'Channel', desc: 'Channel class', href: '#channel-class' },
+            { title: 'BroadcastChannel', desc: 'Broadcast channel class', href: '#broadcastchannel-class' },
+            { title: 'ResourcePool', desc: 'Resource pool class', href: '#resourcepool-class' },
+            { title: 'CircuitBreaker', desc: 'Circuit breaker class', href: '#circuitbreaker-class' },
+            { title: 'Semaphore', desc: 'Semaphore class', href: '#semaphore-class' },
+            { title: 'TokenBucket', desc: 'Token bucket rate limiter', href: '#tokenbucket-class' },
+            { title: 'GracefulShutdownController', desc: 'Graceful shutdown', href: '#gracefulshutdowncontroller-class' },
+            { title: 'PerformanceMonitor', desc: 'Performance monitoring', href: '#performancemonitor-class' },
+            { title: 'MemoryTracker', desc: 'Memory tracking', href: '#memorytracker-class' },
+            { title: 'MetricsReporter', desc: 'Metrics reporting', href: '#metricsreporter-class' },
+            { title: 'AsyncDisposableResource', desc: 'Resource wrapper', href: '#asyncdisposableresource-class' },
+            // Stream API
+            { title: 'Stream', desc: 'Stream class', href: '#stream-class' },
+            { title: 'stream.map()', desc: 'Transform values', href: '#stream-map' },
+            { title: 'stream.filter()', desc: 'Filter values', href: '#stream-filter' },
+            { title: 'stream.flatMap()', desc: 'Map and flatten', href: '#stream-flatmap' },
+            { title: 'stream.tap()', desc: 'Side effects', href: '#stream-tap' },
+            { title: 'stream.take()', desc: 'Take N values', href: '#stream-take' },
+            { title: 'stream.drop()', desc: 'Drop N values', href: '#stream-drop' },
+            { title: 'stream.buffer()', desc: 'Buffer values', href: '#stream-buffer' },
+            { title: 'stream.debounce()', desc: 'Debounce stream', href: '#stream-debounce' },
+            { title: 'stream.throttle()', desc: 'Throttle stream', href: '#stream-throttle' },
+            { title: 'stream.distinct()', desc: 'Remove duplicates', href: '#stream-distinct' },
+            { title: 'stream.merge()', desc: 'Merge streams', href: '#stream-merge' },
+            { title: 'stream.zip()', desc: 'Zip streams', href: '#stream-zip' },
+            { title: 'stream.toArray()', desc: 'Collect to array', href: '#stream-toarray' },
+            { title: 'stream.drain()', desc: 'Consume stream', href: '#stream-drain' },
+            { title: 'stream.first()', desc: 'Get first value', href: '#stream-first' },
+            { title: 'stream.reduce()', desc: 'Reduce values', href: '#stream-reduce' },
+            // Retry Strategies
+            { title: 'exponentialBackoff()', desc: 'Exponential backoff strategy', href: '#exponentialbackoff-function' },
+            { title: 'jitter()', desc: 'Jitter delay strategy', href: '#jitter-function' },
+            { title: 'linear()', desc: 'Linear delay strategy', href: '#linear-function' },
+            { title: 'decorrelatedJitter()', desc: 'Decorrelated jitter strategy', href: '#decorrelatedjitter-function' },
+            // Utilities
+            { title: 'createCache()', desc: 'Create LRU cache', href: '#createcache-function' },
+            { title: 'setupGracefulShutdown()', desc: 'Setup graceful shutdown', href: '#setupgracefulshutdown-function' },
+            { title: 'isShutdownRequested()', desc: 'Check shutdown status', href: '#isshutdownrequested-function' },
+            { title: 'waitForShutdown()', desc: 'Wait for shutdown', href: '#waitforshutdown-function' },
+            { title: 'benchmark()', desc: 'Benchmark function', href: '#benchmark-function' },
+            { title: 'installPlugins()', desc: 'Install plugins', href: '#installplugins-function' },
+            // Error Classes
+            { title: 'AbortError', desc: 'Abort error class', href: '#aborterror-class' },
+            { title: 'UnknownError', desc: 'Unknown error class', href: '#unknownerror-class' },
+            { title: 'ChannelFullError', desc: 'Channel full error', href: '#channelfullerror-class' },
+            // Persistence
+            { title: 'LockProvider', desc: 'Distributed lock interface', href: '#lockprovider-type' },
+            { title: 'LockHandle', desc: 'Lock handle interface', href: '#lockhandle-type' },
+            { title: 'CircuitBreakerStateProvider', desc: 'CB state provider', href: '#circuitbreakerstateprovider-type' },
+            { title: 'IdempotencyProvider', desc: 'Idempotency provider', href: '#idempotencyprovider-type' },
+            { title: 'CacheProvider', desc: 'Cache provider', href: '#cacheprovider-type' },
+            // Plugins
+            { title: 'OpenTelemetry Plugin', desc: 'Distributed tracing plugin', href: '#opentelemetry-plugin' },
+            { title: 'Metrics Plugin', desc: 'Advanced metrics collection', href: '#metrics-plugin' },
+            { title: 'Profiler Plugin', desc: 'Task performance profiling', href: '#profiler-plugin' },
+            { title: 'Deadlock Detector Plugin', desc: 'Detect potential deadlocks', href: '#deadlock-detector-plugin' },
+            // Adapters
+            { title: 'Fastify Adapter', desc: 'Fastify framework integration', href: '#adapter-fastify' },
+            { title: 'Express Adapter', desc: 'Express framework integration', href: '#adapter-express' },
+            { title: 'NestJS Adapter', desc: 'NestJS framework integration', href: '#adapter-nestjs' },
+            { title: 'Hono Adapter', desc: 'Hono framework integration', href: '#adapter-hono' },
+            { title: 'Elysia Adapter', desc: 'Elysia framework integration', href: '#adapter-elysia' },
+            { title: 'Hapi Adapter', desc: 'Hapi framework integration', href: '#adapter-hapi' },
+            { title: 'Koa Adapter', desc: 'Koa framework integration', href: '#adapter-koa' }
+        ];
+
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            selectedIndex = -1; // Reset selection
+            
+            if (query.length < 2) {
+                searchResults.classList.remove('active');
+                return;
+            }
+
+            const results = docs.filter(doc => 
+                doc.title.toLowerCase().includes(query) || 
+                doc.desc.toLowerCase().includes(query)
+            );
+
+            if (results.length > 0) {
+                searchResults.innerHTML = results.map(r => `
+                    <a href="${r.href}" class="search-result" tabindex="0">
+                        <div class="search-result-title">${r.title}</div>
+                        <div class="search-result-desc">${r.desc}</div>
+                    </a>
+                `).join('');
+                searchResults.classList.add('active');
+            } else {
+                searchResults.innerHTML = '<div class="search-result"><div class="search-result-title">No results found</div></div>';
+                searchResults.classList.add('active');
+            }
+        });
+        
+        // Also handle focus event to show results if query exists
+        searchInput.addEventListener('focus', (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            if (query.length >= 2) {
+                searchResults.classList.add('active');
+            }
+        });
+        
+        // Handle keyboard navigation
+        let selectedIndex = -1;
+        searchInput.addEventListener('keydown', (e) => {
+            const items = searchResults.querySelectorAll('.search-result');
+            if (!items.length || !searchResults.classList.contains('active')) return;
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+                items[selectedIndex]?.focus();
+                items[selectedIndex]?.scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedIndex = Math.max(selectedIndex - 1, -1);
+                if (selectedIndex >= 0) {
+                    items[selectedIndex]?.focus();
+                    items[selectedIndex]?.scrollIntoView({ block: 'nearest' });
+                } else {
+                    searchInput.focus();
+                }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (selectedIndex >= 0 && items[selectedIndex]) {
+                    window.location.href = items[selectedIndex].href;
+                } else if (items[0]) {
+                    window.location.href = items[0].href;
+                }
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                searchResults.classList.remove('active');
+                selectedIndex = -1;
+                searchInput.blur();
+            }
+        });
+
+        // Close search on click outside (with delay to allow click on results)
+        document.addEventListener('click', (e) => {
+            const searchBox = document.querySelector('.search-box');
+            if (searchBox && !searchBox.contains(e.target)) {
+                searchResults.classList.remove('active');
+            }
+        });
+
+        // Active nav link highlighting
+        const sections = document.querySelectorAll('section[id]');
+        const navLinks = document.querySelectorAll('.nav-link');
+
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                if (scrollY >= sectionTop - 200) {
+                    current = section.getAttribute('id');
+                }
+            });
+
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === `#${current}`) {
+                    link.classList.add('active');
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -34,7 +34,7 @@ export {
 } from "./idempotency.js";
 // Re-export logger
 export { ConsoleLogger, createLogger, NoOpLogger } from "./logger.js";
-export { parallel } from "./parallel.js";
+// parallel is available as scope.parallel()
 // Re-export performance utilities
 export {
 	type BenchmarkOptions,
@@ -60,16 +60,15 @@ export type {
 	PersistenceAdapterOptions,
 } from "./persistence/types.js";
 export { installPlugins, type ScopePlugin } from "./plugin.js";
-export { poll } from "./poll.js";
+// poll is available as scope.poll()
 export type {
 	PrioritizedItem,
 	PriorityChannelOptions,
 	PriorityComparator,
 } from "./priority-channel.js";
 export { PriorityChannel } from "./priority-channel.js";
-export { race } from "./race.js";
-// Re-export rate limiting utilities
-export { debounce, throttle } from "./rate-limiting.js";
+// race is available as scope.race()
+// debounce and throttle are available as scope.debounce() and scope.throttle()
 export type { HealthCheckResult } from "./resource-pool.js";
 export { ResourcePool } from "./resource-pool.js";
 // Re-export retry strategies

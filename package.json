@@ -34,7 +34,9 @@
 		"publish:persistence": "pnpm build:persistence && pnpm --filter '@go-go-scope/persistence-*' publish --access public",
 		"tui": "tsx packages/scheduler-tui/src/tui.ts",
 		"tui:redis": "tsx packages/scheduler-tui/src/tui.ts -s redis -u redis://localhost:6379",
-		"cli": "tsx packages/scheduler-tui/src/cli.ts"
+		"cli": "tsx packages/scheduler-tui/src/cli.ts",
+	"docs:serve": "npx serve docs -l 3000 -s",
+	"docs:dev": "npx serve docs -l 3000 -s"
 	},
 	"keywords": [
 		"structured-concurrency",
