@@ -420,18 +420,19 @@ for (const { index, error } of result.errors) {
 Every task receives an `AbortSignal` that you can use for cancellation:
 
 ```typescript
-await s.task(async ({ signal }) => {
+await s.task(async ({ signal, logger }) => {
   // Pass to fetch for automatic cancellation
   const response = await fetch(url, { signal })
   
   // Or check manually
   if (signal.aborted) {
+    logger.warn('Task was cancelled')
     throw new Error('Cancelled!')
   }
   
   // Or listen for abort events
   signal.addEventListener('abort', () => {
-    console.log('Task was cancelled')
+    logger.info('Task was cancelled')
   })
 })
 ```

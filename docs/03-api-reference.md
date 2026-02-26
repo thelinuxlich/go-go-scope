@@ -246,7 +246,7 @@ Spawns a task within the scope.
 
 ```typescript
 task<T>(
-  fn: (ctx: { services: Services; signal: AbortSignal }) => Promise<T>,
+  fn: (ctx: { services: Services; signal: AbortSignal; logger: Logger; context: Record<string, unknown> }) => Promise<T>,
   options?: TaskOptions
 ): Task<Result<unknown, T>>
 ```
@@ -255,7 +255,7 @@ task<T>(
 
 | Name | Type | Description |
 |------|------|-------------|
-| `fn` | Function | Task function receiving `{ services, signal }` |
+| `fn` | Function | Task function receiving `{ services, signal, logger, context }` |
 | `options` | `TaskOptions` | Optional task configuration |
 
 **Returns:** `Task<Result<unknown, T>>` - A lazy task (starts when awaited)
@@ -275,6 +275,14 @@ const [err, data] = await s.task(async ({ signal }) => {
 // With services from provide()
 const [err, result] = await s.task(async ({ services }) => {
   return services.db.query('SELECT 1')
+})
+
+// With logger for structured logging
+const [err, result] = await s.task(async ({ services, logger }) => {
+  logger.info('Starting database query')
+  const data = await services.db.query('SELECT 1')
+  logger.info('Query completed', { rowCount: data.length })
+  return data
 })
 
 // With retry

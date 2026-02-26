@@ -561,6 +561,33 @@ const avg = taskDurations.reduce((a, b) => a + b, 0) / taskDurations.length
 console.log(`Average task time: ${avg}ms`)
 ```
 
+### Using Logger in Tasks
+
+Tasks receive a logger instance in their context for structured logging:
+
+```typescript
+await using s = scope({
+  logger: new ConsoleLogger('my-app', 'debug')
+})
+
+const [err, result] = await s.task(async ({ services, signal, logger }) => {
+  // Log at different levels
+  logger.debug('Starting user fetch', { userId: 123 })
+  
+  const user = await services.db.query('SELECT * FROM users WHERE id = ?', [123], { signal })
+  
+  if (!user) {
+    logger.warn('User not found', { userId: 123 })
+    return null
+  }
+  
+  logger.info('User fetched successfully', { userId: user.id, name: user.name })
+  return user
+})
+```
+
+The task logger inherits from the scope's logger and automatically includes task context in log entries.
+
 ---
 
 ## Next Steps
