@@ -5,6 +5,13 @@
 
 let taskIdCounter = 0;
 
+// Pre-allocated resolved promises for fast paths
+const RESOLVED_TRUE = Promise.resolve(true);
+const RESOLVED_FALSE = Promise.resolve(false);
+const RESOLVED_UNDEFINED = Promise.resolve(undefined);
+
+export { RESOLVED_TRUE, RESOLVED_FALSE, RESOLVED_UNDEFINED };
+
 /**
  * A disposable task that runs within a Scope.
  * Implements PromiseLike for await support and Disposable for cleanup.
@@ -173,6 +180,3 @@ export class Task<T> implements PromiseLike<T>, Disposable {
 		return this.start().finally(onfinally);
 	}
 }
-
-// Export pre-allocated promises for internal use
-export { RESOLVED_TRUE, RESOLVED_FALSE, RESOLVED_UNDEFINED };

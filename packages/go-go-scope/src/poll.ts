@@ -3,7 +3,6 @@
  */
 
 import createDebug from "debug";
-import { Scope } from "./scope.js";
 import type { PollController, PollOptions } from "./types.js";
 
 const debugScope = createDebug("go-go-scope:poll");
@@ -63,11 +62,18 @@ function createPoll<T>(
 	let nextPollTime: number | undefined;
 	let running = false;
 	let timeoutId: ReturnType<typeof setTimeout> | undefined;
+	let aborted = false;
+	const abortController = new AbortController();
 
-	const s = new Scope({ signal: options.signal });
+	// Link to parent signal if provided
+	if (options.signal) {
+		options.signal.addEventListener("abort", () => {
+			abortController.abort(options.signal?.reason);
+		}, { once: true });
+	}
 
 	const executePoll = async () => {
-		if (!running || s.signal.aborted) return;
+		if (!running || aborted || abortController.signal.aborted) return;
 
 		pollCount++;
 		lastPollTime = performance.now();
@@ -78,27 +84,16 @@ function createPoll<T>(
 
 		try {
 			const startTime = performance.now();
-			const [err, value] = await s.task(({ signal }) => fn(signal));
+			const value = await fn(abortController.signal);
 			const duration = performance.now() - startTime;
-			if (err) {
-				if (debugEnabled) {
-					debugScope(
-						"poll #%d failed: %s",
-						pollCount,
-						err instanceof Error ? err.message : String(err),
-					);
-				}
-				// Continue polling even on error
-			} else {
-				if (debugEnabled) {
-					debugScope(
-						"poll #%d succeeded in %dms",
-						pollCount,
-						Math.round(duration),
-					);
-				}
-				await onValue(value as T);
+			if (debugEnabled) {
+				debugScope(
+					"poll #%d succeeded in %dms",
+					pollCount,
+					Math.round(duration),
+				);
 			}
+			await onValue(value);
 		} catch (error) {
 			if (debugEnabled) {
 				debugScope(
@@ -111,7 +106,7 @@ function createPoll<T>(
 		}
 
 		// Schedule next poll if still running
-		if (running && !s.signal.aborted) {
+		if (running && !aborted && !abortController.signal.aborted) {
 			timeoutId = setTimeout(executePoll, interval);
 		}
 	};
@@ -123,7 +118,7 @@ function createPoll<T>(
 			}
 			return;
 		}
-		if (s.signal.aborted) {
+		if (aborted || abortController.signal.aborted) {
 			if (debugEnabled) {
 				debugScope("cannot start, already aborted");
 			}
@@ -190,7 +185,7 @@ function createPoll<T>(
 				debugScope("abort signal received, stopping");
 			}
 			stop();
-			s[Symbol.asyncDispose]().catch(() => {});
+			aborted = true;
 		},
 		{ once: true },
 	);
@@ -213,8 +208,6 @@ function createPoll<T>(
 /**
  * Poll a function at regular intervals with structured concurrency.
  * Automatically starts polling and returns a controller.
- *
- * @deprecated Use `createPoll()` or `scope().poll()` for better control
  */
 export function poll<T>(
 	fn: (signal: AbortSignal) => Promise<T>,

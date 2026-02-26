@@ -150,6 +150,20 @@ export class InMemoryCache implements CacheProvider {
 			this.cache.delete(oldestKey);
 		}
 	}
+
+	/**
+	 * Get the number of entries in the cache
+	 */
+	get size(): number {
+		return this.cache.size;
+	}
+
+	/**
+	 * Dispose the cache and clear all entries
+	 */
+	[Symbol.dispose](): void {
+		this.cache.clear();
+	}
 }
 
 /**

@@ -48,11 +48,8 @@ export class CircuitBreaker implements AsyncDisposable {
 		this._slidingWindow = options.advanced?.slidingWindow ?? false;
 		this._slidingWindowSizeMs = options.advanced?.slidingWindowSizeMs ?? 60000;
 		
-		// Merge hooks from both locations
-		this.hooks = {
-			...options,
-			onThresholdAdapt: options.advanced?.onThresholdAdapt,
-		};
+		// Store hooks for later use
+		this.hooks = options;
 	}
 
 	/**
@@ -92,7 +89,7 @@ export class CircuitBreaker implements AsyncDisposable {
 
 		// Notify about threshold change
 		if (adaptiveThreshold !== this._failureThreshold) {
-			this.hooks.onThresholdAdapt?.(adaptiveThreshold, errorRate);
+			this.hooks.advanced?.onThresholdAdapt?.(adaptiveThreshold, errorRate);
 		}
 
 		return Math.max(this._minThreshold, adaptiveThreshold);
