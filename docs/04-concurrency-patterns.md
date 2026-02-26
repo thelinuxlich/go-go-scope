@@ -5,6 +5,9 @@ Patterns for concurrent communication and coordination in `go-go-scope`.
 ## Table of Contents
 
 - [Channels](#channels)
+- [Backpressure Strategies](#backpressure-strategies)
+- [Priority Channels](#priority-channels)
+- [Channel Transformations](#channel-transformations)
 - [Broadcast Channels](#broadcast-channels)
 - [Select](#select)
 
@@ -199,6 +202,148 @@ s.task(async () => {
   }
 })
 ```
+
+---
+
+## Priority Channels
+
+Priority channels deliver items based on priority rather than FIFO order. They use a binary heap for efficient O(log n) insertions and extractions.
+
+### Basic Usage
+
+```typescript
+await using s = scope()
+
+// Create a priority channel with numeric priorities (lower = higher priority)
+const pq = s.priorityChannel<{ value: Task; priority: number }>({
+  capacity: 100,
+  comparator: (a, b) => a.priority - b.priority
+})
+
+// Send tasks with priorities
+await pq.send({ value: task1, priority: 3 })
+await pq.send({ value: task2, priority: 1 })  // Higher priority
+await pq.send({ value: task3, priority: 2 })
+
+// Receive in priority order: task2, task3, task1
+const item1 = await pq.receive() // task2 (priority 1)
+const item2 = await pq.receive() // task3 (priority 2)
+const item3 = await pq.receive() // task1 (priority 3)
+```
+
+### Task Queue Example
+
+Priority channels are perfect for task queues where some tasks are more urgent:
+
+```typescript
+await using s = scope()
+
+// Priority queue: lower number = higher priority
+const taskQueue = s.priorityChannel<Job>({
+  capacity: 1000,
+  comparator: (a, b) => a.priority - b.priority
+})
+
+// Producer - mix of priorities
+s.task(async () => {
+  // High priority jobs
+  await taskQueue.send({ id: '1', data: 'critical', priority: 1 })
+  await taskQueue.send({ id: '2', data: 'urgent', priority: 2 })
+  
+  // Low priority jobs
+  await taskQueue.send({ id: '3', data: 'background', priority: 10 })
+  await taskQueue.send({ id: '4', data: 'cleanup', priority: 10 })
+})
+
+// Worker processes by priority
+s.task(async () => {
+  for await (const job of taskQueue) {
+    console.log(`Processing job ${job.id} with priority ${job.priority}`)
+    await processJob(job)
+  }
+})
+// Output order: job 1, job 2, job 3, job 4
+```
+
+### Non-Blocking Operations
+
+Priority channels support non-blocking operations:
+
+```typescript
+await using s = scope()
+
+const pq = s.priorityChannel<{ value: string; priority: number }>({
+  capacity: 10,
+  comparator: (a, b) => a.priority - b.priority
+})
+
+// Try to send without blocking
+const sent = pq.trySend({ value: 'item', priority: 5 })
+if (!sent) {
+  console.log('Buffer full, item not sent')
+}
+
+// Send or drop (no blocking, calls onDrop if full)
+pq.sendOrDrop({ value: 'item', priority: 5 })
+
+// Try to receive without blocking
+const item = pq.tryReceive()
+if (item) {
+  console.log('Got item:', item)
+}
+
+// Peek at highest priority item without removing
+const next = pq.peek()
+console.log('Next item:', next)
+```
+
+### With onDrop Callback
+
+Handle items that can't be delivered due to capacity:
+
+```typescript
+await using s = scope()
+
+const pq = s.priorityChannel<HighFreqData>({
+  capacity: 100,
+  comparator: (a, b) => a.priority - b.priority,
+  onDrop: (item) => {
+    console.log('Dropped low priority item:', item.id)
+    metrics.increment('priority_queue.dropped')
+  }
+})
+
+// When buffer is full, sendOrDrop will call onDrop
+pq.sendOrDrop({ id: '1', data: 'important', priority: 1 })
+pq.sendOrDrop({ id: '2', data: 'less important', priority: 5 })
+```
+
+### Priority Channel Properties
+
+```typescript
+const pq = s.priorityChannel<Item>({
+  capacity: 100,
+  comparator: (a, b) => a.priority - b.priority
+})
+
+console.log(pq.cap)       // 100 (capacity)
+console.log(pq.size)      // 0 (current size)
+console.log(pq.isEmpty)   // true
+console.log(pq.isFull)    // false
+console.log(pq.isClosed)  // false
+
+pq.close()
+console.log(pq.isClosed)  // true
+```
+
+### Comparison: Channel vs PriorityChannel
+
+| Feature | Channel | PriorityChannel |
+|---------|---------|-----------------|
+| Order | FIFO | By priority (comparator) |
+| Backpressure | Multiple strategies | Block or drop |
+| Use case | Fair queueing | Urgent-first processing |
+| Transformations | map, filter, take, reduce | Basic operations only |
 
 ---
 

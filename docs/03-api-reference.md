@@ -24,6 +24,7 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.select(cases)`](#scopeselectcases)
   - [`scope.metrics()`](#scopemetrics)
   - [`scope.broadcast()`](#scopebroadcast)
+  - [`scope.priorityChannel(options)`](#scopeprioritychanneloptions)
   - [`scope.pool(options)`](#scopepooloptions)
   - [`scope.getProfileReport()`](#scopegetprofilereport)
   - [`scope.onDispose(callback)`](#scopeondisposecallback)
@@ -1430,6 +1431,69 @@ broadcast<T>(): BroadcastChannel<T>
 ```
 
 **Returns:** `BroadcastChannel<T>` - A broadcast channel where all subscribers receive every message
+
+---
+
+### `scope.priorityChannel(options)`
+
+Creates a priority channel where items are delivered based on priority rather than FIFO order.
+
+```typescript
+priorityChannel<T>(options: PriorityChannelOptions<T>): PriorityChannel<T>
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `options.capacity` | `number` | Maximum buffer size (default: 0) |
+| `options.comparator` | `(a: T, b: T) => number` | Comparator function for ordering (required) |
+| `options.onDrop` | `(value: T) => void` | Callback when item is dropped due to capacity |
+
+**Returns:** `PriorityChannel<T>`
+
+**Example:**
+
+```typescript
+await using s = scope()
+
+// Create priority queue (lower number = higher priority)
+const pq = s.priorityChannel<{ task: Task; priority: number }>({
+  capacity: 100,
+  comparator: (a, b) => a.priority - b.priority
+})
+
+// Send tasks with priorities
+await pq.send({ task: lowPriorityTask, priority: 10 })
+await pq.send({ task: highPriorityTask, priority: 1 })
+
+// Receive in priority order
+const first = await pq.receive()  // highPriorityTask
+const second = await pq.receive() // lowPriorityTask
+```
+
+**Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `send(value)` | Send a value (waits if buffer full) |
+| `trySend(value)` | Try to send without blocking (returns boolean) |
+| `sendOrDrop(value)` | Send or drop if buffer full |
+| `receive()` | Receive highest priority value |
+| `tryReceive()` | Try to receive without blocking |
+| `peek()` | Peek at highest priority value without removing |
+| `close()` | Close the channel |
+| `[Symbol.asyncDispose]()` | Async dispose support |
+
+**Properties:**
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `cap` | `number` | Buffer capacity |
+| `size` | `number` | Current buffer size |
+| `isEmpty` | `boolean` | True if buffer is empty |
+| `isFull` | `boolean` | True if buffer is full |
+| `isClosed` | `boolean` | True if channel is closed |
 
 ---
 

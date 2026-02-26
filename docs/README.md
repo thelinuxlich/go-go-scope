@@ -21,7 +21,7 @@ Complete guide to structured concurrency in TypeScript.
 |-----|-------------------|
 | [🍳 Recipes](./13-recipes.md) | Common patterns: HTTP clients, DB pools, WebSockets |
 | [🌊 Streams](./04-streams.md) | Lazy async streams: processing pipelines, real-world examples |
-| [🔄 Concurrency](./04-concurrency-patterns.md) | Channels, broadcast, select statements |
+| [🔄 Concurrency](./04-concurrency-patterns.md) | Channels, priority channels, broadcast, select statements |
 | [🛡️ Resilience](./05-resilience-patterns.md) | Circuit breakers, retry, timeouts |
 | [🔧 Advanced](./09-advanced-patterns.md) | Resource pools, parent-child scopes, DI |
 | [⏱️ Rate Limiting](./07-rate-limiting.md) | Debounce, throttle, concurrency control |

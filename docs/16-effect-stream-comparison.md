@@ -224,29 +224,6 @@ stream.collect() / stream.collectWhile(predicate)
 
 ---
 
-## What's Missing (Medium/Low Priority)
-
-### 1. Advanced Aggregation
-```typescript
-// Effect
-stream.aggregate(transducer)
-stream.aggregateWithin(transducer, duration)
-stream.transduce(transducer)
-stream.chunks
-stream.rechunk(size)
-```
-
-### 2. Text Encoding (Node.js specific)
-```typescript
-// Effect
-stream.decodeText(encoding)
-stream.encodeText(encoding)
-stream.splitLines
-stream.decodeTextWithBom
-```
-
----
-
 ## Unique go-go-scope Features
 
 Operations Effect doesn't have:
