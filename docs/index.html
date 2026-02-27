@@ -843,11 +843,12 @@
                 <div class="nav-section">
                     <div class="nav-section-title">Examples</div>
                     <a href="#examples" class="nav-link">Overview</a>
-                    <a href="#examples" class="nav-link sub">Resilient HTTP Client</a>
-                    <a href="#examples" class="nav-link sub">Data Pipeline</a>
-                    <a href="#examples" class="nav-link sub">WebSocket Fan-out</a>
-                    <a href="#examples" class="nav-link sub">DB Transactions</a>
-                    <a href="#examples" class="nav-link sub">Job Scheduler</a>
+                    <a href="#example-http-client" class="nav-link sub">Resilient HTTP Client</a>
+                    <a href="#example-data-pipeline" class="nav-link sub">Data Pipeline</a>
+                    <a href="#example-websocket" class="nav-link sub">WebSocket Fan-out</a>
+                    <a href="#example-db-transaction" class="nav-link sub">DB Transactions</a>
+                    <a href="#example-scheduler" class="nav-link sub">Job Scheduler</a>
+                    <a href="#example-distributed-lock" class="nav-link sub">Distributed Lock</a>
                 </div>
 
                 <div class="nav-section">
@@ -953,28 +954,36 @@
             <!-- Quick Start -->
             <section class="quick-start" id="quickstart">
                 <h3>Quick Start</h3>
-                <pre><code><span class="keyword">import</span> { scope } <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
+                <pre><code><span class="keyword">import</span> { scope, exponentialBackoff } <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
 
-<span class="comment">// Create a scope for structured concurrency</span>
-<span class="keyword">await using</span> s = <span class="function">scope</span>({ timeout: <span class="number">5000</span> })
+<span class="comment">// Build a resilient API in 30 lines</span>
+<span class="keyword">await using</span> s = <span class="function">scope</span>({
+  timeout: <span class="number">10000</span>,
+  circuitBreaker: { failureThreshold: <span class="number">3</span>, resetTimeout: <span class="number">30000</span> }
+})
 
-<span class="comment">// Spawn tasks - they don't run until awaited</span>
-<span class="keyword">const</span> userTask = s.<span class="function">task</span>(() => <span class="function">fetchUser</span>(<span class="number">1</span>))
-<span class="keyword">const</span> postsTask = s.<span class="function">task</span>(() => <span class="function">fetchPosts</span>(<span class="number">1</span>))
+<span class="comment">// Race multiple data sources - first to succeed wins</span>
+<span class="keyword">const</span> [err, data] = <span class="keyword">await</span> s.<span class="function">race</span>([
+  () => <span class="function">fetchFromPrimary</span>(),
+  () => <span class="function">fetchFromCache</span>(),
+  () => <span class="function">fetchFromBackup</span>()
+])
 
-<span class="comment">// Await results - tasks run now</span>
-<span class="keyword">const</span> [userErr, user] = <span class="keyword">await</span> userTask
-<span class="keyword">const</span> [postsErr, posts] = <span class="keyword">await</span> postsTask
+<span class="comment">// Parallel processing with retry and backoff</span>
+<span class="keyword">const</span> [pErr, results] = <span class="keyword">await</span> s.<span class="function">parallel</span>(
+  ids.<span class="function">map</span>(id => () => 
+    s.<span class="function">task</span>(() => <span class="function">processItem</span>(id), {
+      retry: {
+        maxRetries: <span class="number">3</span>,
+        delay: <span class="function">exponentialBackoff</span>({ initial: <span class="number">100</span>, max: <span class="number">2000</span> })
+      }
+    })
+  ),
+  { concurrency: <span class="number">5</span> }
+)
 
-<span class="comment">// Results are [error, value] tuples (never throws)</span>
-<span class="keyword">if</span> (userErr) <span class="keyword">return</span> <span class="function">handleError</span>(userErr)
-<span class="keyword">if</span> (postsErr) <span class="keyword">return</span> <span class="function">handleError</span>(postsErr)
-
-<span class="comment">// Use the data</span>
-<span class="function">renderUser</span>(user)
-<span class="function">renderPosts</span>(posts)
-
-<span class="comment">// Automatic cleanup when scope exits!</span></code></pre>
+<span class="comment">// Everything cancels and cleans up automatically</span>
+<span class="comment">// No memory leaks, no hanging promises, no manual cleanup</span></code></pre>
             </section>
 
             <!-- Scope Section -->
@@ -1126,7 +1135,7 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
                 <h2 class="section-anchor">Examples</h2>
                 <p>Real-world patterns showcasing the power of structured concurrency.</p>
 
-                <h3>🔥 Resilient HTTP Client with Retry & Circuit Breaker</h3>
+                <h3 id="example-http-client">🔥 Resilient HTTP Client with Retry & Circuit Breaker</h3>
                 <p>Fetch data with exponential backoff, circuit breaker protection, and graceful fallback - all automatically cleaned up.</p>
                 <pre><code><span class="keyword">import</span> { scope, exponentialBackoff } <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
 
@@ -1165,7 +1174,7 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
   <span class="comment">// Everything cancelled and cleaned up automatically!</span>
 }</code></pre>
 
-                <h3>📊 Parallel Data Processing with Stream Pipeline</h3>
+                <h3 id="example-data-pipeline">📊 Parallel Data Processing with Stream Pipeline</h3>
                 <p>Process millions of records with backpressure, batching, and real-time metrics - production-ready data pipeline.</p>
                 <pre><code><span class="keyword">import</span> { scope } <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
 <span class="keyword">import</span> { streamPlugin } <span class="keyword">from</span> <span class="string">'@go-go-scope/stream'</span>
@@ -1211,7 +1220,7 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
   <span class="keyword">return</span> results
 }</code></pre>
 
-                <h3>🔄 Real-time WebSocket Fan-out with Channels</h3>
+                <h3 id="example-websocket">🔄 Real-time WebSocket Fan-out with Channels</h3>
                 <p>Broadcast real-time updates to thousands of clients with automatic cleanup when connections drop.</p>
                 <pre><code><span class="keyword">import</span> { scope } <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
 
@@ -1264,7 +1273,7 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
   <span class="comment">// All clients disconnected, polling stopped, resources freed</span>
 }</code></pre>
 
-                <h3>🗄️ Database Transaction with Connection Pooling</h3>
+                <h3 id="example-db-transaction">🗄️ Database Transaction with Connection Pooling</h3>
                 <p>Complex multi-table transaction with connection pooling, automatic rollback, and deadlock detection.</p>
                 <pre><code><span class="keyword">import</span> { scope } <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
 <span class="keyword">import</span> { deadlockDetectorPlugin } <span class="keyword">from</span> <span class="string">'@go-go-scope/deadlock-detector'</span>
@@ -1296,42 +1305,47 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
   <span class="keyword">return</span> pool.<span class="function">execute</span>(<span class="keyword">async</span> (conn) => {
     <span class="keyword">await</span> conn.<span class="function">query</span>(<span class="string">'BEGIN'</span>)
 
-    <span class="keyword">try</span> {
-      <span class="comment">// Deduct from sender</span>
-      <span class="keyword">const</span> [err1] = <span class="keyword">await</span> s.<span class="function">task</span>(() =>
-        conn.<span class="function">query</span>(<span class="string">'UPDATE accounts SET balance = balance - $1 WHERE id = $2'</span>,
-          [amount, fromId]
-        )
+    <span class="comment">// Deduct from sender</span>
+    <span class="keyword">const</span> [err1] = <span class="keyword">await</span> s.<span class="function">task</span>(() =>
+      conn.<span class="function">query</span>(<span class="string">'UPDATE accounts SET balance = balance - $1 WHERE id = $2'</span>,
+        [amount, fromId]
       )
-      <span class="keyword">if</span> (err1) <span class="keyword">throw</span> err1
-
-      <span class="comment">// Add to receiver</span>
-      <span class="keyword">const</span> [err2] = <span class="keyword">await</span> s.<span class="function">task</span>(() =>
-        conn.<span class="function">query</span>(<span class="string">'UPDATE accounts SET balance = balance + $1 WHERE id = $2'</span>,
-          [amount, toId]
-        )
-      )
-      <span class="keyword">if</span> (err2) <span class="keyword">throw</span> err2
-
-      <span class="comment">// Record transaction</span>
-      <span class="keyword">await</span> s.<span class="function">task</span>(() =>
-        conn.<span class="function">query</span>(
-          <span class="string">'INSERT INTO transactions (from_id, to_id, amount) VALUES ($1, $2, $3)'</span>,
-          [fromId, toId, amount]
-        )
-      )
-
-      <span class="keyword">await</span> conn.<span class="function">query</span>(<span class="string">'COMMIT'</span>)
-      <span class="keyword">return</span> { success: <span class="keyword">true</span> }
-    } <span class="keyword">catch</span> (error) {
+    )
+    <span class="keyword">if</span> (err1) {
       <span class="keyword">await</span> conn.<span class="function">query</span>(<span class="string">'ROLLBACK'</span>)
-      <span class="keyword">return</span> { success: <span class="keyword">false</span>, error }
+      <span class="keyword">return</span> { success: <span class="keyword">false</span>, error: err1 }
     }
+
+    <span class="comment">// Add to receiver</span>
+    <span class="keyword">const</span> [err2] = <span class="keyword">await</span> s.<span class="function">task</span>(() =>
+      conn.<span class="function">query</span>(<span class="string">'UPDATE accounts SET balance = balance + $1 WHERE id = $2'</span>,
+        [amount, toId]
+      )
+    )
+    <span class="keyword">if</span> (err2) {
+      <span class="keyword">await</span> conn.<span class="function">query</span>(<span class="string">'ROLLBACK'</span>)
+      <span class="keyword">return</span> { success: <span class="keyword">false</span>, error: err2 }
+    }
+
+    <span class="comment">// Record transaction</span>
+    <span class="keyword">const</span> [err3] = <span class="keyword">await</span> s.<span class="function">task</span>(() =>
+      conn.<span class="function">query</span>(
+        <span class="string">'INSERT INTO transactions (from_id, to_id, amount) VALUES ($1, $2, $3)'</span>,
+        [fromId, toId, amount]
+      )
+    )
+    <span class="keyword">if</span> (err3) {
+      <span class="keyword">await</span> conn.<span class="function">query</span>(<span class="string">'ROLLBACK'</span>)
+      <span class="keyword">return</span> { success: <span class="keyword">false</span>, error: err3 }
+    }
+
+    <span class="keyword">await</span> conn.<span class="function">query</span>(<span class="string">'COMMIT'</span>)
+    <span class="keyword">return</span> { success: <span class="keyword">true</span> }
   })
   <span class="comment">// Pool drained, connections closed automatically</span>
 }</code></pre>
 
-                <h3>🚀 Distributed Job Scheduler with Persistence</h3>
+                <h3 id="example-scheduler">🚀 Distributed Job Scheduler with Persistence</h3>
                 <p>Production-ready cron job scheduler with distributed locking, idempotency, and circuit breaker.</p>
                 <pre><code><span class="keyword">import</span> { Scheduler } <span class="keyword">from</span> <span class="string">'@go-go-scope/scheduler'</span>
 <span class="keyword">import</span> { RedisIdempotencyAdapter } <span class="keyword">from</span> <span class="string">'@go-go-scope/persistence-redis'</span>
@@ -1390,8 +1404,72 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
 }
 </code></pre>
 
-                <div style="margin: 40px 0; padding: 24px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(16, 185, 129, 0.1)); border: 1px solid var(--border); border-radius: 12px;">
-                    <p style="margin: 0; color: var(--text-muted);">💡 <strong>Want more?</strong> Check out the <a href="https://github.com/thelinuxlich/go-go-scope/tree/main/examples" style="color: var(--primary-light);" target="_blank">examples directory</a> for complete working samples including OpenTelemetry tracing, Prometheus metrics, and framework integrations.</p>
+                <h3 id="example-distributed-lock">🔒 Distributed Lock for Critical Operations</h3>
+                <p>Prevent race conditions in multi-instance deployments with Redis-backed distributed locks.</p>
+                <pre><code><span class="keyword">import</span> { scope } <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
+<span class="keyword">import</span> { RedisLockProvider } <span class="keyword">from</span> <span class="string">'@go-go-scope/persistence-redis'</span>
+
+<span class="keyword">async function</span> <span class="function">processInventoryUpdate</span>(
+  productId: <span class="type">string</span>,
+  quantity: <span class="type">number</span>
+) {
+  <span class="keyword">await using</span> s = <span class="function">scope</span>({
+    name: <span class="string">'inventory-update'</span>,
+    timeout: <span class="number">30000</span>,
+    persistence: {
+      lock: <span class="keyword">new</span> <span class="type">RedisLockProvider</span>(redis)
+    }
+  })
+
+  <span class="comment">// Acquire distributed lock - only one instance can process this product</span>
+  <span class="keyword">const</span> lockKey = <span class="string">`inventory:${productId}`</span>
+  <span class="keyword">const</span> lock = <span class="keyword">await</span> s.<span class="function">acquireLock</span>(lockKey, {
+    ttl: <span class="number">10000</span>,        <span class="comment">// Lock expires after 10s</span>
+    retry: <span class="number">5</span>,          <span class="comment">// Retry 5 times</span>
+    retryDelay: <span class="number">500</span>   <span class="comment">// Wait 500ms between retries</span>
+  })
+
+  <span class="keyword">if</span> (!lock) {
+    <span class="keyword">return</span> { success: <span class="keyword">false</span>, error: <span class="string">'Could not acquire lock - another instance is processing'</span> }
+  }
+
+  <span class="comment">// Lock acquired - safely check and update inventory</span>
+  <span class="keyword">const</span> [err, currentStock] = <span class="keyword">await</span> s.<span class="function">task</span>(
+    () => <span class="function">getCurrentStock</span>(productId)
+  )
+
+  <span class="keyword">if</span> (err) {
+    <span class="keyword">await</span> lock.<span class="function">release</span>()
+    <span class="keyword">return</span> { success: <span class="keyword">false</span>, error: err }
+  }
+
+  <span class="keyword">if</span> (currentStock < quantity) {
+    <span class="keyword">await</span> lock.<span class="function">release</span>()
+    <span class="keyword">return</span> { success: <span class="keyword">false</span>, error: <span class="string">'Insufficient stock'</span> }
+  }
+
+  <span class="comment">// Update inventory within the lock</span>
+  <span class="keyword">const</span> [updateErr] = <span class="keyword">await</span> s.<span class="function">task</span>(() =>
+    <span class="function">updateStock</span>(productId, currentStock - quantity)
+  )
+
+  <span class="comment">// Extend lock if processing takes longer than expected</span>
+  <span class="keyword">await</span> lock.<span class="function">extend</span>(<span class="number">5000</span>)
+
+  <span class="comment">// Publish stock change event</span>
+  <span class="keyword">await</span> s.<span class="function">task</span>(() =>
+    <span class="function">publishEvent</span>(<span class="string">'stock.updated'</span>, { productId, newStock: currentStock - quantity })
+  )
+
+  <span class="comment">// Release lock when done</span>
+  <span class="keyword">await</span> lock.<span class="function">release</span>()
+
+  <span class="keyword">return</span> { success: !updateErr, error: updateErr }
+  <span class="comment">// Lock automatically released when scope exits (even on error!)</span>
+}</code></pre>
+
+                <div style="margin: 40px 0; padding: 24px; background: var(--surface); border: 3px solid var(--border); box-shadow: 4px 4px 0px var(--border);">
+                    <p style="margin: 0; color: var(--text-muted); font-weight: 500;">💡 <strong>Want more?</strong> Check out the <a href="https://github.com/thelinuxlich/go-go-scope/tree/main/examples" target="_blank">examples directory</a> for complete working samples including OpenTelemetry tracing, Prometheus metrics, and framework integrations.</p>
                 </div>
             </section>
 
@@ -3119,11 +3197,12 @@ app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) =
             { title: 'Quick Start', desc: 'Get started in 5 minutes', href: '#quickstart' },
             // Examples
             { title: 'Examples', desc: 'Real-world usage patterns', href: '#examples' },
-            { title: 'Resilient HTTP Client', desc: 'Retry & circuit breaker pattern', href: '#examples' },
-            { title: 'Data Pipeline', desc: 'Stream processing with metrics', href: '#examples' },
-            { title: 'WebSocket Fan-out', desc: 'Real-time broadcasting', href: '#examples' },
-            { title: 'DB Transactions', desc: 'Connection pooling & transactions', href: '#examples' },
-            { title: 'Job Scheduler', desc: 'Distributed cron jobs', href: '#examples' },
+            { title: 'Resilient HTTP Client', desc: 'Retry & circuit breaker pattern', href: '#example-http-client' },
+            { title: 'Data Pipeline', desc: 'Stream processing with metrics', href: '#example-data-pipeline' },
+            { title: 'WebSocket Fan-out', desc: 'Real-time broadcasting', href: '#example-websocket' },
+            { title: 'DB Transactions', desc: 'Connection pooling & transactions', href: '#example-db-transaction' },
+            { title: 'Job Scheduler', desc: 'Distributed cron jobs', href: '#example-scheduler' },
+            { title: 'Distributed Lock', desc: 'Redis-backed distributed locking', href: '#example-distributed-lock' },
             // Core Concepts
             { title: 'The Scope', desc: 'Understanding scopes', href: '#scope' },
             { title: 'The Task', desc: 'Working with tasks', href: '#task' },
@@ -3332,7 +3411,8 @@ app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) =
 
             navLinks.forEach(link => {
                 link.classList.remove('active');
-                if (link.getAttribute('href') === `#${current}`) {
+                // Only set active on non-sub links to avoid highlighting multiple items
+                if (!link.classList.contains('sub') && link.getAttribute('href') === `#${current}`) {
                     link.classList.add('active');
                 }
             });
