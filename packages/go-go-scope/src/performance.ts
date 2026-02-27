@@ -242,6 +242,12 @@ export interface BenchmarkOptions {
 	iterations?: number;
 	/** Minimum duration in milliseconds */
 	minDuration?: number;
+	/**
+	 * Run benchmark in a worker thread.
+	 * Useful for CPU-intensive benchmarks that would block the main thread.
+	 * @default false
+	 */
+	worker?: boolean;
 }
 
 export interface BenchmarkResult {
@@ -255,6 +261,77 @@ export interface BenchmarkResult {
 }
 
 /**
+ * Run a benchmark in a worker thread
+ */
+async function benchmarkInWorker(
+	name: string,
+	fn: () => void,
+	options: BenchmarkOptions,
+): Promise<BenchmarkResult> {
+	const { WorkerPool } = await import("./worker-pool.js");
+	const pool = new WorkerPool({ size: 1 });
+
+	try {
+		const fnString = fn.toString();
+		const { warmup = 100, iterations = 1000, minDuration = 1000 } = options;
+
+		// Execute benchmark in worker
+		return await pool.execute<
+			{
+				name: string;
+				fnString: string;
+				opts: { warmup: number; iterations: number; minDuration: number };
+			},
+			BenchmarkResult
+		>(
+			(data) => {
+				// biome-ignore lint/security/noGlobalEval: Required for worker threads
+				const workerFn = eval(`(${data.fnString})`);
+				const { warmup, iterations, minDuration } = data.opts;
+
+				// Warmup
+				for (let i = 0; i < warmup; i++) {
+					workerFn();
+				}
+
+				// Run benchmark
+				const times: number[] = [];
+				const startTime = performance.now();
+
+				while (
+					times.length < iterations &&
+					performance.now() - startTime < minDuration * 10
+				) {
+					const iterStart = performance.now();
+					workerFn();
+					const iterEnd = performance.now();
+					times.push(iterEnd - iterStart);
+				}
+
+				const totalDuration = times.reduce((a, b) => a + b, 0);
+				const avgDuration = totalDuration / times.length;
+				const minDuration_ = Math.min(...times);
+				const maxDuration = Math.max(...times);
+				const opsPerSecond = 1000 / avgDuration;
+
+				return {
+					name: data.name,
+					iterations: times.length,
+					totalDuration,
+					avgDuration,
+					minDuration: minDuration_,
+					maxDuration,
+					opsPerSecond,
+				};
+			},
+			{ name, fnString, opts: { warmup, iterations, minDuration } },
+		);
+	} finally {
+		await pool[Symbol.asyncDispose]();
+	}
+}
+
+/**
  * Run a benchmark
  */
 export async function benchmark(
@@ -262,6 +339,13 @@ export async function benchmark(
 	fn: () => Promise<void> | void,
 	options: BenchmarkOptions = {},
 ): Promise<BenchmarkResult> {
+	// Run in worker thread if requested
+	if (options.worker) {
+		// Worker threads only support sync functions
+		// biome-ignore lint/suspicious/noAsyncPromiseExecutor: Worker execution
+		return benchmarkInWorker(name, fn as () => void, options);
+	}
+
 	const warmup = options.warmup ?? 100;
 	const iterations = options.iterations ?? 1000;
 	const minDuration = options.minDuration ?? 1000;

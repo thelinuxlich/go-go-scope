@@ -539,6 +539,26 @@ export interface RaceOptions {
 	 * task in the queue will be started.
 	 */
 	concurrency?: number;
+	/**
+	 * Use worker threads for CPU-intensive tasks.
+	 * When specified, tasks run in worker threads for true parallelism.
+	 * @default undefined (runs in main thread)
+	 * @example
+	 * ```typescript
+	 * await race([
+	 *   () => computeHash(data1),
+	 *   () => computeHash(data2),
+	 * ], {
+	 *   workers: { threads: 2, idleTimeout: 30000 }
+	 * })
+	 * ```
+	 */
+	workers?: {
+		/** Number of worker threads (default: CPU count - 1) */
+		threads: number;
+		/** Idle timeout in milliseconds (default: 60000) */
+		idleTimeout?: number;
+	};
 }
 
 /**

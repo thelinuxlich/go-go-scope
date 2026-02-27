@@ -605,9 +605,36 @@ for (const [err, result] of results) {
 }
 ```
 
-### Using WorkerPool Directly
+### Using `race()` with Workers
 
-For more control, use the `WorkerPool` class:
+Race multiple CPU-intensive tasks and get the first result:
+
+```typescript
+import { race } from "go-go-scope";
+
+// Race multiple hash computations - first to complete wins
+const [err, winner] = await race([
+  () => computeHash(data1),
+  () => computeHash(data2),
+  () => computeHash(data3),
+], { 
+  workers: { threads: 3 },           // Use 3 worker threads
+  requireSuccess: true  // Only count successful results
+});
+
+if (err) console.error('All failed:', err);
+else console.log('Winner:', winner);
+```
+
+**Use cases for racing with workers:**
+- Try multiple algorithms, use the fastest result
+- Query multiple data sources with same computation
+- Brute-force search with different strategies
+- Redundant computation for reliability
+
+### Using WorkerPool Directly (Advanced)
+
+For advanced use cases, you can use `WorkerPool` directly. This is primarily for internal use and library authors - most applications should use `parallel()`, `race()`, `scope.task()`, or `benchmark()` with worker options instead.
 
 ```typescript
 import { WorkerPool } from "go-go-scope";
@@ -615,9 +642,6 @@ import { WorkerPool } from "go-go-scope";
 await using pool = new WorkerPool({
   size: 4,                    // Number of workers
   idleTimeout: 60000,         // Keep workers alive for 1 minute
-  resourceLimits: {
-    maxOldGenerationSizeMb: 512
-  }
 });
 
 // Single execution
@@ -827,8 +851,8 @@ const [err, processed] = await s.parallel(
     return { name: img, size: compressed.length };
   }),
   { 
-    workers: 4,              // Use 4 worker threads
-    workerIdleTimeout: 30000 // Keep idle for 30s
+    workers: { threads: 4 },              // Use 4 worker threads
+    idleTimeout: 30000 // Keep idle for 30s
   }
 );
 

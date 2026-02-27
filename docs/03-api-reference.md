@@ -30,7 +30,7 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.onDispose(callback)`](#scopeondisposecallback)
   - [`scope.tokenBucket(options)`](#scopetokenbucketoptions)
 - [Additional Classes](#additional-classes)
-  - [`WorkerPool`](#workerpool)
+  - [`WorkerPool`](#workerpool) (advanced/internal use)
   - [`AsyncDisposableResource`](#asyncdisposableresource)
   - [`TokenBucket`](#tokenbucket)
   - [`GracefulShutdownController`](#gracefulshutdowncontroller)
@@ -877,6 +877,7 @@ race<T>(
     requireSuccess?: boolean
     timeout?: number
     concurrency?: number
+    workers?: { threads: number; idleTimeout?: number }  // Use worker threads (v2.4.0+)
   }
 ): Promise<Result<unknown, T>>
 ```
@@ -889,6 +890,9 @@ race<T>(
 | `options.requireSuccess` | `boolean` | Only successful results count as winners (default: false) |
 | `options.timeout` | `number` | Timeout in milliseconds |
 | `options.concurrency` | `number` | Max concurrent tasks (default: unlimited) |
+| `options.workers` | `{ threads: number; idleTimeout?: number }` | Worker thread configuration (v2.4.0+) |
+| `options.workers.threads` | `number` | Number of worker threads |
+| `options.workers.idleTimeout` | `number` | Idle timeout for worker pool in ms (default: 60000) |
 
 **Returns:** `Promise<Result<unknown, T>>` - Result tuple of the winner
 
@@ -924,6 +928,16 @@ const [err, winner] = await s.race([
   () => fetch(url5),
 ], { concurrency: 2, requireSuccess: true })
 
+// Race with worker threads for CPU-intensive tasks (v2.4.0+)
+const [err, hash] = await race([
+  () => computeHash(data, 'sha256'),
+  () => computeHash(data, 'sha512'),
+  () => computeHash(data, 'blake2b'),
+], { 
+  workers: { threads: 3 },  // Use 3 worker threads
+  requireSuccess: true       // First successful hash wins
+})
+
 if (err) {
   console.log('All racers failed:', err)
 } else {
@@ -958,8 +972,9 @@ parallel<T extends readonly ((signal: AbortSignal) => Promise<unknown>)[]>(
 | `options.concurrency` | `number` | Max concurrent operations (default: scope's limit or unlimited) |
 | `options.onProgress` | Function | Called after each task completes with `(completed, total, result)` |
 | `options.continueOnError` | `boolean` | Continue processing on error (default: false) |
-| `options.workers` | `number` | Number of worker threads for CPU-intensive tasks (v2.4.0+) |
-| `options.workerIdleTimeout` | `number` | Timeout in ms before idle workers are terminated (default: 60000) |
+| `options.workers` | `{ threads: number; idleTimeout?: number }` | Worker thread configuration (v2.4.0+) |
+| `options.workers.threads` | `number` | Number of worker threads |
+| `options.workers.idleTimeout` | `number` | Idle timeout for worker pool in ms (default: 60000) |
 
 **Returns:** `Promise<[Result<E, T1>, Result<E, T2>, ...]>` - Tuple where each element is a `Result` corresponding to the factory at the same index. TypeScript preserves the individual return types of each factory.
 
@@ -1022,7 +1037,7 @@ const [result1, result2, result3] = await parallel(
     () => heavyComputation(2000000),
     () => heavyComputation(3000000),
   ],
-  { workers: 4 }  // Use 4 worker threads
+  { workers: { threads: 4 } }  // Use 4 worker threads
 )
 ```
 
@@ -2213,10 +2228,10 @@ if (await bucket.tryConsume(1)) {
 
 ### `WorkerPool`
 
-A pool of worker threads for executing CPU-intensive tasks in parallel (v2.4.0+).
+A pool of worker threads for executing CPU-intensive tasks in parallel (v2.4.0+). **For advanced/internal use** - most users should use `parallel()`, `race()`, `scope.task()`, or `benchmark()` with worker options instead.
 
 ```typescript
-import { WorkerPool, workerPool } from "go-go-scope";
+import { WorkerPool } from "go-go-scope";
 
 // Create a pool with 4 workers
 await using pool = new WorkerPool({ size: 4 });
@@ -2517,6 +2532,37 @@ const result = await benchmark(
 console.log(result);
 // { name: 'fetch-data', avgDuration: 1.25, opsPerSecond: 800, ... }
 ```
+
+#### Benchmark with Worker Threads (v2.4.0+)
+
+Run CPU-intensive benchmarks in a worker thread to avoid blocking the main thread:
+
+```typescript
+// CPU-intensive benchmark runs in worker thread
+const result = await benchmark(
+  'fibonacci-calc',
+  () => {
+    // Self-contained function (no external references)
+    function fib(n: number): number {
+      return n < 2 ? n : fib(n - 1) + fib(n - 2);
+    }
+    fib(35); // Computationally expensive
+  },
+  {
+    warmup: 10,
+    iterations: 100,
+    worker: true  // Run in worker thread
+  }
+);
+
+console.log(`Average: ${result.avgDuration}ms`);
+console.log(`Ops/sec: ${result.opsPerSecond}`);
+```
+
+**Benefits of worker benchmarks:**
+- Doesn't block the main thread event loop
+- More accurate timing for CPU-bound operations
+- Can benchmark without affecting application responsiveness
 
 ---
 

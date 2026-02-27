@@ -66,7 +66,7 @@ async function example2_ParallelWorkers() {
         return fib(35);
       },
     ],
-    { workers: 3 }  // Use 3 worker threads
+    { workers: { threads: 3 } }  // Use 3 worker threads
   );
   
   const duration = Date.now() - start;

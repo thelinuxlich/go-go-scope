@@ -45,10 +45,13 @@ export async function parallel<
 			result: Result<unknown, unknown>,
 		) => void;
 		continueOnError?: boolean;
-		/** Number of worker threads to use for CPU-intensive tasks */
-		workers?: number;
-		/** Timeout in ms before idle workers are terminated. Default: 60000 */
-		workerIdleTimeout?: number;
+		/** Use worker threads for CPU-intensive tasks */
+		workers?: {
+			/** Number of worker threads */
+			threads: number;
+			/** Timeout in ms before idle workers are terminated. Default: 60000 */
+			idleTimeout?: number;
+		};
 	},
 ): Promise<ParallelResults<T>> {
 	const {
@@ -56,7 +59,6 @@ export async function parallel<
 		onProgress,
 		continueOnError = false,
 		workers,
-		workerIdleTimeout,
 	} = options ?? {};
 
 	if (factories.length === 0) {
@@ -74,7 +76,7 @@ export async function parallel<
 			"starting parallel execution (tasks: %d, concurrency: %d, workers: %s, continueOnError: %s)",
 			total,
 			concurrency > 0 ? concurrency : "unlimited",
-			workers ? workers : "none",
+			workers ? workers.threads : "none",
 			continueOnError,
 		);
 	}
@@ -88,10 +90,10 @@ export async function parallel<
 	}
 
 	// Use worker threads if specified
-	if (workers !== undefined && workers > 0) {
+	if (workers !== undefined && workers.threads > 0) {
 		return parallelWithWorkers(factories, {
-			workers,
-			workerIdleTimeout,
+			workers: workers.threads,
+			workerIdleTimeout: workers.idleTimeout,
 			onProgress,
 			continueOnError,
 			signal: options?.signal,

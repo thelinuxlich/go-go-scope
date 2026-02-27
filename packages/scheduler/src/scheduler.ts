@@ -185,11 +185,13 @@ export class Scheduler<
 
 	// Worker pool for CPU-intensive schedules
 	private workerPool?: WorkerPool;
+	private readonly workerPoolOptions?: { size?: number; idleTimeout?: number };
 
 	[Symbol.asyncDispose]!: () => Promise<void>;
 
 	constructor(options: SchedulerOptions) {
 		this.options = options;
+		this.workerPoolOptions = options.workerPool;
 
 		// Create internal scope if not provided
 		if (options.scope) {
@@ -1344,9 +1346,12 @@ export class Scheduler<
 			const useWorker = handlerOpts?.worker ?? false;
 			
 			if (useWorker) {
-				// Lazy-create worker pool
+				// Lazy-create worker pool with configured options
 				if (!this.workerPool) {
-					this.workerPool = new WorkerPool();
+					this.workerPool = new WorkerPool({
+						size: this.workerPoolOptions?.size,
+						idleTimeout: this.workerPoolOptions?.idleTimeout,
+					});
 				}
 				
 				// Execute handler in worker thread

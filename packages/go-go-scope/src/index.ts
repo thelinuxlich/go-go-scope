@@ -35,7 +35,7 @@ export {
 // Re-export logger
 export { ConsoleLogger, createLogger, NoOpLogger } from "./logger.js";
 export { parallel } from "./parallel.js";
-// parallel is available as scope.parallel()
+// race is available as scope.race()
 // Re-export performance utilities
 export {
 	type BenchmarkOptions,
@@ -69,6 +69,8 @@ export type {
 	PriorityComparator,
 } from "./priority-channel.js";
 export { PriorityChannel } from "./priority-channel.js";
+// parallel is available as scope.parallel()
+export { race } from "./race.js";
 // race is available as scope.race()
 // debounce and throttle are available as scope.debounce() and scope.throttle()
 export type { HealthCheckResult } from "./resource-pool.js";
@@ -117,14 +119,11 @@ export type {
 	TaskOptions,
 	ThrottleOptions,
 } from "./types.js";
-// Re-export worker pool
-export {
-	WorkerPool,
-	type WorkerPoolOptions,
-	workerPool,
-} from "./worker-pool.js";
-
 // Testing utilities are available via 'go-go-scope/testing' import
+
+// Internal: WorkerPool is exported for advanced use cases and internal packages.
+// Most users should use `parallel()`, `race()`, `scope.task()`, or `benchmark()` with worker options instead.
+export { WorkerPool } from "./worker-pool.js";
 
 // Scheduler module - available via 'go-go-scope/scheduler' import
 // import { Scheduler, CronPresets } from 'go-go-scope/scheduler'

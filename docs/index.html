@@ -2000,8 +2000,7 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
     concurrency?: <span class="type">number</span>
     onProgress?: (completed: <span class="type">number</span>, total: <span class="type">number</span>, result: <span class="type">Result</span>) => <span class="type">void</span>
     continueOnError?: <span class="type">boolean</span>
-    workers?: <span class="type">number</span>           <span class="comment">// Use worker threads (v2.4.0+)</span>
-    workerIdleTimeout?: <span class="type">number</span>  <span class="comment">// Worker pool idle timeout in ms (v2.4.0+)</span>
+    workers?: { threads: <span class="type">number</span>; idleTimeout?: <span class="type">number</span> }  <span class="comment">// Worker thread config (v2.4.0+)</span>
   }
 ): <span class="type">Promise</span>&lt;<span class="type">ParallelResults</span>&lt;T&gt;&gt;</code></pre>
 
@@ -2379,8 +2378,8 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
   <span class="keyword">async</span> [<span class="type">Symbol</span>.asyncDispose](): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
 }</code></pre>
 
-    <h3 id="workerpool-class">WorkerPool Class (v2.4.0+)</h3>
-    <p>Manages a pool of worker threads for CPU-intensive operations.</p>
+    <h3 id="workerpool-class">WorkerPool Class (v2.4.0+) - Advanced Use</h3>
+    <p>Manages a pool of worker threads for CPU-intensive operations. <strong>For advanced/internal use</strong> - most users should use <code>parallel()</code>, <code>race()</code>, <code>scope.task()</code>, or <code>benchmark()</code> with worker options instead.</p>
     <pre><code><span class="keyword">class</span> <span class="type">WorkerPool</span> <span class="keyword">implements</span> <span class="type">AsyncDisposable</span> {
   <span class="keyword">constructor</span>(options?: {
     size?: <span class="type">number</span>           <span class="comment">// Pool size (default: CPU count)</span>
@@ -3324,7 +3323,7 @@ app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) =
             { title: 'MemoryTracker', desc: 'Memory tracking', href: '#memorytracker-class' },
             { title: 'MetricsReporter', desc: 'Metrics reporting', href: '#metricsreporter-class' },
             { title: 'AsyncDisposableResource', desc: 'Resource wrapper', href: '#asyncdisposableresource-class' },
-            { title: 'WorkerPool', desc: 'Worker thread pool (v2.4.0+)', href: '#workerpool-class' },
+            { title: 'WorkerPool', desc: 'Worker thread pool (advanced)', href: '#workerpool-class' },
             // Stream API
             { title: 'Stream', desc: 'Stream class', href: '#stream-class' },
             { title: 'stream.map()', desc: 'Transform values', href: '#stream-map' },

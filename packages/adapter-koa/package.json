@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/adapter-koa",
-	"version": "2.3.1",
+	"version": "2.4.0",
 	"description": "Koa adapter for go-go-scope - request-scoped structured concurrency",
 	"type": "module",
 	"main": "./dist/index.mjs",

@@ -36,7 +36,7 @@ describe("parallel() with workers", () => {
 							})(10),
 						),
 				],
-				{ workers: 2 },
+				{ workers: { threads: 2 } },
 			);
 
 			expect(results).toHaveLength(3);
@@ -53,7 +53,7 @@ describe("parallel() with workers", () => {
 					() => Promise.resolve(2),
 					() => Promise.resolve(3),
 				],
-				{ workers: 2 },
+				{ workers: { threads: 2 } },
 			);
 
 			expect(results.map((r) => r[1])).toEqual([1, 2, 3]);
@@ -66,7 +66,7 @@ describe("parallel() with workers", () => {
 					() => Promise.reject(new Error("Task 2 failed")),
 					() => Promise.resolve(3),
 				],
-				{ workers: 2, continueOnError: true },
+				{ workers: { threads: 2 }, continueOnError: true },
 			);
 
 			expect(results).toHaveLength(3);
@@ -92,7 +92,7 @@ describe("parallel() with workers", () => {
 							setTimeout(() => resolve(2), 1000);
 						}),
 				],
-				{ workers: 2, signal: controller.signal },
+				{ workers: { threads: 2 }, signal: controller.signal },
 			);
 
 			// Cancel immediately
@@ -125,7 +125,7 @@ describe("parallel() with workers", () => {
 					() => Promise.resolve(cpuTask()),
 					() => Promise.resolve(cpuTask()),
 				],
-				{ workers: 2 },
+				{ workers: { threads: 2 } },
 			);
 			const workerDuration = Date.now() - workerStart;
 
@@ -168,11 +168,11 @@ describe("parallel() with workers", () => {
 	});
 
 	describe("worker options", () => {
-		test("uses custom workerIdleTimeout", async () => {
+		test("uses custom worker idleTimeout", async () => {
 			// Just verify it doesn't throw with custom timeout
 			const results = await parallel(
 				[() => Promise.resolve(1), () => Promise.resolve(2)],
-				{ workers: 2, workerIdleTimeout: 1000 },
+				{ workers: { threads: 2, idleTimeout: 1000 } },
 			);
 
 			expect(results).toHaveLength(2);
@@ -183,7 +183,7 @@ describe("parallel() with workers", () => {
 		test("falls back to normal execution when workers is 0", async () => {
 			const results = await parallel(
 				[() => Promise.resolve(1), () => Promise.resolve(2)],
-				{ workers: 0 },
+				{ workers: { threads: 0 } },
 			);
 
 			expect(results).toHaveLength(2);
@@ -194,7 +194,7 @@ describe("parallel() with workers", () => {
 
 	describe("empty factories", () => {
 		test("returns empty array when factories is empty", async () => {
-			const results = await parallel([], { workers: 2 });
+			const results = await parallel([], { workers: { threads: 2 } });
 			expect(results).toEqual([]);
 		});
 	});
@@ -206,7 +206,7 @@ describe("parallel() with workers", () => {
 					() => Promise.resolve([1, 2, 3]),
 					() => Promise.resolve([4, 5, 6]),
 				],
-				{ workers: 2 },
+				{ workers: { threads: 2 } },
 			);
 
 			expect(results[0][1]).toEqual([1, 2, 3]);
@@ -219,7 +219,7 @@ describe("parallel() with workers", () => {
 					() => Promise.resolve({ a: 1, b: 2 }),
 					() => Promise.resolve({ c: 3, d: 4 }),
 				],
-				{ workers: 2 },
+				{ workers: { threads: 2 } },
 			);
 
 			expect(results[0][1]).toEqual({ a: 1, b: 2 });

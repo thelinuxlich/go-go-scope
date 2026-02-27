@@ -6,6 +6,7 @@ import createDebug from "debug";
 
 import { Scope } from "./scope.js";
 import type { RaceOptions, Result } from "./types.js";
+import { WorkerPool } from "./worker-pool.js";
 
 const debugScope = createDebug("go-go-scope:race");
 
@@ -64,6 +65,13 @@ function createAggregateError(errors: unknown[]): Error {
  *   () => fetch(url4),
  *   () => fetch(url5),
  * ], { concurrency: 2 })
+ *
+ * // Race with worker threads for CPU-intensive tasks
+ * const winner = await race([
+ *   () => computeHash(data1),
+ *   () => computeHash(data2),
+ *   () => computeHash(data3),
+ * ], { workers: { threads: 3 }, requireSuccess: true })
  * ```
  */
 export async function race<T>(
@@ -95,6 +103,21 @@ export async function race<T>(
 			debugScope("already aborted");
 		}
 		return [options.signal.reason, undefined];
+	}
+
+	// Use worker threads if requested
+	if (options?.workers && options.workers.threads > 0) {
+		if (debugScope.enabled) {
+			debugScope("using worker threads: %d", options.workers.threads);
+		}
+		return raceWithWorkers(factories, {
+			workers: options.workers.threads,
+			workerIdleTimeout: options.workers.idleTimeout,
+			requireSuccess,
+			timeout,
+			concurrency,
+			signal: options.signal,
+		});
 	}
 
 	const s = new Scope({ signal: options?.signal });
@@ -317,5 +340,244 @@ export async function race<T>(
 	} finally {
 		// Clean up scope - cancels all tasks
 		await s[Symbol.asyncDispose]();
+	}
+}
+
+/**
+ * Race multiple tasks using worker threads.
+ * This is for CPU-intensive synchronous functions that need to run in parallel.
+ */
+async function raceWithWorkers<T>(
+	factories: readonly ((signal: AbortSignal) => Promise<T>)[],
+	options: {
+		workers: number;
+		workerIdleTimeout?: number;
+		requireSuccess: boolean;
+		timeout?: number;
+		concurrency: number;
+		signal?: AbortSignal;
+	},
+): Promise<Result<unknown, T>> {
+	const {
+		workers,
+		workerIdleTimeout,
+		requireSuccess,
+		timeout,
+		concurrency,
+		signal,
+	} = options;
+	const totalTasks = factories.length;
+
+	// Create worker pool
+	const pool = new WorkerPool({
+		size: workers,
+		idleTimeout: workerIdleTimeout,
+	});
+
+	// Set up cancellation handling
+	let abortHandler: (() => void) | undefined;
+	if (signal) {
+		abortHandler = () => {
+			void pool[Symbol.asyncDispose]();
+		};
+		signal.addEventListener("abort", abortHandler, { once: true });
+	}
+
+	// Set up timeout if specified
+	let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+	try {
+		const debugEnabled = debugScope.enabled;
+
+		// Create timeout promise if needed - resolves with error Result on timeout
+		const timeoutPromise = timeout
+			? new Promise<{ idx: number; result: Result<unknown, T> }>((resolve) => {
+					timeoutId = setTimeout(() => {
+						resolve({
+							idx: -1,
+							result: [new Error("Race timeout"), undefined],
+						});
+					}, timeout);
+				})
+			: undefined;
+
+		// Helper to execute a factory in a worker
+		const executeInWorker = async (
+			factory: (signal: AbortSignal) => Promise<T>,
+			idx: number,
+		): Promise<{ idx: number; result: Result<unknown, T> }> => {
+			const factoryFn = factory.toString();
+
+			try {
+				const result = await pool.execute<string, T>((fnString) => {
+					// biome-ignore lint/security/noGlobalEval: Required for worker threads
+					const fn = eval(`(${fnString})`);
+					return fn({ aborted: false });
+				}, factoryFn);
+
+				if (debugEnabled) {
+					debugScope("worker task %d/%d completed", idx + 1, totalTasks);
+				}
+
+				return { idx, result: [undefined, result] };
+			} catch (error) {
+				if (debugEnabled) {
+					debugScope("worker task %d/%d failed", idx + 1, totalTasks);
+				}
+				return {
+					idx,
+					result: [
+						error instanceof Error ? error : new Error(String(error)),
+						undefined,
+					],
+				};
+			}
+		};
+
+		// If no concurrency limit, run all tasks at once
+		if (concurrency <= 0 || concurrency >= totalTasks) {
+			const promises = factories.map((factory, idx) =>
+				executeInWorker(factory, idx),
+			);
+
+			// Race all tasks with optional timeout
+			const racePromise = timeoutPromise
+				? Promise.race([Promise.all(promises), timeoutPromise])
+				: Promise.race(promises);
+
+			const winner = await racePromise;
+
+			// Clear timeout if set
+			if (timeoutId) clearTimeout(timeoutId);
+
+			// Handle array result from Promise.all (timeout case)
+			if (Array.isArray(winner)) {
+				// Timeout occurred, all tasks completed but we need to check for success
+				if (requireSuccess) {
+					const firstSuccess = winner.find((w) => !w.result[0]);
+					if (firstSuccess) return firstSuccess.result;
+					return [new Error("All tasks failed"), undefined];
+				}
+				return winner[0]?.result ?? [new Error("Race failed"), undefined];
+			}
+
+			// If requireSuccess and winner is an error, find first success
+			if (requireSuccess && winner.result[0]) {
+				const allResults = await Promise.all(promises);
+				const firstSuccess = allResults.find((r) => !r.result[0]);
+				if (firstSuccess) return firstSuccess.result;
+				return [
+					createAggregateError(
+						allResults.map((r) => r.result[0]).filter(Boolean),
+					),
+					undefined,
+				];
+			}
+
+			return winner.result;
+		}
+
+		// With concurrency limit - run tasks in batches
+		if (debugEnabled) {
+			debugScope(
+				"running race with workers and concurrency limit: %d",
+				concurrency,
+			);
+		}
+
+		let currentIndex = 0;
+		const runningTasks: Promise<{ idx: number; result: Result<unknown, T> }>[] =
+			[];
+		const taskIdxMap = new Map<
+			Promise<{ idx: number; result: Result<unknown, T> }>,
+			number
+		>();
+
+		// Start initial batch
+		const initialBatch = Math.min(concurrency, totalTasks);
+		for (let i = 0; i < initialBatch; i++) {
+			const factory = factories[currentIndex];
+			if (!factory) break;
+			const task = executeInWorker(factory, currentIndex);
+			runningTasks.push(task);
+			taskIdxMap.set(task, currentIndex);
+			currentIndex++;
+		}
+
+		// Keep racing until we have a winner
+		while (runningTasks.length > 0) {
+			const competitors: Promise<
+				{ idx: number; result: Result<unknown, T> } | Result<unknown, T>
+			>[] = [...runningTasks];
+			if (timeoutPromise) competitors.push(timeoutPromise);
+
+			const winner = await Promise.race(competitors);
+
+			// Check if it's a timeout result
+			if (isResultTuple<T>(winner)) {
+				return winner;
+			}
+
+			// Find and remove the finished task
+			const finishedTaskIdx = runningTasks.findIndex(
+				(t) => taskIdxMap.get(t) === winner.idx,
+			);
+			if (finishedTaskIdx >= 0) {
+				const finishedTask = runningTasks[finishedTaskIdx];
+				if (finishedTask) {
+					runningTasks.splice(finishedTaskIdx, 1);
+					taskIdxMap.delete(finishedTask);
+				}
+			}
+
+			// Check if this is a valid winner
+			if (!requireSuccess || !winner.result[0]) {
+				if (debugEnabled) {
+					debugScope(
+						"worker race winner: task %d/%d",
+						winner.idx + 1,
+						totalTasks,
+					);
+				}
+				// Clear timeout if set
+				if (timeoutId) clearTimeout(timeoutId);
+				return winner.result;
+			}
+
+			// Winner was an error and requireSuccess is true - continue
+			if (debugEnabled) {
+				debugScope(
+					"worker task %d/%d failed (requireSuccess), continuing...",
+					winner.idx + 1,
+					totalTasks,
+				);
+			}
+
+			// Start next task if available
+			if (currentIndex < totalTasks) {
+				const factory = factories[currentIndex];
+				if (factory) {
+					const nextTask = executeInWorker(factory, currentIndex);
+					runningTasks.push(nextTask);
+					taskIdxMap.set(nextTask, currentIndex);
+					currentIndex++;
+				}
+			} else if (runningTasks.length === 0) {
+				// No more tasks and none running - all failed
+				if (timeoutId) clearTimeout(timeoutId);
+				return [new Error("All race competitors failed"), undefined];
+			}
+		}
+
+		// Should not reach here
+		if (timeoutId) clearTimeout(timeoutId);
+		return [new Error("Race failed"), undefined];
+	} finally {
+		// Clean up
+		if (timeoutId) clearTimeout(timeoutId);
+		if (signal && abortHandler) {
+			signal.removeEventListener("abort", abortHandler);
+		}
+		await pool[Symbol.asyncDispose]();
 	}
 }

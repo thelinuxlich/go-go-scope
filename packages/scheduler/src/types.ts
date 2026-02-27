@@ -873,6 +873,17 @@ export interface SchedulerOptions {
 	 * Custom path for the web UI (default: "/")
 	 */
 	webUIPath?: string;
+	/**
+	 * Worker pool configuration for CPU-intensive scheduled jobs.
+	 * When handlers are registered with `worker: true`, this pool will be used
+	 * to execute them in worker threads.
+	 */
+	workerPool?: {
+		/** Number of worker threads (default: CPU count - 1) */
+		size?: number;
+		/** Idle timeout in ms before workers terminate (default: 60000) */
+		idleTimeout?: number;
+	};
 }
 
 /**
