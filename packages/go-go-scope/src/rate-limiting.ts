@@ -2,7 +2,12 @@
  * Rate limiting utilities for go-go-scope - Debounce and throttle
  */
 
-import type { DebounceOptions, DisposableScope, Result, ThrottleOptions } from "./types.js";
+import type {
+	DebounceOptions,
+	DisposableScope,
+	Result,
+	ThrottleOptions,
+} from "./types.js";
 
 /**
  * Create a debounced function that delays invoking the provided function

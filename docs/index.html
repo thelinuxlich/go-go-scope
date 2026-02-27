@@ -1573,6 +1573,9 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
     key: <span class="type">string</span> | ((...args: <span class="type">unknown</span>[]) => <span class="type">string</span>)
     ttl?: <span class="type">number</span>
   }
+  
+  <span class="comment">/** Execute task in a worker thread (v2.4.0+). Functions must be self-contained */</span>
+  worker?: <span class="type">boolean</span>
 }
 
 <span class="comment">/** Wraps ALL errors in the provided class */</span>
@@ -1990,13 +1993,15 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
 ): <span class="type">Promise</span>&lt;<span class="type">Result</span>&lt;<span class="type">unknown</span>, T&gt;&gt;</code></pre>
 
     <h5 id="scope-parallel" class="section-anchor"><code>scope.parallel(factories, options?)</code></h5>
-    <p>Execute tasks in parallel with optional concurrency limit.</p>
+    <p>Execute tasks in parallel with optional concurrency limit. Supports worker threads for CPU-intensive tasks (v2.4.0+).</p>
     <pre><code><span class="function">parallel</span>&lt;T <span class="keyword">extends</span> readonly (() => <span class="type">Promise</span>&lt;<span class="type">unknown</span>&gt;)[]&gt;(
   factories: T,
   options?: {
     concurrency?: <span class="type">number</span>
     onProgress?: (completed: <span class="type">number</span>, total: <span class="type">number</span>, result: <span class="type">Result</span>) => <span class="type">void</span>
     continueOnError?: <span class="type">boolean</span>
+    workers?: <span class="type">number</span>           <span class="comment">// Use worker threads (v2.4.0+)</span>
+    workerIdleTimeout?: <span class="type">number</span>  <span class="comment">// Worker pool idle timeout in ms (v2.4.0+)</span>
   }
 ): <span class="type">Promise</span>&lt;<span class="type">ParallelResults</span>&lt;T&gt;&gt;</code></pre>
 
@@ -2373,6 +2378,47 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
   <span class="function">acquire</span>(): <span class="type">Promise</span>&lt;T&gt;
   <span class="keyword">async</span> [<span class="type">Symbol</span>.asyncDispose](): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
 }</code></pre>
+
+    <h3 id="workerpool-class">WorkerPool Class (v2.4.0+)</h3>
+    <p>Manages a pool of worker threads for CPU-intensive operations.</p>
+    <pre><code><span class="keyword">class</span> <span class="type">WorkerPool</span> <span class="keyword">implements</span> <span class="type">AsyncDisposable</span> {
+  <span class="keyword">constructor</span>(options?: {
+    size?: <span class="type">number</span>           <span class="comment">// Pool size (default: CPU count)</span>
+    idleTimeout?: <span class="type">number</span>   <span class="comment">// Idle timeout in ms (default: 60000)</span>
+  })
+  
+  <span class="keyword">async</span> <span class="function">execute</span>&lt;T, R&gt;(
+    fn: (data: T) => R,
+    data: T
+  ): <span class="type">Promise</span>&lt;R&gt;
+  
+  <span class="keyword">async</span> <span class="function">executeBatch</span>&lt;T, R&gt;(
+    items: T[],
+    fn: (data: T) => R,
+    options?: { ordered?: <span class="type">boolean</span> }
+  ): <span class="type">Promise</span>&lt;<span class="type">Result</span>&lt;<span class="type">unknown</span>, R&gt;[]&gt;
+  
+  <span class="keyword">async</span> [<span class="type">Symbol</span>.asyncDispose](): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
+}</code></pre>
+
+    <h4>Methods</h4>
+    <table>
+        <thead>
+            <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>execute()</code></td>
+                <td><code>execute&lt;T, R&gt;(fn, data): Promise&lt;R&gt;</code></td>
+                <td>Execute function in a worker thread</td>
+            </tr>
+            <tr>
+                <td><code>executeBatch()</code></td>
+                <td><code>executeBatch&lt;T, R&gt;(items, fn, options?): Promise&lt;Result&lt;unknown, R&gt;[]&gt;</code></td>
+                <td>Execute batch in workers. Options: <code>{ ordered?: boolean }</code></td>
+            </tr>
+        </tbody>
+    </table>
 
     <h3 id="gracefulshutdowncontroller-class">GracefulShutdownController Class</h3>
     <p>Manages graceful application shutdown.</p>
@@ -2816,8 +2862,8 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
         <tbody>
             <tr>
                 <td><code>onSchedule()</code></td>
-                <td><code>onSchedule&lt;Name&gt;(name, handler): void</code></td>
-                <td>Register job handler</td>
+                <td><code>onSchedule&lt;Name&gt;(name, handler, options?): void</code></td>
+                <td>Register job handler. Options: <code>{ worker?: boolean }</code> (v2.4.0+)</td>
             </tr>
             <tr>
                 <td><code>offSchedule()</code></td>
@@ -2867,6 +2913,20 @@ scheduler.<span class="function">on</span>(<span class="string">'jobStarted'</sp
 scheduler.<span class="function">on</span>(<span class="string">'jobCompleted'</span>, ({ job, duration }) => { })
 scheduler.<span class="function">on</span>(<span class="string">'jobFailed'</span>, ({ job, error, permanent }) => { })
 <span class="comment">// ... and many more - see SchedulerEvents type</span></code></pre>
+
+    <h4>Worker Threads (v2.4.0+)</h4>
+    <p>Execute CPU-intensive jobs in worker threads by passing <code>{ worker: true }</code> to <code>onSchedule()</code>:</p>
+    <pre><code><span class="comment">// Register handler with worker thread execution</span>
+worker.<span class="function">onSchedule</span>(<span class="string">"cpu-intensive"</span>, <span class="keyword">async</span> (job) => {
+  <span class="comment">// This runs in a worker thread - true parallelism!</span>
+  <span class="keyword">const</span> result = <span class="function">heavyComputation</span>(job.payload.data);
+  <span class="keyword">await</span> <span class="function">saveResults</span>(result);
+}, { worker: <span class="keyword">true</span> });
+
+<span class="comment">// Regular execution (main thread)</span>
+worker.<span class="function">onSchedule</span>(<span class="string">"regular-job"</span>, <span class="keyword">async</span> (job) => {
+  <span class="comment">// Runs in main thread</span>
+}, { worker: <span class="keyword">false</span> });</code></pre>
 
     <h3 id="persistence-types">Persistence Types</h3>
 
@@ -3264,6 +3324,7 @@ app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) =
             { title: 'MemoryTracker', desc: 'Memory tracking', href: '#memorytracker-class' },
             { title: 'MetricsReporter', desc: 'Metrics reporting', href: '#metricsreporter-class' },
             { title: 'AsyncDisposableResource', desc: 'Resource wrapper', href: '#asyncdisposableresource-class' },
+            { title: 'WorkerPool', desc: 'Worker thread pool (v2.4.0+)', href: '#workerpool-class' },
             // Stream API
             { title: 'Stream', desc: 'Stream class', href: '#stream-class' },
             { title: 'stream.map()', desc: 'Transform values', href: '#stream-map' },

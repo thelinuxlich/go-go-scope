@@ -25,7 +25,7 @@
 import type { Server } from "node:http";
 import createDebug from "debug";
 import type { Result, Scope } from "go-go-scope";
-import { scope } from "go-go-scope";
+import { scope, WorkerPool } from "go-go-scope";
 import { CronPresets, parseCron } from "./cron.js";
 import {
 	type CreateScheduleOptions,
@@ -36,6 +36,7 @@ import {
 	type JobStatus,
 	type JobStorage,
 	type MetricsExportOptions,
+	type OnScheduleOptions,
 	SCHEDULER_VERSION,
 	type Schedule,
 	type ScheduleDefinitions,
@@ -164,6 +165,7 @@ export class Scheduler<
 		Schedule & { handler?: ScheduleHandler }
 	>();
 	private handlers = new Map<string, ScheduleHandler>();
+	private handlerOptions = new Map<string, OnScheduleOptions>();
 	private events = new SchedulerEventEmitter();
 	private options: SchedulerOptions;
 
@@ -180,6 +182,9 @@ export class Scheduler<
 	private isLeader = false;
 	private leaderHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 	private adminState: "follower" | "leader" = "follower";
+
+	// Worker pool for CPU-intensive schedules
+	private workerPool?: WorkerPool;
 
 	[Symbol.asyncDispose]!: () => Promise<void>;
 
@@ -490,6 +495,13 @@ export class Scheduler<
 			debugScheduler("stop: stopping web UI");
 			await stopWebUI(this.webUIServer);
 			this.webUIServer = null;
+		}
+
+		// Dispose worker pool if created
+		if (this.workerPool) {
+			debugScheduler("stop: disposing worker pool");
+			await this.workerPool[Symbol.asyncDispose]().catch(() => {});
+			this.workerPool = undefined;
 		}
 
 		// Dispose internal scope if we created it
@@ -908,12 +920,16 @@ export class Scheduler<
 	onSchedule<Name extends keyof Schedules>(
 		name: Name extends string ? Name : never,
 		handler: TypedScheduleHandler<Schedules[Name]>,
+		options?: OnScheduleOptions,
 	): void {
 		// Store the handler - the runtime type is compatible because TypedScheduleHandler extends ScheduleHandler
 		this.handlers.set(name as string, handler as unknown as ScheduleHandler);
+		// Store handler options (defaults to empty object if not provided)
+		this.handlerOptions.set(name as string, options ?? {});
 		debugScheduler(
-			"onSchedule: registered handler for schedule=%s",
+			"onSchedule: registered handler for schedule=%s, worker=%s",
 			String(name),
+			options?.worker ? "true" : "false",
 		);
 		this.events.emit("handlerRegistered", { scheduleName: name as string });
 	}
@@ -926,6 +942,7 @@ export class Scheduler<
 	 */
 	offSchedule(scheduleName: string): boolean {
 		const hadHandler = this.handlers.delete(scheduleName);
+		this.handlerOptions.delete(scheduleName);
 		this.schedules.delete(scheduleName);
 
 		if (hadHandler) {
@@ -1322,7 +1339,32 @@ export class Scheduler<
 		let error: Error | undefined;
 
 		try {
-			if (scheduleWithHandler.options?.timeout) {
+			// Check if handler has worker option enabled
+			const handlerOpts = this.handlerOptions.get(job.scheduleName);
+			const useWorker = handlerOpts?.worker ?? false;
+			
+			if (useWorker) {
+				// Lazy-create worker pool
+				if (!this.workerPool) {
+					this.workerPool = new WorkerPool();
+				}
+				
+				// Execute handler in worker thread
+				const handlerString = handler.toString();
+				await this.workerPool.execute<{ handler: string; job: Job }, void>(
+					({ handler: workerHandlerString, job: workerJob }) => {
+						// biome-ignore lint/security/noGlobalEval: Required for worker thread execution
+						const workerHandler = eval(`(${workerHandlerString})`);
+						// Execute with minimal context (job only, no scope access)
+						return workerHandler(workerJob, {
+							signal: { aborted: false },
+							logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+							context: {},
+						});
+					},
+					{ handler: handlerString, job },
+				);
+			} else if (scheduleWithHandler.options?.timeout) {
 				await this.runWithTimeout(
 					handler,
 					job,

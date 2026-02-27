@@ -349,6 +349,80 @@ scheduler.onSchedule("shared-task", async (job) => {
 scheduler.offSchedule("daily-report");
 ```
 
+## Worker Threads (v2.4.0+)
+
+Execute CPU-intensive scheduled jobs in worker threads for true parallelism.
+
+### Using Worker Threads
+
+Pass `{ worker: true }` as the third parameter to `onSchedule()`:
+
+```typescript
+// Create a schedule (admin)
+await scheduler.createSchedule("data-processing", {
+  cron: "0 2 * * *",  // Daily at 2 AM
+  timeout: 300000,    // 5 minute timeout
+});
+
+// Register handler with worker option (worker)
+scheduler.onSchedule("data-processing", async (job) => {
+  // This runs in a worker thread - true parallelism!
+  const data = job.payload.data;
+  const result = heavyComputation(data);
+  await saveResults(result);
+}, { worker: true });
+```
+
+### When to Use Worker Threads
+
+**Use worker threads for:**
+- **CPU-intensive calculations** (math, data processing, image manipulation)
+- **Heavy computations** that block the event loop
+- **Parallel processing** of large datasets
+
+**Don't use worker threads for:**
+- I/O-bound operations (use regular async/await)
+- Tasks requiring access to the main thread's scope or variables
+- Quick operations (< 10ms) - worker overhead may not be worth it
+
+### Important Considerations
+
+**Handler Serialization:**
+Handlers are serialized and executed in isolation. External references won't work:
+
+```typescript
+// ❌ BAD: External reference won't work
+const helper = new DataProcessor();
+scheduler.onSchedule("process", async (job) => {
+  await helper.process(job.payload);  // Error: helper not defined
+});
+
+// ✅ GOOD: Self-contained handler
+scheduler.onSchedule("process", async (job) => {
+  // Create everything inside the handler
+  const helper = new DataProcessor();
+  await helper.process(job.payload);
+});
+```
+
+### Per-Worker Configuration
+
+Each worker can independently choose to use worker threads for the same schedule:
+
+```typescript
+// Worker 1: Uses worker threads
+const worker1 = new Scheduler({ storage });
+worker1.onSchedule("process-data", async (job) => {
+  // Runs in worker thread
+}, { worker: true });
+
+// Worker 2: Uses main thread
+const worker2 = new Scheduler({ storage });
+worker2.onSchedule("process-data", async (job) => {
+  // Runs in main thread
+}, { worker: false });
+```
+
 ## CLI & TUI Tools
 
 The scheduler includes both a CLI and an interactive TUI for management.
@@ -517,16 +591,23 @@ interface SchedulerOptions {
 
 When using `Scheduler<Schedules>`, the following methods have enhanced type safety:
 
-#### `onSchedule<Name>(name, handler)`
+#### `onSchedule<Name>(name, handler, options?)`
 
 Register a typed handler for a schedule.
 
 ```typescript
 scheduler.onSchedule<Name extends keyof Schedules>(
   name: Name extends string ? Name : never,
-  handler: (job: TypedJob<Schedules[Name]>, scope: Scope) => Promise<void>
+  handler: (job: TypedJob<Schedules[Name]>, scope: Scope) => Promise<void>,
+  options?: { worker?: boolean }
 ): void
 ```
+
+**Parameters:**
+- `name` - Schedule name
+- `handler` - Handler function receiving the job and scope
+- `options` - Optional configuration:
+  - `worker` - Execute jobs in worker threads (default: false, v2.4.0+)
 
 #### `triggerSchedule<Name>(name, payload?, options?)`
 
@@ -632,9 +713,21 @@ const allStats = await scheduler.getAllScheduleStats();
 
 ### Handler Methods
 
-#### `onSchedule(name, handler)`
+#### `onSchedule(name, handler, options?)`
 
 Register a handler for a schedule (see Type-Safe Schedules section above).
+
+```typescript
+// Basic usage
+scheduler.onSchedule("my-schedule", async (job, scope) => {
+  // Process job
+});
+
+// With worker threads (v2.4.0+)
+scheduler.onSchedule("cpu-intensive", async (job) => {
+  // Runs in worker thread
+}, { worker: true });
+```
 
 #### `offSchedule(name)`
 

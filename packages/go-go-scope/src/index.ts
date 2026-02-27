@@ -34,6 +34,7 @@ export {
 } from "./idempotency.js";
 // Re-export logger
 export { ConsoleLogger, createLogger, NoOpLogger } from "./logger.js";
+export { parallel } from "./parallel.js";
 // parallel is available as scope.parallel()
 // Re-export performance utilities
 export {
@@ -60,6 +61,7 @@ export type {
 	PersistenceAdapterOptions,
 } from "./persistence/types.js";
 export { installPlugins, type ScopePlugin } from "./plugin.js";
+export { poll } from "./poll.js";
 // poll is available as scope.poll()
 export type {
 	PrioritizedItem,
@@ -115,6 +117,12 @@ export type {
 	TaskOptions,
 	ThrottleOptions,
 } from "./types.js";
+// Re-export worker pool
+export {
+	WorkerPool,
+	type WorkerPoolOptions,
+	workerPool,
+} from "./worker-pool.js";
 
 // Testing utilities are available via 'go-go-scope/testing' import
 

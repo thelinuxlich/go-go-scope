@@ -10,15 +10,15 @@ import { CircuitBreaker } from "./circuit-breaker.js";
 import { AbortError, UnknownError } from "./errors.js";
 import { createLogger, createTaskLogger } from "./logger.js";
 import { installPlugins } from "./plugin.js";
-import {
-	debounce as debounceFn,
-	throttle as throttleFn,
-} from "./rate-limiting.js";
 import { poll as pollFn } from "./poll.js";
 import {
 	PriorityChannel,
 	type PriorityChannelOptions,
 } from "./priority-channel.js";
+import {
+	debounce as debounceFn,
+	throttle as throttleFn,
+} from "./rate-limiting.js";
 import { ResourcePool } from "./resource-pool.js";
 import { exponentialBackoff } from "./retry-strategies.js";
 import { Semaphore } from "./semaphore.js";
@@ -37,6 +37,7 @@ import type {
 	TaskOptions,
 	ThrottleOptions,
 } from "./types.js";
+import { WorkerPool } from "./worker-pool.js";
 
 const debugScope = createDebug("go-go-scope:scope");
 
@@ -141,6 +142,16 @@ export interface ScopeOptions<
 		enabled?: boolean;
 	};
 	/**
+	 * Worker pool configuration for CPU-intensive tasks.
+	 * Only used when tasks are spawned with `worker: true`.
+	 */
+	workerPool?: {
+		/** Number of worker threads (default: CPU count - 1) */
+		size?: number;
+		/** Idle timeout in ms before workers terminate (default: 60000) */
+		idleTimeout?: number;
+	};
+	/**
 	 * Optional context object accessible in all tasks.
 	 */
 	context?: Record<string, unknown>;
@@ -189,6 +200,8 @@ export class Scope<
 	private _resourceIndex = 0;
 	private readonly _persistence?: import("./persistence/types.js").PersistenceProviders;
 	readonly idempotency?: { defaultTTL?: number };
+	private _workerPool?: WorkerPool;
+	private readonly _workerPoolOptions?: { size?: number; idleTimeout?: number };
 
 	constructor(options?: ScopeOptions<Record<string, unknown>>) {
 		this.id = ++scopeIdCounter;
@@ -223,6 +236,10 @@ export class Scope<
 
 		// Set idempotency configuration
 		this.idempotency = options?.idempotency ?? options?.parent?.idempotency;
+
+		// Set worker pool options
+		this._workerPoolOptions =
+			options?.workerPool ?? options?.parent?._workerPoolOptions;
 
 		if (options?.parent) {
 			(this as unknown as { parent?: typeof options.parent }).parent =
@@ -530,35 +547,74 @@ export class Scope<
 			try {
 				let result: T;
 
-				// Create timeout promise if timeout option is set
-				let timeoutPromise: Promise<never> | undefined;
-				if (options?.timeout) {
-					timeoutPromise = new Promise((_, reject) => {
-						const timeoutId = setTimeout(() => {
-							reject(new Error(`Task timeout after ${options.timeout}ms`));
-						}, options.timeout);
-						// Clean up timeout if parent signal aborts
-						parentSignal.addEventListener(
-							"abort",
-							() => clearTimeout(timeoutId),
-							{ once: true },
-						);
-					});
-				}
+				// Execute in worker thread if requested
+				if (options?.worker) {
+					// Lazy-create worker pool with configured options
+					if (!this._workerPool) {
+						this._workerPool = new WorkerPool({
+							size: this._workerPoolOptions?.size,
+							idleTimeout: this._workerPoolOptions?.idleTimeout,
+						});
+						// Register for cleanup
+						this.registerDisposable({
+							[Symbol.dispose]: () => {
+								void this._workerPool?.[Symbol.asyncDispose]();
+							},
+						});
+					}
 
-				// Apply concurrency limit if configured
-				if (this.concurrencySemaphore) {
-					const fnPromise = this.concurrencySemaphore.acquire(async () => {
-						return wrappedFn(parentSignal);
-					});
-					result = timeoutPromise
-						? await Promise.race([fnPromise, timeoutPromise])
-						: await fnPromise;
+					// Serialize and execute function in worker
+					const fnString = fn.toString();
+					result = await this._workerPool.execute<string, T>(
+						(workerFnString) => {
+							// biome-ignore lint/security/noGlobalEval: Required for worker thread execution
+							const workerFn = eval(`(${workerFnString})`);
+							// Call with minimal context (no services/logger in worker)
+							return workerFn({
+								services: {},
+								signal: { aborted: false },
+								logger: {
+									debug: () => {},
+									info: () => {},
+									warn: () => {},
+									error: () => {},
+								},
+								context: {},
+							});
+						},
+						fnString,
+					);
 				} else {
-					const fnPromise = wrappedFn(parentSignal);
-					result = timeoutPromise
-						? await Promise.race([fnPromise, timeoutPromise])
-						: await fnPromise;
+					// Create timeout promise if timeout option is set
+					let timeoutPromise: Promise<never> | undefined;
+					if (options?.timeout) {
+						timeoutPromise = new Promise((_, reject) => {
+							const timeoutId = setTimeout(() => {
+								reject(new Error(`Task timeout after ${options.timeout}ms`));
+							}, options.timeout);
+							// Clean up timeout if parent signal aborts
+							parentSignal.addEventListener(
+								"abort",
+								() => clearTimeout(timeoutId),
+								{ once: true },
+							);
+						});
+					}
+
+					// Apply concurrency limit if configured
+					if (this.concurrencySemaphore) {
+						const fnPromise = this.concurrencySemaphore.acquire(async () => {
+							return wrappedFn(parentSignal);
+						});
+						result = timeoutPromise
+							? await Promise.race([fnPromise, timeoutPromise])
+							: await fnPromise;
+					} else {
+						const fnPromise = wrappedFn(parentSignal);
+						result = timeoutPromise
+							? await Promise.race([fnPromise, timeoutPromise])
+							: await fnPromise;
+					}
 				}
 
 				return [undefined, result] as Success<T>;

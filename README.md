@@ -40,6 +40,7 @@ else console.log("User:", data);
 | 🚦 **Cancellation Propagation** | Parent scope cancels all child tasks automatically |
 | 🔄 **Structured Concurrency** | No fire-and-forget, all tasks tracked and awaitable |
 | 🛡️ **Resilience Built-in** | Circuit breakers, retries, timeouts, idempotency |
+| 🧵 **Worker Thread Support** | Offload CPU-intensive tasks to worker threads (v2.4.0+) |
 | 📊 **Observable** | OpenTelemetry, Prometheus metrics, built-in profiling |
 | 🔌 **Framework Agnostic** | Adapters for Fastify, Express, NestJS, Hono, Koa, Hapi, Elysia |
 | 💾 **Persistence Ready** | Redis, PostgreSQL, MySQL, MongoDB, DynamoDB, SQLite adapters |
@@ -77,6 +78,12 @@ const [err3, results] = await s.parallel([
   () => fetchB(),
   () => fetchC(),
 ], { concurrency: 2 });
+
+// Offload CPU-intensive work to worker threads (v2.4.0+)
+const [err4, fib] = await s.task(
+  () => computeFibonacci(1000),
+  { worker: true }
+);
 
 // Use channels for Go-style concurrency
 const ch = s.channel<number>({ capacity: 10 });

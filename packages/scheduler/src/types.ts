@@ -173,6 +173,27 @@ export interface UpdateScheduleOptions {
 }
 
 /**
+ * Options for onSchedule handler registration
+ */
+export interface OnScheduleOptions {
+	/**
+	 * Execute jobs in worker threads (default: false).
+	 * Useful for CPU-intensive schedules that would block the event loop.
+	 * 
+	 * @example
+	 * ```typescript
+	 * // CPU-intensive schedule running in worker thread
+	 * worker.onSchedule("heavy-computation", async (job) => {
+	 *   // This runs in a worker thread
+	 *   const result = heavyCalculation(job.payload.data);
+	 *   await saveResult(result);
+	 * }, { worker: true });
+	 * ```
+	 */
+	worker?: boolean;
+}
+
+/**
  * Handler function for a schedule (provided by workers at runtime)
  */
 export type ScheduleHandler = (job: Job, scope: Scope<Record<string, unknown>>) => Promise<void>;

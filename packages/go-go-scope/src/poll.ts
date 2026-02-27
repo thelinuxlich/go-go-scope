@@ -67,9 +67,13 @@ function createPoll<T>(
 
 	// Link to parent signal if provided
 	if (options.signal) {
-		options.signal.addEventListener("abort", () => {
-			abortController.abort(options.signal?.reason);
-		}, { once: true });
+		options.signal.addEventListener(
+			"abort",
+			() => {
+				abortController.abort(options.signal?.reason);
+			},
+			{ once: true },
+		);
 	}
 
 	const executePoll = async () => {

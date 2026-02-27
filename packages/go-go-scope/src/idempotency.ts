@@ -119,9 +119,7 @@ export class InMemoryIdempotencyProvider
 	 * @returns Number of entries removed
 	 */
 	cleanup(): number {
-		// InMemoryCache handles expiration automatically on access
-		// This method is kept for API compatibility
-		return 0;
+		return this.cache.prune();
 	}
 
 	/**

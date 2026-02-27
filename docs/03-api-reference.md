@@ -30,6 +30,7 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.onDispose(callback)`](#scopeondisposecallback)
   - [`scope.tokenBucket(options)`](#scopetokenbucketoptions)
 - [Additional Classes](#additional-classes)
+  - [`WorkerPool`](#workerpool)
   - [`AsyncDisposableResource`](#asyncdisposableresource)
   - [`TokenBucket`](#tokenbucket)
   - [`GracefulShutdownController`](#gracefulshutdowncontroller)
@@ -212,6 +213,33 @@ interface ScopeOptions<ParentServices extends Record<string, unknown> = Record<s
    * Useful for storing request-scoped data like trace IDs, user IDs, etc.
    */
   context?: Record<string, unknown>
+  
+  /**
+   * Worker pool configuration for CPU-intensive tasks.
+   * Used when tasks are spawned with `worker: true`.
+   * Inherited from parent scope if not specified.
+   * 
+   * @example
+   * ```typescript
+   * await using s = scope({
+   *   workerPool: {
+   *     size: 4,           // Max 4 concurrent workers (default: CPU count - 1)
+   *     idleTimeout: 30000 // Workers terminate after 30s idle (default: 60000)
+   *   }
+   * })
+   * 
+   * // These 100 tasks will queue and execute with max 4 concurrent workers
+   * for (let i = 0; i < 100; i++) {
+   *   s.task(() => heavyComputation(i), { worker: true })
+   * }
+   * ```
+   */
+  workerPool?: {
+    /** Number of worker threads (default: CPU count - 1) */
+    size?: number
+    /** Idle timeout in milliseconds (default: 60000) */
+    idleTimeout?: number
+  }
 }
 ```
 
@@ -372,6 +400,18 @@ const [err, user] = await s.task(
     }
   }
 )
+
+// With worker thread for CPU-intensive tasks (v2.4.0+)
+const [err, result] = await s.task(
+  () => {
+    // Heavy computation runs in worker thread
+    function fibonacci(n: number): number {
+      return n < 2 ? n : fibonacci(n - 1) + fibonacci(n - 2)
+    }
+    return fibonacci(40)
+  },
+  { worker: true, timeout: 30000 }
+)
 ```
 
 ---
@@ -450,6 +490,47 @@ interface TaskOptions<E extends Error = Error> {
    * If not specified, uses the scope's `idempotency.defaultTTL`.
    */
   idempotencyTTL?: number
+  
+  /**
+   * Execute the task in a worker thread (v2.4.0+).
+   * 
+   * Useful for CPU-intensive operations that would block the event loop.
+   * The task function is serialized and executed in a separate thread,
+   * allowing true parallelism on multi-core systems.
+   * 
+   * **Important:** The function must be self-contained - it cannot reference
+   * external variables, closures, or imports. Only the function body is
+   * sent to the worker.
+   * 
+   * @example
+   * ```typescript
+   * // ✅ Good: Self-contained function
+   * const [err, result] = await s.task(
+   *   () => {
+   *     let sum = 0
+   *     for (let i = 0; i < 1000000; i++) {
+   *       sum += Math.sqrt(i)
+   *     }
+   *     return sum
+   *   },
+   *   { worker: true }
+   * )
+   * 
+   * // ❌ Bad: References external variable
+   * const n = 1000000
+   * const [err, result] = await s.task(
+   *   () => {
+   *     let sum = 0
+   *     for (let i = 0; i < n; i++) {  // Error: n is not defined
+   *       sum += Math.sqrt(i)
+   *     }
+   *     return sum
+   *   },
+   *   { worker: true }
+   * )
+   * ```
+   */
+  worker?: boolean
 }
 ```
 
@@ -533,6 +614,31 @@ const [err, user] = await s.task(
     idempotency: { 
       key: () => `create-user:${email}`,
       ttl: 300000  // 5 minutes
+    }
+  }
+)
+
+// Worker thread - offload CPU-intensive work
+const [err, result] = await s.task(
+  () => {
+    // This runs in a worker thread - true parallelism!
+    let sum = 0
+    for (let i = 0; i < 10000000; i++) {
+      sum += Math.sqrt(i)
+    }
+    return sum
+  },
+  { worker: true }
+)
+
+// Worker with retry - CPU-intensive task that might fail
+const [err, primes] = await s.task(
+  () => calculatePrimes(1000000),
+  { 
+    worker: true,
+    retry: {
+      maxRetries: 3,
+      delay: 1000
     }
   }
 )
@@ -852,6 +958,8 @@ parallel<T extends readonly ((signal: AbortSignal) => Promise<unknown>)[]>(
 | `options.concurrency` | `number` | Max concurrent operations (default: scope's limit or unlimited) |
 | `options.onProgress` | Function | Called after each task completes with `(completed, total, result)` |
 | `options.continueOnError` | `boolean` | Continue processing on error (default: false) |
+| `options.workers` | `number` | Number of worker threads for CPU-intensive tasks (v2.4.0+) |
+| `options.workerIdleTimeout` | `number` | Timeout in ms before idle workers are terminated (default: 60000) |
 
 **Returns:** `Promise<[Result<E, T1>, Result<E, T2>, ...]>` - Tuple where each element is a `Result` corresponding to the factory at the same index. TypeScript preserves the individual return types of each factory.
 
@@ -904,6 +1012,17 @@ const [r1, r2, r3] = await s.parallel(
     onProgress: (done, total) => console.log(`${done}/${total}`),
     continueOnError: true
   }
+)
+
+// With worker threads for CPU-intensive tasks (v2.4.0+)
+// Offload heavy computations to worker threads
+const [result1, result2, result3] = await parallel(
+  [
+    () => heavyComputation(1000000),
+    () => heavyComputation(2000000),
+    () => heavyComputation(3000000),
+  ],
+  { workers: 4 }  // Use 4 worker threads
 )
 ```
 
@@ -2089,6 +2208,65 @@ if (await bucket.tryConsume(1)) {
 | `reset()` | Reset bucket to full capacity |
 | `getTokens()` | Get current token count |
 | `getState()` | Get bucket state |
+
+---
+
+### `WorkerPool`
+
+A pool of worker threads for executing CPU-intensive tasks in parallel (v2.4.0+).
+
+```typescript
+import { WorkerPool, workerPool } from "go-go-scope";
+
+// Create a pool with 4 workers
+await using pool = new WorkerPool({ size: 4 });
+
+// Execute a CPU-intensive task
+const result = await pool.execute((n: number) => {
+  // This runs in a worker thread
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    sum += Math.sqrt(i);
+  }
+  return sum;
+}, 1000000);
+
+// Execute multiple tasks in batch
+const results = await pool.executeBatch(
+  [1, 2, 3, 4, 5],
+  (n: number) => {
+    // CPU-intensive work
+    let factorial = 1;
+    for (let i = 2; i <= n; i++) factorial *= i;
+    return factorial;
+  },
+  { ordered: true }
+);
+// Returns: [[undefined, 1], [undefined, 2], [undefined, 6], [undefined, 24], [undefined, 120]]
+```
+
+**WorkerPoolOptions:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `size` | `number` | Number of worker threads (default: CPU count - 1) |
+| `idleTimeout` | `number` | Milliseconds before idle workers terminate (default: 60000) |
+| `sharedMemory` | `boolean` | Enable SharedArrayBuffer (default: false) |
+| `resourceLimits` | `object` | Memory limits per worker |
+
+**WorkerPool Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `execute(fn, data, transferList?)` | Execute function in worker thread |
+| `executeBatch(items, fn, options?)` | Execute multiple tasks in parallel |
+| `stats()` | Get pool statistics (total, busy, idle, pending) |
+| `[Symbol.asyncDispose]()` | Dispose pool and terminate all workers |
+
+**Notes:**
+- Functions passed to `execute()` must be serializable (no external references)
+- Worker threads are best for CPU-intensive synchronous work
+- Use `parallel()` with `workers` option for simpler API
 
 ---
 

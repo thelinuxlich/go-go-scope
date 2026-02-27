@@ -10,6 +10,7 @@ Patterns for concurrent communication and coordination in `go-go-scope`.
 - [Channel Transformations](#channel-transformations)
 - [Broadcast Channels](#broadcast-channels)
 - [Select](#select)
+- [Worker Threads](#worker-threads-v240)
 
 ---
 
@@ -560,6 +561,278 @@ const [err, result] = await s.select(cases)
 if (result?.type === 'timeout') {
   console.log('Request timed out')
 }
+```
+
+---
+
+## Worker Threads (v2.4.0+)
+
+Execute CPU-intensive tasks in parallel using worker threads for true parallelism.
+
+### When to Use Worker Threads
+
+Worker threads are ideal for:
+- **CPU-intensive calculations** (math, data processing, image manipulation)
+- **Heavy computations** that block the event loop
+- **Parallel processing** of large datasets
+
+Worker threads are NOT for:
+- I/O-bound operations (use regular async/await)
+- Tasks requiring access to the main thread's scope or variables
+
+### Using `parallel()` with Workers
+
+The simplest way to use worker threads is through the `parallel()` function:
+
+```typescript
+import { parallel } from "go-go-scope";
+
+// Process data using 4 worker threads
+const results = await parallel(
+  [
+    () => processChunk(data1),  // These run in worker threads
+    () => processChunk(data2),
+    () => processChunk(data3),
+    () => processChunk(data4),
+  ],
+  { workers: 4 }
+);
+
+// Results are Result tuples
+for (const [err, result] of results) {
+  if (err) console.error('Failed:', err);
+  else console.log('Success:', result);
+}
+```
+
+### Using WorkerPool Directly
+
+For more control, use the `WorkerPool` class:
+
+```typescript
+import { WorkerPool } from "go-go-scope";
+
+await using pool = new WorkerPool({
+  size: 4,                    // Number of workers
+  idleTimeout: 60000,         // Keep workers alive for 1 minute
+  resourceLimits: {
+    maxOldGenerationSizeMb: 512
+  }
+});
+
+// Single execution
+const result = await pool.execute((n: number) => {
+  // Heavy computation here
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    sum += Math.sqrt(i);
+  }
+  return sum;
+}, 1000000);
+
+// Batch execution
+const results = await pool.executeBatch(
+  [1000, 2000, 3000, 4000],
+  (n: number) => {
+    // This runs in a worker thread
+    return n * n;  // CPU-intensive work here
+  }
+);
+// Returns: [[undefined, 1000000], [undefined, 4000000], ...]
+```
+
+### Important Considerations
+
+**Function Serialization:**
+Functions passed to workers are serialized and executed in isolation. This means:
+
+```typescript
+// ❌ BAD: External reference won't work
+const multiplier = 2;
+await pool.execute((n) => n * multiplier, 5);  // Error: multiplier not defined
+
+// ✅ GOOD: Self-contained function
+await pool.execute((n) => n * 2, 5);  // Works!
+
+// ✅ GOOD: IIFE to capture values
+await pool.execute(((mult) => (n) => n * mult)(multiplier), 5);
+```
+
+**Async Functions:**
+Worker threads can handle async functions, but they run to completion:
+
+```typescript
+const result = await pool.execute(async (url: string) => {
+  // This works, but fetch runs in the worker thread
+  const response = await fetch(url);
+  return response.json();
+}, "https://api.example.com/data");
+```
+
+**Error Handling:**
+Errors in workers are propagated as standard Result tuples:
+
+```typescript
+const [err, result] = await pool.execute((n: number) => {
+  if (n < 0) throw new Error("Negative number!");
+  return Math.sqrt(n);
+}, -1);
+
+if (err) {
+  console.log(err.message);  // "Negative number!"
+}
+```
+
+### Performance Comparison
+
+```typescript
+import { parallel } from "go-go-scope";
+
+// CPU-intensive task
+const cpuTask = (n: number) => {
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    sum += Math.sqrt(i);
+  }
+  return sum;
+};
+
+// Without workers (runs in main thread)
+const start1 = Date.now();
+await parallel([
+  () => cpuTask(10000000),
+  () => cpuTask(10000000),
+]);
+console.log(`Without workers: ${Date.now() - start1}ms`);
+
+// With workers (parallel execution)
+const start2 = Date.now();
+await parallel([
+  () => cpuTask(10000000),
+  () => cpuTask(10000000),
+], { workers: 2 });
+console.log(`With workers: ${Date.now() - start2}ms`);
+```
+
+### Pool Statistics
+
+Monitor worker pool health:
+
+```typescript
+const stats = pool.stats();
+console.log(stats);
+// {
+//   total: 4,     // Total workers
+//   busy: 2,      // Currently executing
+//   idle: 2,      // Available for work
+//   pending: 5    // Waiting to execute
+// }
+```
+
+### Using `scope.task()` with Workers
+
+For individual CPU-intensive tasks, use the `worker` option on `scope.task()`:
+
+```typescript
+await using s = scope();
+
+// This runs in a worker thread
+const [err, result] = await s.task(
+  () => {
+    // Heavy computation - Fibonacci
+    function fib(n: number): number {
+      return n < 2 ? n : fib(n - 1) + fib(n - 2);
+    }
+    return fib(40);  // Computationally expensive
+  },
+  { worker: true }
+);
+
+if (err) console.error('Failed:', err);
+else console.log('Fibonacci:', result);  // 102334155
+```
+
+The scope automatically manages the worker pool - it's created on first use and cleaned up when the scope disposes.
+
+#### Configuring the Worker Pool Size
+
+By default, each scope's worker pool has a size of `os.cpus().length - 1`. You can configure this:
+
+```typescript
+// Create scope with custom worker pool
+await using s = scope({
+  workerPool: {
+    size: 4,           // Max 4 concurrent workers
+    idleTimeout: 30000 // Workers terminate after 30s idle
+  }
+});
+
+// These tasks share the same pool
+for (let i = 0; i < 100; i++) {
+  s.task(() => processItem(i), { worker: true });
+}
+// Only 4 tasks run concurrently, others queue automatically
+```
+
+**How it works with many tasks:**
+- Pool size = 4 (configurable, default: CPU count - 1)
+- First 4 tasks start immediately in parallel
+- Tasks 5-100 queue in memory
+- As workers finish, they pick up queued tasks (FIFO)
+- All 100 tasks complete with max 4 concurrent workers
+
+This provides automatic backpressure - memory usage stays low because only 4 tasks run at a time, even with 100 queued.
+
+### Scheduler with Workers
+
+Run scheduled jobs in worker threads to avoid blocking the main event loop:
+
+```typescript
+import { Scheduler } from "@go-go-scope/scheduler";
+
+const scheduler = new Scheduler({
+  persistence: redisAdapter,
+});
+
+// Define a CPU-intensive job
+scheduler.createSchedule("analyze-data", {
+  cron: "0 */6 * * *",  // Every 6 hours
+});
+
+// Run handler in worker thread
+scheduler.onSchedule("analyze-data", async (job) => {
+  // Heavy data analysis that could take minutes
+  const results = await performMLAnalysis(job.data);
+  await storeResults(results);
+}, { worker: true });  // ← Runs in worker thread
+
+scheduler.start();
+```
+
+### Practical Example: Image Processing Pipeline
+
+```typescript
+await using s = scope();
+
+// Process images in parallel using workers
+const images = await fs.readdir('./input');
+
+const [err, processed] = await s.parallel(
+  images.map(img => () => {
+    // This runs in a worker thread
+    const imageData = fs.readFileSync(`./input/${img}`);
+    const resized = resizeImage(imageData, { width: 800, height: 600 });
+    const compressed = compressImage(resized, { quality: 0.85 });
+    fs.writeFileSync(`./output/${img}`, compressed);
+    return { name: img, size: compressed.length };
+  }),
+  { 
+    workers: 4,              // Use 4 worker threads
+    workerIdleTimeout: 30000 // Keep idle for 30s
+  }
+);
+
+console.log(`Processed ${processed?.length} images`);
 ```
 
 ---

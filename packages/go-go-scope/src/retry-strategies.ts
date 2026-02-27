@@ -23,7 +23,7 @@ import type { RetryDelayFn } from "./types.js";
  *   }
  * })
  * // Delays: ~100ms, ~200ms, ~400ms, ~800ms, ~1600ms (with ±30% jitter)
- * 
+ *
  * // With full jitter (AWS-style)
  * await s.task(() => fetchData(), {
  *   retry: {
@@ -125,8 +125,6 @@ export function linear(baseDelay: number, increment: number): RetryDelayFn {
 		return baseDelay + increment * (attempt - 1);
 	};
 }
-
-
 
 /**
  * Decorrelated jitter (Microsoft Azure-style).

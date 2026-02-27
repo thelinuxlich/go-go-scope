@@ -253,6 +253,32 @@ interface TaskOptionsBase {
 		 */
 		ttl?: number;
 	};
+	/**
+	 * Execute the task in a worker thread (v2.4.0+).
+	 * Useful for CPU-intensive operations that would block the event loop.
+	 *
+	 * When enabled, the task function is serialized and executed in a worker thread.
+	 * The function must be self-contained (no external references).
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * // CPU-intensive task in worker thread
+	 * const [err, result] = await s.task(
+	 *   () => {
+	 *     // This runs in a worker thread
+	 *     let sum = 0
+	 *     for (let i = 0; i < 1000000; i++) {
+	 *       sum += Math.sqrt(i)
+	 *     }
+	 *     return sum
+	 *   },
+	 *   { worker: true }
+	 * )
+	 * ```
+	 */
+	worker?: boolean;
 }
 
 /**
