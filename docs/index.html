@@ -851,6 +851,7 @@
                     <a href="#example-db-transaction" class="nav-link sub">DB Transactions</a>
                     <a href="#example-scheduler" class="nav-link sub">Job Scheduler</a>
                     <a href="#example-distributed-lock" class="nav-link sub">Distributed Lock</a>
+                    <a href="#example-worker-threads" class="nav-link sub">Worker Threads</a>
                 </div>
 
                 <div class="nav-section">
@@ -1470,6 +1471,49 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
   <span class="comment">// Lock automatically released when scope exits (even on error!)</span>
 }</code></pre>
 
+                <h3 id="example-worker-threads">⚡ CPU-Intensive Tasks with Worker Threads (v2.4.0+)</h3>
+                <p>Offload CPU-intensive work to worker threads for massive parallelism without blocking the event loop.</p>
+                <pre><code><span class="keyword">import</span> { scope, parallel, race } <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
+
+<span class="comment">// Configure worker pool at scope creation</span>
+<span class="keyword">await using</span> s = <span class="function">scope</span>({
+  workerPool: { size: 4, idleTimeout: 30000 }
+})
+
+<span class="keyword">async function</span> <span class="function">processImages</span>(imagePaths: <span class="type">string</span>[]) {
+  <span class="comment">// Process images in parallel using worker threads</span>
+  <span class="keyword">const</span> [err, results] = <span class="keyword">await</span> s.<span class="function">parallel</span>(
+    imagePaths.<span class="function">map</span>(path => () => <span class="function">resizeImage</span>(path, { width: 1920, height: 1080 })),
+    { 
+      workers: { threads: 4 },  <span class="comment">// Use 4 worker threads</span>
+      onProgress: (done, total) => <span class="function">console</span>.<span class="function">log</span>(<span class="string">`${done}/${total} processed`</span>)
+    }
+  )
+  
+  <span class="keyword">return</span> results
+}
+
+<span class="comment">// Race multiple ML models - fastest wins</span>
+<span class="keyword">async function</span> <span class="function">classifyImage</span>(image: <span class="type">Buffer</span>) {
+  <span class="keyword">const</span> models = [
+    () => <span class="function">runModelA</span>(image),
+    () => <span class="function">runModelB</span>(image),
+    () => <span class="function">runModelC</span>(image)
+  ]
+  
+  <span class="keyword">const</span> [err, result] = <span class="keyword">await</span> s.<span class="function">race</span>(models, { 
+    workers: { threads: 3 }  <span class="comment">// Each model runs in its own worker</span>
+  })
+  
+  <span class="keyword">return</span> result
+}
+
+<span class="comment">// Individual tasks can also use workers</span>
+<span class="keyword">const</span> [err, hash] = <span class="keyword">await</span> s.<span class="function">task</span>(
+  () => <span class="function">computePasswordHash</span>(password, salt),  <span class="comment">// CPU-intensive</span>
+  { worker: <span class="keyword">true</span> }  <span class="comment">// Run in worker thread</span>
+)</code></pre>
+
                 <div style="margin: 40px 0; padding: 24px; background: var(--surface); border: 3px solid var(--border); box-shadow: 4px 4px 0px var(--border);">
                     <p style="margin: 0; color: var(--text-muted); font-weight: 500;">💡 <strong>Want more?</strong> Check out the <a href="https://github.com/thelinuxlich/go-go-scope/tree/main/examples" target="_blank">examples directory</a> for complete working samples including OpenTelemetry tracing, Prometheus metrics, and framework integrations.</p>
                 </div>
@@ -1534,6 +1578,12 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
   
   <span class="comment">/** Plugins to extend scope functionality */</span>
   plugins?: <span class="type">ScopePlugin</span>[]
+  
+  <span class="comment">/** Worker pool configuration for CPU-intensive tasks (v2.4.0+) */</span>
+  workerPool?: {
+    size?: <span class="type">number</span>           <span class="comment">// Number of worker threads (default: CPU count - 1)</span>
+    idleTimeout?: <span class="type">number</span>    <span class="comment">// Idle timeout in ms (default: 60000)</span>
+  }
 }</code></pre>
 
     <h4 id="taskoptions-type" class="section-anchor"><code>TaskOptions&lt;E&gt;</code></h4>
@@ -1725,6 +1775,9 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
   
   <span class="comment">/** Max concurrent tasks during race */</span>
   concurrency?: <span class="type">number</span>
+  
+  <span class="comment">/** Worker thread config for CPU-intensive tasks (v2.4.0+) */</span>
+  workers?: { threads: <span class="type">number</span>; idleTimeout?: <span class="type">number</span> }
 }</code></pre>
 
     <h4 id="polloptions-type" class="section-anchor"><code>PollOptions</code></h4>
@@ -1989,7 +2042,12 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
     <p>Race multiple tasks - first to settle wins, losers are cancelled.</p>
     <pre><code><span class="function">race</span>&lt;T&gt;(
   factories: readonly (() => <span class="type">Promise</span>&lt;T&gt;)[],
-  options?: { timeout?: <span class="type">number</span>; requireSuccess?: <span class="type">boolean</span>; concurrency?: <span class="type">number</span> }
+  options?: { 
+    timeout?: <span class="type">number</span>; 
+    requireSuccess?: <span class="type">boolean</span>; 
+    concurrency?: <span class="type">number</span>;
+    workers?: { threads: <span class="type">number</span>; idleTimeout?: <span class="type">number</span> }  <span class="comment">// Worker thread config (v2.4.0+)</span>
+  }
 ): <span class="type">Promise</span>&lt;<span class="type">Result</span>&lt;<span class="type">unknown</span>, T&gt;&gt;</code></pre>
 
     <h5 id="scope-parallel" class="section-anchor"><code>scope.parallel(factories, options?)</code></h5>
@@ -2755,6 +2813,10 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
   webUIPort?: <span class="type">number</span>
   webUIHost?: <span class="type">string</span>
   webUIApiKey?: <span class="type">string</span>
+  workerPool?: {                   <span class="comment">// Worker pool config (v2.4.0+)</span>
+    size?: <span class="type">number</span>              <span class="comment">// Number of worker threads</span>
+    idleTimeout?: <span class="type">number</span>       <span class="comment">// Idle timeout in ms</span>
+  }
 }</code></pre>
 
     <h4>Scheduler Class</h4>
@@ -3264,6 +3326,7 @@ app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) =
             { title: 'DB Transactions', desc: 'Connection pooling & transactions', href: '#example-db-transaction' },
             { title: 'Job Scheduler', desc: 'Distributed cron jobs', href: '#example-scheduler' },
             { title: 'Distributed Lock', desc: 'Redis-backed distributed locking', href: '#example-distributed-lock' },
+            { title: 'Worker Threads', desc: 'CPU-intensive tasks in parallel', href: '#example-worker-threads' },
             // Core Concepts
             { title: 'The Scope', desc: 'Understanding scopes', href: '#scope' },
             { title: 'The Task', desc: 'Working with tasks', href: '#task' },
