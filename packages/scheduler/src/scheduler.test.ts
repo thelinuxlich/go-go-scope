@@ -15,7 +15,9 @@ import type { Job } from "./types.js";
 describe("Scheduler", () => {
 	describe("Schedule Management", () => {
 		test("can create schedules", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -30,7 +32,9 @@ describe("Scheduler", () => {
 		});
 
 		test("can register handlers", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 
 			// Create schedule
@@ -42,7 +46,7 @@ describe("Scheduler", () => {
 			worker.onSchedule("test", async () => {});
 
 			// Handler is registered
-			// @ts-ignore - accessing private property for test verification
+			// @ts-expect-error - accessing private property for test verification
 			expect(worker.handlers.has("test")).toBe(true);
 			await admin[Symbol.asyncDispose]();
 			await worker[Symbol.asyncDispose]();
@@ -51,7 +55,9 @@ describe("Scheduler", () => {
 
 	describe("Admin Schedule Management", () => {
 		test("creates schedule with cron expression", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const admin = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -70,7 +76,9 @@ describe("Scheduler", () => {
 		});
 
 		test("creates schedule with interval", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const admin = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -86,7 +94,9 @@ describe("Scheduler", () => {
 		});
 
 		test("throws when creating duplicate schedule", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const admin = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -102,7 +112,9 @@ describe("Scheduler", () => {
 		});
 
 		test("deletes schedule", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const admin = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -122,7 +134,9 @@ describe("Scheduler", () => {
 		});
 
 		test("cannot delete non-existent schedule", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -138,7 +152,9 @@ describe("Scheduler", () => {
 
 	describe("Worker Schedule Handlers", () => {
 		test("registers handlers for schedules", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 
 			const admin = new Scheduler({ scope: s, storage, autoStart: false });
@@ -151,9 +167,9 @@ describe("Scheduler", () => {
 			worker.onSchedule("a", async () => {});
 			worker.onSchedule("b", async () => {});
 
-			// @ts-ignore - accessing private property for test verification
+			// @ts-expect-error - accessing private property for test verification
 			expect(worker.handlers.has("a")).toBe(true);
-			// @ts-ignore - accessing private property for test verification
+			// @ts-expect-error - accessing private property for test verification
 			expect(worker.handlers.has("b")).toBe(true);
 
 			await admin[Symbol.asyncDispose]();
@@ -161,7 +177,9 @@ describe("Scheduler", () => {
 		});
 
 		test("only processes schedules with registered handlers", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 
 			const admin = new Scheduler({ scope: s, storage, autoStart: false });
@@ -172,9 +190,9 @@ describe("Scheduler", () => {
 			// Only register handler for "known"
 			worker.onSchedule("known", async () => {});
 
-			// @ts-ignore - accessing private property for test verification
+			// @ts-expect-error - accessing private property for test verification
 			expect(worker.handlers.has("known")).toBe(true);
-			// @ts-ignore - accessing private property for test verification
+			// @ts-expect-error - accessing private property for test verification
 			expect(worker.handlers.has("unknown")).toBe(false);
 
 			await admin[Symbol.asyncDispose]();
@@ -182,7 +200,9 @@ describe("Scheduler", () => {
 		});
 
 		test("handlerRegistered event emitted", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 
 			const admin = new Scheduler({ scope: s, storage, autoStart: false });
@@ -205,7 +225,9 @@ describe("Scheduler", () => {
 
 	describe("Job Execution", () => {
 		test("worker executes scheduled jobs", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 
 			// Admin creates schedule
@@ -238,7 +260,9 @@ describe("Scheduler", () => {
 		});
 
 		test("job fails when schedule not loaded by worker", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 
 			// Admin creates schedule and job
@@ -272,7 +296,9 @@ describe("Scheduler", () => {
 		});
 
 		test("distributed locking prevents duplicate execution", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 
 			// Admin creates schedule
@@ -318,7 +344,9 @@ describe("Scheduler", () => {
 
 	describe("Stale Jobs", () => {
 		test("stale jobs are skipped with SKIP behavior", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 
 			const admin = new Scheduler({ scope: s, storage, autoStart: false });
@@ -358,7 +386,9 @@ describe("Scheduler", () => {
 
 	describe("Lifecycle Events", () => {
 		test("emits started/stopped events", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const events: Array<{ type: string }> = [];
 
 			const worker = new Scheduler({
@@ -382,7 +412,9 @@ describe("Scheduler", () => {
 
 	describe("Timezone Support", () => {
 		test("schedule stores timezone", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const admin = new Scheduler({
 				scope: s,
 				defaultTimezone: "America/New_York",
@@ -400,7 +432,9 @@ describe("Scheduler", () => {
 		});
 
 		test("schedule timezone overrides default", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const admin = new Scheduler({
 				scope: s,
 				defaultTimezone: "America/New_York",
@@ -420,7 +454,9 @@ describe("Scheduler", () => {
 
 	describe("Job Retry", () => {
 		test("failed jobs are retried", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 
 			const admin = new Scheduler({

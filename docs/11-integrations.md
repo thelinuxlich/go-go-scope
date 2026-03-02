@@ -952,6 +952,9 @@ const [err, data] = await s.task(
 | **Elysia** | `goGoScope` | ✅ Per request | ✅ App lifecycle |
 | **Koa** | `koaGoGoScope` | ✅ Per request | ✅ App lifecycle |
 | **Hapi** | `hapiGoGoScope` | ✅ Per request | ✅ App lifecycle |
+| **Remix** | `withScopeLoader` / `withScopeAction` | ✅ Per request | - |
+| **SvelteKit** | `createScopeHandle` | ✅ Per request | - |
+| **Next.js** | `withScope` / `withScopeEdge` | ✅ Per request | - |
 
 ### Fastify
 
@@ -1228,6 +1231,110 @@ await server.start()
 - `getScope(request)` - Get request scope from request
 - `getRootScope(server)` - Get root scope from server
 - `closeHapiScope(server)` - Cleanup helper for graceful shutdown
+
+### Remix
+
+```typescript
+import { withScopeLoader, withScopeAction } from '@go-go-scope/adapter-remix'
+
+// Loader with scope
+export const loader = withScopeLoader(async ({ request, scope }) => {
+  const url = new URL(request.url)
+  const page = url.searchParams.get('page') || '1'
+
+  const [err, users] = await scope.task(() => fetchUsers(page))
+  if (err) throw new Response(err.message, { status: 500 })
+
+  return { users }
+})
+
+// Action with scope
+export const action = withScopeAction(async ({ request, scope }) => {
+  const formData = await request.formData()
+
+  const [err, result] = await scope.task(() => createUser(formData))
+  if (err) return { error: err.message }
+
+  return { result }
+})
+```
+
+**Exports:**
+- `withScopeLoader(fn, options?)` - Wrap Remix loader with scope
+- `withScopeAction(fn, options?)` - Wrap Remix action with scope
+- `createRemixScope(config)` - Create reusable scope configuration
+
+### SvelteKit
+
+```typescript
+import { createScopeHandle, withScopeLoad, withScopeAction } from '@go-go-scope/adapter-sveltekit'
+import type { Handle } from '@sveltejs/kit'
+
+// Server hook with scope
+export const handle: Handle = createScopeHandle({
+  timeout: 30000,
+  services: { db: createDatabase() }
+})
+
+// Load function with scope
+export const load = withScopeLoad(async (event) => {
+  const { scope } = event.locals
+  const [err, data] = await scope.task(() => fetchData())
+  if (err) throw error(500, err.message)
+  return { data }
+})
+
+// Form action with scope
+export const actions = {
+  create: withScopeAction(async (event) => {
+    const { scope } = event.locals
+    const data = await event.request.formData()
+
+    const [err, result] = await scope.task(() => createItem(data))
+    if (err) return fail(400, { error: err.message })
+    return { success: true, result }
+  })
+}
+```
+
+**Exports:**
+- `createScopeHandle(options?)` - SvelteKit server hook
+- `withScopeLoad(fn, options?)` - Wrap load function
+- `withScopeAction(fn, options?)` - Wrap form action
+
+### Next.js
+
+```typescript
+import { withScope, withScopeEdge, withScopeServer } from '@go-go-scope/adapter-nextjs'
+
+// API Route
+export const GET = withScope(async (req, { scope }) => {
+  const [err, users] = await scope.task(() => fetchUsers())
+  if (err) return Response.json({ error: err.message }, { status: 500 })
+  return Response.json(users)
+})
+
+// Edge Runtime
+export const runtime = 'edge'
+
+export default withScopeEdge(async (req, { scope }) => {
+  const [err, result] = await scope.task(() => fetchEdgeData())
+  if (err) return new Response('Error', { status: 500 })
+  return new Response(JSON.stringify(result))
+})
+
+// Server Component
+export default withScopeServer(async (props, { scope }) => {
+  const [err, data] = await scope.task(() => fetchData())
+  if (err) return <Error message={err.message} />
+  return <DataView data={data} />
+})
+```
+
+**Exports:**
+- `withScope(handler, options?)` - API route handler
+- `withScopeEdge(handler, options?)` - Edge runtime handler
+- `withScopeServer(component, options?)` - Server Component wrapper
 
 ### Common Patterns
 

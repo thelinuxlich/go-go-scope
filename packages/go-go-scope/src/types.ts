@@ -70,6 +70,30 @@ export interface RetryStrategies {
 }
 
 /**
+ * Checkpoint context passed to task functions when checkpoint is configured.
+ */
+export interface CheckpointContext<T = unknown> {
+	/** Save a checkpoint with the given data */
+	save: (data: T) => Promise<void>;
+	/** Load the current checkpoint data if resuming */
+	data?: T;
+}
+
+/**
+ * Progress tracking context passed to task functions.
+ */
+export interface ProgressContext {
+	/** Update the progress percentage (0-100) */
+	update: (percentage: number) => void;
+	/** Get current progress */
+	get: () => { percentage: number; eta?: number };
+	/** Subscribe to progress updates */
+	onUpdate: (
+		callback: (progress: { percentage: number; eta?: number }) => void,
+	) => () => void;
+}
+
+/**
  * Context passed to task functions.
  */
 export interface TaskContext<Services extends Record<string, unknown>> {
@@ -81,12 +105,22 @@ export interface TaskContext<Services extends Record<string, unknown>> {
 	logger: Logger;
 	/** Context object inherited from scope */
 	context: Record<string, unknown>;
+	/** Checkpoint utilities (available when checkpoint provider is configured) */
+	checkpoint?: CheckpointContext<unknown>;
+	/** Progress tracking utilities (available when checkpoint provider is configured) */
+	progress?: ProgressContext;
 }
 
 /**
  * Base options for spawning a task with tracing (without error class options).
  */
 interface TaskOptionsBase {
+	/**
+	 * Unique task identifier.
+	 * Used for checkpointing, idempotency, and observability.
+	 * If not provided, a generated ID will be used.
+	 */
+	id?: string;
 	/**
 	 * OpenTelemetry tracing options.
 	 */
@@ -279,6 +313,60 @@ interface TaskOptionsBase {
 	 * ```
 	 */
 	worker?: boolean;
+	/**
+	 * Checkpoint configuration for long-running tasks.
+	 * Requires a checkpoint provider configured in scope persistence.
+	 *
+	 * When checkpoint is configured, the task receives `checkpoint` and `progress`
+	 * utilities in its context for saving and tracking progress.
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope({
+	 *   persistence: { checkpoint: new FileCheckpointProvider('./checkpoints') }
+	 * })
+	 *
+	 * const [err, result] = await s.task(
+	 *   async ({ checkpoint, progress }) => {
+	 *     const data = await loadData()
+	 *     let processed = checkpoint?.data?.processed ?? 0
+	 *
+	 *     for (let i = processed; i < data.length; i++) {
+	 *       await processItem(data[i])
+	 *       progress.update((i / data.length) * 100)
+	 *
+	 *       if (i % 100 === 0) {
+	 *         await checkpoint.save({ processed: i })
+	 *       }
+	 *     }
+	 *
+	 *     return { total: data.length }
+	 *   },
+	 *   {
+	 *     id: 'data-processing-job',
+	 *     checkpoint: {
+	 *       interval: 60000,  // Auto-checkpoint every minute
+	 *       onCheckpoint: (cp) => console.log(`Checkpoint ${cp.sequence} saved`),
+	 *       onResume: (cp) => console.log(`Resumed from checkpoint ${cp.sequence}`)
+	 *     }
+	 *   }
+	 * )
+	 * ```
+	 */
+	checkpoint?: {
+		/** Auto-checkpoint interval in milliseconds */
+		interval?: number;
+		/** Callback when a checkpoint is saved */
+		onCheckpoint?: (
+			checkpoint: import("./persistence/types.js").Checkpoint<unknown>,
+		) => void;
+		/** Callback when resuming from a checkpoint */
+		onResume?: (
+			checkpoint: import("./persistence/types.js").Checkpoint<unknown>,
+		) => void;
+		/** Max checkpoints to keep (default: 10) */
+		maxCheckpoints?: number;
+	};
 }
 
 /**

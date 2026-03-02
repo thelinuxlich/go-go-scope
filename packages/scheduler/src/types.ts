@@ -179,7 +179,7 @@ export interface OnScheduleOptions {
 	/**
 	 * Execute jobs in worker threads (default: false).
 	 * Useful for CPU-intensive schedules that would block the event loop.
-	 * 
+	 *
 	 * @example
 	 * ```typescript
 	 * // CPU-intensive schedule running in worker thread
@@ -196,7 +196,10 @@ export interface OnScheduleOptions {
 /**
  * Handler function for a schedule (provided by workers at runtime)
  */
-export type ScheduleHandler = (job: Job, scope: Scope<Record<string, unknown>>) => Promise<void>;
+export type ScheduleHandler = (
+	job: Job,
+	scope: Scope<Record<string, unknown>>,
+) => Promise<void>;
 
 /**
  * Typed handler function for a schedule with specific payload type

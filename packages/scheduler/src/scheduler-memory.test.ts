@@ -34,7 +34,9 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 			const scheduler = new Scheduler({
 				scope: s,
@@ -87,7 +89,9 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 			const scheduler = new Scheduler({
 				scope: s,
@@ -138,7 +142,9 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 			const scheduler = new Scheduler({
 				scope: s,
@@ -185,7 +191,9 @@ describe("Scheduler Memory Management", () => {
 
 	describe("Running Jobs Cleanup", () => {
 		test.skip("running jobs map is cleared after completion", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -227,7 +235,9 @@ describe("Scheduler Memory Management", () => {
 		});
 
 		test.skip("running jobs are cancelled and cleaned on scheduler stop", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -275,7 +285,9 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -316,7 +328,9 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -358,7 +372,9 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -415,7 +431,9 @@ describe("Scheduler Memory Management", () => {
 
 	describe("Timer Cleanup", () => {
 		test("poll timer is cleared on stop", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 
 			const scheduler = new Scheduler({
 				scope: s,
@@ -441,7 +459,9 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: false,
@@ -549,7 +569,9 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 			const scheduler = new Scheduler({
 				scope: s,
@@ -607,7 +629,9 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const scheduler = new Scheduler({
 				scope: s,
 				autoStart: true,
@@ -654,7 +678,9 @@ describe("Scheduler Memory Management", () => {
 			await new Promise((r) => setTimeout(r, 100));
 			const initialMemory = getMemoryMB();
 
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 			const scheduler = new Scheduler({
 				scope: s,

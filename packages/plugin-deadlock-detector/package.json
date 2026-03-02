@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/plugin-deadlock-detector",
-	"version": "2.4.0",
+	"version": "2.5.0",
 	"description": "Deadlock detection plugin for go-go-scope",
 	"type": "module",
 	"main": "./dist/index.mjs",

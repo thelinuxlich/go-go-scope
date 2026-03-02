@@ -82,17 +82,20 @@ export function goGoScope(options: ElysiaGoGoScopeOptions = {}) {
 					if (timeout) scopeOptions.timeout = timeout;
 
 					// Store request scope using symbol
-					(store as Record<symbol, Scope<Record<string, unknown>>>)[SCOPE_KEY] = scope(scopeOptions);
+					(store as Record<symbol, Scope<Record<string, unknown>>>)[SCOPE_KEY] =
+						scope(scopeOptions);
 				})
 				.derive(({ store }) => ({
-					scope: (store as Record<symbol, Scope<Record<string, unknown>>>)[SCOPE_KEY],
+					scope: (store as Record<symbol, Scope<Record<string, unknown>>>)[
+						SCOPE_KEY
+					],
 					rootScope: store.rootScope as Scope<Record<string, unknown>>,
 				}))
 				.onAfterResponse(({ store }) => {
 					// Cleanup request scope
-					const requestScope = (store as Record<symbol, Scope<Record<string, unknown>> | undefined>)[
-						SCOPE_KEY
-					];
+					const requestScope = (
+						store as Record<symbol, Scope<Record<string, unknown>> | undefined>
+					)[SCOPE_KEY];
 					if (requestScope) {
 						requestScope[Symbol.asyncDispose]().catch(() => {});
 					}
@@ -104,7 +107,9 @@ export function goGoScope(options: ElysiaGoGoScopeOptions = {}) {
 /**
  * Get scope from Elysia context (for use outside of handlers)
  */
-export function getScope(context: { scope?: Scope<Record<string, unknown>> }): Scope<Record<string, unknown>> {
+export function getScope(context: {
+	scope?: Scope<Record<string, unknown>>;
+}): Scope<Record<string, unknown>> {
 	if (!context.scope) {
 		throw new Error(
 			"Scope not available. Ensure goGoScope plugin is registered.",
@@ -116,7 +121,9 @@ export function getScope(context: { scope?: Scope<Record<string, unknown>> }): S
 /**
  * Get root scope from Elysia context
  */
-export function getRootScope(context: { rootScope?: Scope<Record<string, unknown>> }): Scope<Record<string, unknown>> {
+export function getRootScope(context: {
+	rootScope?: Scope<Record<string, unknown>>;
+}): Scope<Record<string, unknown>> {
 	if (!context.rootScope) {
 		throw new Error(
 			"Root scope not available. Ensure goGoScope plugin is registered.",

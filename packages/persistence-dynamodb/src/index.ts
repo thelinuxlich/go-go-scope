@@ -40,6 +40,8 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import type {
 	CacheProvider,
+	Checkpoint,
+	CheckpointProvider,
 	CircuitBreakerPersistedState,
 	CircuitBreakerStateProvider,
 	LockHandle,
@@ -64,6 +66,7 @@ export class DynamoDBAdapter
 		LockProvider,
 		CircuitBreakerStateProvider,
 		CacheProvider,
+		CheckpointProvider,
 		PersistenceAdapter
 {
 	private readonly client: DynamoDBDocumentClient;
@@ -102,6 +105,10 @@ export class DynamoDBAdapter
 
 	private getCacheKey(key: string): string {
 		return `CACHE#${key}`;
+	}
+
+	private getCheckpointKey(key: string): string {
+		return `CHECKPOINT#${key}`;
 	}
 
 	// ============================================================================
@@ -471,11 +478,182 @@ export class DynamoDBAdapter
 		// Always return true as DynamoDB is serverless
 		return true;
 	}
+
+	// ============================================================================
+	// Checkpoint Provider
+	// ============================================================================
+
+	async save<T>(checkpoint: Checkpoint<T>): Promise<void> {
+		const pk = this.getCheckpointKey(
+			`${checkpoint.taskId}:${checkpoint.sequence}`,
+		);
+
+		await this.client.send(
+			new PutCommand({
+				TableName: this.tableName,
+				Item: {
+					pk,
+					sk: "METADATA",
+					id: checkpoint.id,
+					taskId: checkpoint.taskId,
+					sequence: checkpoint.sequence,
+					timestamp: checkpoint.timestamp,
+					progress: checkpoint.progress,
+					data: checkpoint.data,
+					estimatedTimeRemaining: checkpoint.estimatedTimeRemaining,
+					updatedAt: Date.now(),
+				},
+			}),
+		);
+	}
+
+	async load<T>(checkpointId: string): Promise<Checkpoint<T> | undefined> {
+		// Query by GSI to find checkpoint by id
+		const result = await this.client.send(
+			new ScanCommand({
+				TableName: this.tableName,
+				FilterExpression: "id = :id AND sk = :sk",
+				ExpressionAttributeValues: {
+					":id": checkpointId,
+					":sk": "METADATA",
+				},
+			}),
+		);
+
+		if (!result.Items || result.Items.length === 0) {
+			return undefined;
+		}
+
+		const item = result.Items[0];
+		if (!item) {
+			return undefined;
+		}
+		return {
+			id: item.id as string,
+			taskId: item.taskId as string,
+			sequence: item.sequence as number,
+			timestamp: item.timestamp as number,
+			progress: item.progress as number,
+			data: item.data as T,
+			estimatedTimeRemaining: item.estimatedTimeRemaining as number | undefined,
+		};
+	}
+
+	async loadLatest<T>(taskId: string): Promise<Checkpoint<T> | undefined> {
+		const prefix = this.getCheckpointKey(taskId);
+
+		const result = await this.client.send(
+			new QueryCommand({
+				TableName: this.tableName,
+				KeyConditionExpression: "sk = :sk AND begins_with(pk, :prefix)",
+				ExpressionAttributeValues: {
+					":sk": "METADATA",
+					":prefix": `${prefix}:`,
+				},
+				IndexName: "sk-pk-index",
+				ScanIndexForward: false, // Descending order
+				Limit: 1,
+			}),
+		);
+
+		if (!result.Items || result.Items.length === 0) {
+			return undefined;
+		}
+
+		const item = result.Items[0];
+		if (!item) {
+			return undefined;
+		}
+		return {
+			id: item.id as string,
+			taskId: item.taskId as string,
+			sequence: item.sequence as number,
+			timestamp: item.timestamp as number,
+			progress: item.progress as number,
+			data: item.data as T,
+			estimatedTimeRemaining: item.estimatedTimeRemaining as number | undefined,
+		};
+	}
+
+	async list(taskId: string): Promise<Checkpoint<unknown>[]> {
+		const prefix = this.getCheckpointKey(taskId);
+
+		const result = await this.client.send(
+			new QueryCommand({
+				TableName: this.tableName,
+				KeyConditionExpression: "sk = :sk AND begins_with(pk, :prefix)",
+				ExpressionAttributeValues: {
+					":sk": "METADATA",
+					":prefix": `${prefix}:`,
+				},
+				IndexName: "sk-pk-index",
+				ScanIndexForward: true, // Ascending order
+			}),
+		);
+
+		if (!result.Items) {
+			return [];
+		}
+
+		return result.Items.map((item) => ({
+			id: item.id as string,
+			taskId: item.taskId as string,
+			sequence: item.sequence as number,
+			timestamp: item.timestamp as number,
+			progress: item.progress as number,
+			data: item.data,
+			estimatedTimeRemaining: item.estimatedTimeRemaining as number | undefined,
+		}));
+	}
+
+	async cleanup(taskId: string, keepCount: number): Promise<void> {
+		const checkpoints = await this.list(taskId);
+		if (checkpoints.length <= keepCount) return;
+
+		// Sort by sequence and keep the most recent ones
+		const sorted = [...checkpoints].sort((a, b) => a.sequence - b.sequence);
+		const toDelete = sorted.slice(0, sorted.length - keepCount);
+
+		// Delete old checkpoints
+		const deletePromises = toDelete.map((cp) =>
+			this.client.send(
+				new DeleteCommand({
+					TableName: this.tableName,
+					Key: {
+						pk: this.getCheckpointKey(`${cp.taskId}:${cp.sequence}`),
+						sk: "METADATA",
+					},
+				}),
+			),
+		);
+
+		await Promise.all(deletePromises);
+	}
+
+	async deleteAll(taskId: string): Promise<void> {
+		const checkpoints = await this.list(taskId);
+
+		const deletePromises = checkpoints.map((cp) =>
+			this.client.send(
+				new DeleteCommand({
+					TableName: this.tableName,
+					Key: {
+						pk: this.getCheckpointKey(`${cp.taskId}:${cp.sequence}`),
+						sk: "METADATA",
+					},
+				}),
+			),
+		);
+
+		await Promise.all(deletePromises);
+	}
 }
 
 // Re-export types
 export type {
 	CacheProvider,
+	Checkpoint,
+	CheckpointProvider,
 	CircuitBreakerPersistedState,
 	CircuitBreakerStateProvider,
 	LockHandle,

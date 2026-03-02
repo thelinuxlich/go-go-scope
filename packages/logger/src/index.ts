@@ -29,11 +29,7 @@ export interface AdapterOptions {
 /**
  * Deep clone and redact sensitive fields from an object
  */
-function redactObject(
-	obj: unknown,
-	paths: string[],
-	censor: string,
-): unknown {
+function redactObject(obj: unknown, paths: string[], censor: string): unknown {
 	if (obj === null || typeof obj !== "object") {
 		return obj;
 	}
@@ -74,15 +70,16 @@ function redactArgs(
 	args: unknown[],
 	redactOptions: RedactOptions | undefined,
 ): unknown[] {
-	if (!redactOptions || redactOptions.paths.length === 0) {
-		return args;
-	}
-
-	const censor = redactOptions.censor ?? "[REDACTED]";
-
 	return args.map((arg) => {
+		if (arg instanceof Error) {
+			// Always serialize Error objects to capture name, message, stack
+			return redactObject(arg, redactOptions?.paths ?? [], redactOptions?.censor ?? "[REDACTED]");
+		}
 		if (typeof arg === "object" && arg !== null) {
-			return redactObject(arg, redactOptions.paths, censor);
+			if (!redactOptions || redactOptions.paths.length === 0) {
+				return arg;
+			}
+			return redactObject(arg, redactOptions.paths, redactOptions.censor ?? "[REDACTED]");
 		}
 		return arg;
 	});
@@ -142,7 +139,9 @@ export function adaptPino(
 		// Merge context with first arg if it's an object, otherwise create new object
 		const firstArg = redactedArgs[0];
 		const logObject =
-			typeof firstArg === "object" && firstArg !== null && !Array.isArray(firstArg)
+			typeof firstArg === "object" &&
+			firstArg !== null &&
+			!Array.isArray(firstArg)
 				? { ...context, ...firstArg, msg: message }
 				: { ...context, msg: message, args: redactedArgs };
 
@@ -222,22 +221,15 @@ export function createChildLogger(
 	parentLogger: Logger,
 	context: Record<string, unknown>,
 ): Logger {
-	const formatMessage = (message: string) => {
-		const contextStr = Object.entries(context)
-			.map(([k, v]) => `${k}=${v}`)
-			.join(" ");
-		return `[${contextStr}] ${message}`;
-	};
-
 	return {
 		debug: (message: string, ...args: unknown[]) =>
-			parentLogger.debug(formatMessage(message), ...args),
+			parentLogger.debug(message, context, ...args),
 		info: (message: string, ...args: unknown[]) =>
-			parentLogger.info(formatMessage(message), ...args),
+			parentLogger.info(message, context, ...args),
 		warn: (message: string, ...args: unknown[]) =>
-			parentLogger.warn(formatMessage(message), ...args),
+			parentLogger.warn(message, context, ...args),
 		error: (message: string, ...args: unknown[]) =>
-			parentLogger.error(formatMessage(message), ...args),
+			parentLogger.error(message, context, ...args),
 	};
 }
 

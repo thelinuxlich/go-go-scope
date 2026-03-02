@@ -2,13 +2,22 @@
  * Scope class for go-go-scope - Structured concurrency
  */
 
+/// <reference types="./global.d.ts" />
 import createDebug from "debug";
 
 import { BroadcastChannel } from "./broadcast-channel.js";
 import { Channel } from "./channel.js";
+import {
+	type CheckpointState,
+	cleanupTaskCheckpoints,
+	createCheckpointContext,
+	createProgressContext,
+	loadCheckpointForTask,
+} from "./checkpoint.js";
 import { CircuitBreaker } from "./circuit-breaker.js";
 import { AbortError, UnknownError } from "./errors.js";
 import { createLogger, createTaskLogger } from "./logger.js";
+import type { Checkpoint } from "./persistence/types.js";
 import { installPlugins } from "./plugin.js";
 import { poll as pollFn } from "./poll.js";
 import {
@@ -30,6 +39,7 @@ import type {
 	DebounceOptions,
 	Failure,
 	Logger,
+	ProgressContext,
 	Result,
 	ScopeHooks,
 	SelectOptions,
@@ -399,6 +409,8 @@ export class Scope<
 			signal: AbortSignal;
 			logger: Logger;
 			context: Record<string, unknown>;
+			checkpoint?: { save: (data: unknown) => Promise<void>; data?: unknown };
+			progress?: ProgressContext;
 		}) => Promise<T>,
 		options?: TaskOptions<E>,
 	): Task<Result<E, T>> {
@@ -479,6 +491,15 @@ export class Scope<
 		const startTime = Date.now();
 		const parentSignal = this.abortController.signal;
 
+		// Determine task ID (reused for checkpoint and otel)
+		const taskId = options?.id ?? `${this.name}-task-${taskIndex}`;
+
+		// Check if checkpoint is configured
+		const checkpointConfig = options?.checkpoint;
+		const checkpointProvider = this._persistence?.checkpoint;
+		const hasCheckpoint =
+			checkpointConfig !== undefined && checkpointProvider !== undefined;
+
 		// Build the execution pipeline
 		const wrappedFn = async (signal: AbortSignal): Promise<T> => {
 			if (signal.aborted) {
@@ -511,26 +532,109 @@ export class Scope<
 				taskIndex,
 			);
 
-			const callFn = (sig: AbortSignal): Promise<T> => {
-				return fn({
-					services: this.services as Services,
-					signal: sig,
-					logger: taskLogger,
-					context: this.requestContext,
-				});
-			};
-
-			// Apply circuit breaker if configured
-			let result: T;
-			if (this.scopeCircuitBreaker) {
-				result = await this.scopeCircuitBreaker.execute(() =>
-					this.executeWithRetry(callFn, signal, options?.retry),
+			// Load existing checkpoint if resuming
+			let existingCheckpoint: Checkpoint<unknown> | undefined;
+			if (hasCheckpoint && checkpointProvider) {
+				existingCheckpoint = await loadCheckpointForTask(
+					checkpointProvider,
+					taskId,
+					checkpointConfig.onResume as (
+						checkpoint: Checkpoint<unknown>,
+					) => void,
 				);
-			} else {
-				result = await this.executeWithRetry(callFn, signal, options?.retry);
 			}
 
-			return result;
+			// Setup checkpoint and progress contexts if configured
+			let checkpointState: CheckpointState<unknown> | undefined;
+			let checkpointCtx: ReturnType<typeof createCheckpointContext> | undefined;
+			let progressCtx: ProgressContext | undefined;
+			let checkpointInterval: ReturnType<typeof setInterval> | undefined;
+
+			if (hasCheckpoint && checkpointProvider) {
+				checkpointState = {
+					provider: checkpointProvider,
+					taskId,
+					current: existingCheckpoint,
+					sequence: existingCheckpoint?.sequence ?? 0,
+					maxCheckpoints: checkpointConfig.maxCheckpoints ?? 10,
+					onCheckpoint: checkpointConfig.onCheckpoint as (
+						checkpoint: Checkpoint<unknown>,
+					) => void,
+				};
+
+				checkpointCtx = createCheckpointContext(checkpointState);
+				progressCtx = createProgressContext();
+
+				// Setup auto-checkpoint interval if configured
+				if (checkpointConfig.interval && checkpointConfig.interval > 0) {
+					checkpointInterval = setInterval(() => {
+						if (checkpointState?.current) {
+							checkpointProvider.save(checkpointState.current).catch(() => {});
+						}
+					}, checkpointConfig.interval);
+				}
+			}
+
+			try {
+				const callFn = (sig: AbortSignal): Promise<T> => {
+					return fn({
+						services: this.services as Services,
+						signal: sig,
+						logger: taskLogger,
+						context: this.requestContext,
+						checkpoint: checkpointCtx,
+						progress: progressCtx,
+					});
+				};
+
+				// Create abort promise to race against task execution
+				let abortHandler: (() => void) | undefined;
+				const abortPromise = new Promise<never>((_, reject) => {
+					if (signal.aborted) {
+						reject(new AbortError(signal.reason));
+						return;
+					}
+					abortHandler = () => {
+						reject(new AbortError(signal.reason));
+					};
+					signal.addEventListener("abort", abortHandler, { once: true });
+				});
+
+				// Apply circuit breaker if configured
+				let result: T;
+				try {
+					if (this.scopeCircuitBreaker) {
+						result = await this.scopeCircuitBreaker.execute(() =>
+							Promise.race([
+								this.executeWithRetry(callFn, signal, options?.retry),
+								abortPromise,
+							]),
+						);
+					} else {
+						result = await Promise.race([
+							this.executeWithRetry(callFn, signal, options?.retry),
+							abortPromise,
+						]);
+					}
+				} finally {
+					// Clean up abort listener to prevent unhandled rejections
+					if (abortHandler) {
+						signal.removeEventListener("abort", abortHandler);
+					}
+				}
+
+				// Cleanup checkpoints on success
+				if (hasCheckpoint && checkpointProvider) {
+					await cleanupTaskCheckpoints(checkpointProvider, taskId);
+				}
+
+				return result;
+			} finally {
+				// Clear checkpoint interval
+				if (checkpointInterval) {
+					clearInterval(checkpointInterval);
+				}
+			}
 		};
 
 		// Create task factory
@@ -681,6 +785,82 @@ export class Scope<
 		);
 
 		return task;
+	}
+
+	/**
+	 * Resume a task from its last checkpoint.
+	 *
+	 * If a checkpoint exists for the task ID, the task will be executed
+	 * with the checkpoint data available in the context.
+	 *
+	 * @param taskId - The unique task ID to resume
+	 * @param fn - The task function to execute
+	 * @param options - Optional task options
+	 * @returns Promise that resolves to the task result
+	 *
+	 * @example
+	 * ```typescript
+	 * const [err, result] = await s.resumeTask('migration-job', async ({ checkpoint, progress }) => {
+	 *   // checkpoint.data contains the saved state
+	 *   const processed = checkpoint?.data?.processed ?? 0
+	 *   // Continue processing from checkpoint...
+	 * })
+	 * ```
+	 */
+	async resumeTask<T, E extends Error = Error>(
+		taskId: string,
+		fn: (ctx: {
+			services: Services;
+			signal: AbortSignal;
+			logger: Logger;
+			context: Record<string, unknown>;
+			checkpoint?: { save: (data: unknown) => Promise<void>; data?: unknown };
+			progress?: ProgressContext;
+		}) => Promise<T>,
+		options?: Omit<TaskOptions<E>, "id"> & {
+			/** If true, throw an error if no checkpoint exists for this task ID */
+			requireExisting?: boolean;
+		},
+	): Promise<Result<E, T>> {
+		const checkpointProvider = this._persistence?.checkpoint;
+		if (!checkpointProvider) {
+			throw new Error("No checkpoint provider configured");
+		}
+
+		// Load existing checkpoint
+		const existingCheckpoint = await loadCheckpointForTask<unknown>(
+			checkpointProvider,
+			taskId,
+			undefined, // onResume will be called via task options
+		);
+
+		// Optionally require an existing checkpoint
+		if (options?.requireExisting && !existingCheckpoint) {
+			throw new Error(`No checkpoint found for task ID: ${taskId}`);
+		}
+
+		// Merge checkpoint options with any provided options
+		const mergedOptions: TaskOptions<E> = {
+			...options,
+			id: taskId,
+			checkpoint: {
+				interval: options?.checkpoint?.interval ?? 60000,
+				onCheckpoint: options?.checkpoint?.onCheckpoint,
+				onResume: existingCheckpoint
+					? () => {
+							options?.checkpoint?.onResume?.(existingCheckpoint);
+						}
+					: undefined,
+				maxCheckpoints: options?.checkpoint?.maxCheckpoints ?? 10,
+			},
+		};
+
+		// Create and await the task
+		const task = this.task(
+			fn as unknown as Parameters<Scope<Services>["task"]>[0],
+			mergedOptions,
+		);
+		return task as unknown as Promise<Result<E, T>>;
 	}
 
 	/**

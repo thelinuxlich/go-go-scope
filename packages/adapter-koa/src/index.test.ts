@@ -2,7 +2,7 @@
  * Tests for Koa adapter
  */
 
-import { type Scope } from "go-go-scope";
+import type { Scope } from "go-go-scope";
 import { describe, expect, test, vi } from "vitest";
 import {
 	closeKoaScope,

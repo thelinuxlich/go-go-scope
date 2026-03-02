@@ -13,7 +13,9 @@ import { InMemoryJobStorage, Scheduler } from "./index.js";
 describe("Scheduler Concurrent Execution", () => {
 	describe("concurrent: false (default)", () => {
 		test("prevents multiple jobs from same schedule running simultaneously", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 			const executed: string[] = [];
 			let resolveFirst: (() => void) | null = null;
@@ -71,7 +73,9 @@ describe("Scheduler Concurrent Execution", () => {
 		});
 
 		test("sequential execution across multiple instances", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 			const executionLog: { jobId: string; start: number; end: number }[] = [];
 			let currentExecution = 0;
@@ -145,7 +149,9 @@ describe("Scheduler Concurrent Execution", () => {
 
 	describe("concurrent: true", () => {
 		test("allows multiple jobs from same schedule to run simultaneously", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 			const executionLog: { jobId: string; start: number; end: number }[] = [];
 
@@ -206,7 +212,9 @@ describe("Scheduler Concurrent Execution", () => {
 		});
 
 		test("overlapping execution with concurrent: true", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 			let concurrentExecutions = 0;
 			let maxConcurrent = 0;
@@ -251,7 +259,9 @@ describe("Scheduler Concurrent Execution", () => {
 
 	describe("mixed schedules", () => {
 		test("different schedules respect their own concurrent settings", async () => {
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 			const storage = new InMemoryJobStorage();
 			const log: { schedule: string; jobId: string; type: "start" | "end" }[] =
 				[];

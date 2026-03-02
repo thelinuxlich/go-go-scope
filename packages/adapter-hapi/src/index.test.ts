@@ -2,7 +2,7 @@
  * Tests for Hapi adapter
  */
 
-import { type Scope } from "go-go-scope";
+import type { Scope } from "go-go-scope";
 import { describe, expect, test } from "vitest";
 import {
 	closeHapiScope,

@@ -944,3 +944,133 @@ See [API Reference](./03-api-reference.md) for complete method documentation.
 **Composition**: `pipe`
 
 **Creation**: Use `new Stream(source, scope)` or `s.stream(source)` with plugin
+
+
+---
+
+## Web Streams Integration (v2.5.0+)
+
+The `@go-go-scope/web-streams` package provides interoperability between go-go-scope primitives and the standard Web Streams API.
+
+### Installation
+
+```bash
+npm install @go-go-scope/web-streams
+```
+
+### Converting Channels to Web Streams
+
+```typescript
+import { scope } from 'go-go-scope'
+import { channelToReadableStream, channelToWritableStream } from '@go-go-scope/web-streams'
+
+await using s = scope()
+const ch = s.channel<string>()
+
+// Channel to ReadableStream
+const readable = channelToReadableStream(ch)
+const reader = readable.getReader()
+const { value } = await reader.read()
+
+// Channel to WritableStream
+const writable = channelToWritableStream(ch)
+const writer = writable.getWriter()
+await writer.write('hello')
+```
+
+### Converting Web Streams to Channels
+
+```typescript
+import { readableStreamToChannel, writableStreamToChannel } from '@go-go-scope/web-streams'
+
+// Fetch response body to channel
+const response = await fetch('/api/data')
+const ch = readableStreamToChannel(s, response.body!)
+
+for await (const chunk of ch) {
+  console.log(chunk)
+}
+
+// WritableStream to channel
+const ws = new WebSocketStream('wss://example.com')
+const ch = writableStreamToChannel(s, ws.writable)
+await ch.send('hello')
+```
+
+### Transform Streams
+
+```typescript
+import { createTransformStream, mapStream, filterStream } from '@go-go-scope/web-streams'
+
+// Create a transform stream
+const transform = createTransformStream<string, number>({
+  transform: (chunk) => chunk.length
+})
+
+// Use with pipeThrough
+const output = inputStream.pipeThrough(transform)
+
+// Helper transforms
+const doubled = inputStream.pipeThrough(mapStream((x: number) => x * 2))
+const evens = inputStream.pipeThrough(filterStream((x: number) => x % 2 === 0))
+```
+
+### Duplex Streams
+
+```typescript
+import { createDuplexStream } from '@go-go-scope/web-streams'
+
+const { readable, writable } = createDuplexStream<string, number>(s)
+
+// Write to writable
+const writer = writable.getWriter()
+await writer.write('hello')
+
+// Read from readable
+const reader = readable.getReader()
+const { value } = await reader.read()
+```
+
+### Stream Utilities
+
+```typescript
+import { 
+  streamToArray, 
+  streamFirst, 
+  bufferStream, 
+  takeStream,
+  skipStream,
+  teeStream 
+} from '@go-go-scope/web-streams'
+
+// Collect stream to array
+const data = await streamToArray(readableStream)
+
+// Get first value
+const first = await streamFirst(readableStream)
+
+// Buffer into arrays
+const buffered = readableStream.pipeThrough(bufferStream(10))
+
+// Take first n
+const limited = readableStream.pipeThrough(takeStream(5))
+
+// Skip first n
+const rest = readableStream.pipeThrough(skipStream(10))
+
+// Tee into two channels
+const [ch1, ch2] = teeStream(s, readableStream)
+```
+
+### Pipe Streams
+
+```typescript
+import { pipeStreams } from '@go-go-scope/web-streams'
+
+// Chain multiple streams
+await pipeStreams(
+  fetch('/api/data').then(r => r.body!),
+  transformStream,
+  writableStream
+)
+```

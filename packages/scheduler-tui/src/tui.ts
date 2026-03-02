@@ -24,10 +24,10 @@ import readline from "node:readline";
 import { parseArgs } from "node:util";
 import {
 	InMemoryJobStorage,
+	type JobStorage,
 	Scheduler,
 	ScheduleState,
 	type ScheduleStats,
-	type JobStorage,
 } from "@go-go-scope/scheduler";
 import { scope } from "go-go-scope";
 
@@ -57,7 +57,9 @@ function color(c: keyof typeof colors, text: string): string {
 }
 
 // Create storage
-async function createStorage(args: Record<string, string | boolean | undefined>) {
+async function createStorage(
+	args: Record<string, string | boolean | undefined>,
+) {
 	const storageType = args.storage || args.s || "memory";
 
 	switch (storageType) {
@@ -73,7 +75,7 @@ async function createStorage(args: Record<string, string | boolean | undefined>)
 				]);
 
 			const url = args.url || args.u || "redis://localhost:6379";
-			// @ts-ignore - ioredis ESM import
+			// @ts-expect-error - ioredis ESM import
 			const redis = new (RedisModule.default || RedisModule)(url);
 			const adapter = new RedisAdapter(redis);
 			return new RedisJobStorage(redis, adapter, { keyPrefix: "scheduler:" });

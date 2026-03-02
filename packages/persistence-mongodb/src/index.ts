@@ -73,6 +73,10 @@ export class MongoDBAdapter
 		return this.db.collection("go_goscope_cache");
 	}
 
+	private get checkpointsCollection() {
+		return this.db.collection("go_goscope_checkpoints");
+	}
+
 	// ============================================================================
 	// Persistence Adapter
 	// ============================================================================
@@ -92,6 +96,12 @@ export class MongoDBAdapter
 			{ expiresAt: 1 },
 			{ expireAfterSeconds: 0 },
 		);
+
+		await this.checkpointsCollection.createIndex(
+			{ taskId: 1, sequence: 1 },
+			{ unique: true },
+		);
+		await this.checkpointsCollection.createIndex({ taskId: 1 });
 
 		this.connected = true;
 	}

@@ -5,10 +5,48 @@
  * with automatic cleanup via the `using` and `await using` syntax.
  */
 
+// Re-export async iterable helpers
+export {
+	type AsyncIteratorFromOptions,
+	asyncIteratorFrom,
+	asyncIteratorFromWebSocket,
+	buffer,
+	catchError,
+	concat,
+	debounce,
+	delay,
+	empty,
+	type FromArrayOptions,
+	filter,
+	first,
+	fromArray,
+	fromPromise,
+	interval,
+	isAsyncIterable,
+	map,
+	merge,
+	of,
+	skip,
+	take,
+	tap,
+	throttle,
+	toArray,
+	zip,
+} from "./async-iterable.js";
 // Re-export classes
 export { BroadcastChannel } from "./broadcast-channel.js";
 // Re-export cache utilities
 export { createCache, InMemoryCache } from "./cache.js";
+// Re-export cache warming
+export type {
+	CacheWarmerConfig,
+	CacheWarmingOptions,
+} from "./cache-warming.js";
+export {
+	CacheWarmer,
+	createWarmedCache,
+	MultiTierCache,
+} from "./cache-warming.js";
 // Re-export cancellation utilities
 export {
 	abortPromise,
@@ -16,7 +54,29 @@ export {
 	whenAborted,
 } from "./cancellation.js";
 export { Channel } from "./channel.js";
+// Re-export checkpoint utilities
+export {
+	createCheckpointContext,
+	createProgressContext,
+	InMemoryCheckpointProvider,
+} from "./checkpoint.js";
 export { CircuitBreaker } from "./circuit-breaker.js";
+// Stream is available via @go-go-scope/stream package
+// Re-export DI utilities
+export {
+	createContainer,
+	createModule,
+	createServiceProvider,
+	createToken,
+	DIContainer,
+	type DIModule,
+	inject,
+	injectable,
+	type ServiceLifetime,
+	type ServiceProvider,
+	type ServiceRegistration,
+	type ServiceToken,
+} from "./di.js";
 export { AbortError, ChannelFullError, UnknownError } from "./errors.js";
 // Re-export standalone functions
 export { scope } from "./factory.js";
@@ -27,6 +87,20 @@ export {
 	setupGracefulShutdown,
 	waitForShutdown,
 } from "./graceful-shutdown.js";
+// Re-export enhanced graceful shutdown
+export type {
+	EnhancedGracefulShutdownOptions,
+	ShutdownState,
+	ShutdownStrategy,
+} from "./graceful-shutdown-enhanced.js";
+export {
+	createShutdownCoordinator,
+	EnhancedGracefulShutdownController,
+	ProcessLifecycle,
+	processLifecycle,
+	ShutdownCoordinator,
+	setupEnhancedGracefulShutdown,
+} from "./graceful-shutdown-enhanced.js";
 // Re-export idempotency utilities
 export {
 	createIdempotencyProvider,
@@ -52,6 +126,8 @@ export {
 export type {
 	CacheProvider,
 	CacheStats,
+	Checkpoint,
+	CheckpointProvider,
 	CircuitBreakerPersistedState,
 	CircuitBreakerStateProvider,
 	IdempotencyProvider,
@@ -89,7 +165,6 @@ export type {
 // Re-export scope-related
 export { AsyncDisposableResource, Scope } from "./scope.js";
 export { Semaphore } from "./semaphore.js";
-// Stream is available via @go-go-scope/stream package
 export { Task } from "./task.js";
 export type { TokenBucketOptions } from "./token-bucket.js";
 export { TokenBucket } from "./token-bucket.js";
@@ -97,6 +172,7 @@ export { TokenBucket } from "./token-bucket.js";
 export type {
 	BackpressureStrategy,
 	ChannelOptions,
+	CheckpointContext,
 	CircuitBreakerOptions,
 	CircuitState,
 	DebounceOptions,
@@ -108,6 +184,7 @@ export type {
 	PersistenceProviders,
 	PollController,
 	PollOptions,
+	ProgressContext,
 	RaceOptions,
 	ResourcePoolOptions,
 	Result,
@@ -119,6 +196,7 @@ export type {
 	TaskOptions,
 	ThrottleOptions,
 } from "./types.js";
+
 // Testing utilities are available via 'go-go-scope/testing' import
 
 // Internal: WorkerPool is exported for advanced use cases and internal packages.

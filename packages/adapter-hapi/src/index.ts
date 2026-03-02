@@ -72,7 +72,11 @@ export const hapiGoGoScope: Plugin<HapiGoGoScopeOptions> = {
 
 		// Create request-scoped child on each request
 		server.ext("onRequest", (request: Request, h) => {
-			const scopeOptions: { parent: Scope<Record<string, unknown>>; name: string; timeout?: number } = {
+			const scopeOptions: {
+				parent: Scope<Record<string, unknown>>;
+				name: string;
+				timeout?: number;
+			} = {
 				parent: rootScope,
 				// biome-ignore lint/suspicious/noExplicitAny: Hapi request info access
 				name: `request-${(request as any).id || request.info.id}`,

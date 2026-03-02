@@ -443,6 +443,83 @@ See the [integrations guide](./11-integrations.md) for complete OpenTelemetry se
 
 ---
 
+## Plugins (v2.5.0+)
+
+### Profiler Plugin
+
+Detailed task execution profiling with per-stage timing.
+
+```typescript
+import { profilerPlugin } from '@go-go-scope/plugin-profiler'
+
+await using s = scope({
+  plugins: [profilerPlugin(true)]
+})
+
+await s.task(() => fetchUser(1))
+
+const report = s.profile?.()
+console.log(report?.statistics)
+// {
+//   totalTasks: 1,
+//   successfulTasks: 1,
+//   avgTotalDuration: 45.2,
+//   avgExecutionDuration: 40.1,
+//   totalRetryAttempts: 0
+// }
+```
+
+**Install:**
+```bash
+npm install @go-go-scope/plugin-profiler
+```
+
+### Deadlock Detector Plugin
+
+Monitor tasks for potential deadlocks.
+
+```typescript
+import { deadlockDetectorPlugin } from '@go-go-scope/plugin-deadlock-detector'
+
+await using s = scope({
+  plugins: [
+    deadlockDetectorPlugin({
+      timeout: 30000,  // Alert if task waiting > 30s
+      onDeadlock: (tasks) => {
+        console.warn('Potential deadlock:', tasks)
+      }
+    })
+  ]
+})
+```
+
+**Install:**
+```bash
+npm install @go-go-scope/plugin-deadlock-detector
+```
+
+### Metrics Plugin
+
+Collect and export detailed metrics.
+
+```typescript
+import { metricsPlugin } from '@go-go-scope/plugin-metrics'
+
+await using s = scope({
+  plugins: [metricsPlugin()]
+})
+
+// Access via plugin
+const metrics = s.getMetrics?.()
+```
+
+**Install:**
+```bash
+npm install @go-go-scope/plugin-metrics
+```
+
+---
+
 ## Next Steps
 
 - **[Rate Limiting](./07-rate-limiting.md)** - Debounce, throttle, and concurrency limits

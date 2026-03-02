@@ -27,6 +27,8 @@
 
 import type {
 	CacheProvider,
+	Checkpoint,
+	CheckpointProvider,
 	CircuitBreakerPersistedState,
 	CircuitBreakerStateProvider,
 	LockHandle,
@@ -46,6 +48,7 @@ export class PostgresAdapter
 		LockProvider,
 		CircuitBreakerStateProvider,
 		CacheProvider,
+		CheckpointProvider,
 		PersistenceAdapter
 {
 	private readonly pool: Pool;
@@ -414,6 +417,125 @@ export class PostgresAdapter
 			);
 		}
 		return keys;
+	}
+
+	// ============================================================================
+	// Checkpoint Provider
+	// ============================================================================
+
+	async save<T>(checkpoint: Checkpoint<T>): Promise<void> {
+		const query = `
+			INSERT INTO go_goscope_checkpoints 
+				(id, task_id, sequence, timestamp, progress, data, estimated_time_remaining)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			ON CONFLICT (id) DO UPDATE SET
+				progress = EXCLUDED.progress,
+				data = EXCLUDED.data,
+				estimated_time_remaining = EXCLUDED.estimated_time_remaining
+		`;
+
+		await this.pool.query(query, [
+			checkpoint.id,
+			checkpoint.taskId,
+			checkpoint.sequence,
+			checkpoint.timestamp,
+			checkpoint.progress,
+			JSON.stringify(checkpoint.data),
+			checkpoint.estimatedTimeRemaining ?? null,
+		]);
+	}
+
+	async load<T>(checkpointId: string): Promise<Checkpoint<T> | undefined> {
+		const result = await this.pool.query(
+			`SELECT * FROM go_goscope_checkpoints WHERE id = $1`,
+			[checkpointId],
+		);
+
+		if (result.rows.length === 0) {
+			return undefined;
+		}
+
+		const row = result.rows[0];
+		return {
+			id: row.id,
+			taskId: row.task_id,
+			sequence: row.sequence,
+			timestamp: Number(row.timestamp),
+			progress: row.progress,
+			data: row.data as T,
+			estimatedTimeRemaining: row.estimated_time_remaining
+				? Number(row.estimated_time_remaining)
+				: undefined,
+		};
+	}
+
+	async loadLatest<T>(taskId: string): Promise<Checkpoint<T> | undefined> {
+		const result = await this.pool.query(
+			`SELECT * FROM go_goscope_checkpoints 
+			 WHERE task_id = $1 
+			 ORDER BY sequence DESC 
+			 LIMIT 1`,
+			[taskId],
+		);
+
+		if (result.rows.length === 0) {
+			return undefined;
+		}
+
+		const row = result.rows[0];
+		return {
+			id: row.id,
+			taskId: row.task_id,
+			sequence: row.sequence,
+			timestamp: Number(row.timestamp),
+			progress: row.progress,
+			data: row.data as T,
+			estimatedTimeRemaining: row.estimated_time_remaining
+				? Number(row.estimated_time_remaining)
+				: undefined,
+		};
+	}
+
+	async list(taskId: string): Promise<Checkpoint<unknown>[]> {
+		const result = await this.pool.query(
+			`SELECT * FROM go_goscope_checkpoints 
+			 WHERE task_id = $1 
+			 ORDER BY sequence ASC`,
+			[taskId],
+		);
+
+		return result.rows.map((row) => ({
+			id: row.id,
+			taskId: row.task_id,
+			sequence: row.sequence,
+			timestamp: Number(row.timestamp),
+			progress: row.progress,
+			data: row.data,
+			estimatedTimeRemaining: row.estimated_time_remaining
+				? Number(row.estimated_time_remaining)
+				: undefined,
+		}));
+	}
+
+	async cleanup(taskId: string, keepCount: number): Promise<void> {
+		// Delete old checkpoints, keeping only the most recent N
+		await this.pool.query(
+			`DELETE FROM go_goscope_checkpoints 
+			 WHERE id IN (
+				 SELECT id FROM go_goscope_checkpoints 
+				 WHERE task_id = $1 
+				 ORDER BY sequence DESC 
+				 OFFSET $2
+			 )`,
+			[taskId, keepCount],
+		);
+	}
+
+	async deleteAll(taskId: string): Promise<void> {
+		await this.pool.query(
+			`DELETE FROM go_goscope_checkpoints WHERE task_id = $1`,
+			[taskId],
+		);
 	}
 }
 export { PostgresIdempotencyAdapter } from "./idempotency.js";

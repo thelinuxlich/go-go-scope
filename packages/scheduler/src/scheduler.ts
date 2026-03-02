@@ -159,7 +159,10 @@ export class Scheduler<
 	private isRunning = false;
 	private checkInterval: number;
 	private pollTimer: ReturnType<typeof setInterval> | null = null;
-	private runningJobs = new Map<string, { scope: Scope<Record<string, unknown>>; startTime: number }>();
+	private runningJobs = new Map<
+		string,
+		{ scope: Scope<Record<string, unknown>>; startTime: number }
+	>();
 	private schedules = new Map<
 		string,
 		Schedule & { handler?: ScheduleHandler }
@@ -1344,7 +1347,7 @@ export class Scheduler<
 			// Check if handler has worker option enabled
 			const handlerOpts = this.handlerOptions.get(job.scheduleName);
 			const useWorker = handlerOpts?.worker ?? false;
-			
+
 			if (useWorker) {
 				// Lazy-create worker pool with configured options
 				if (!this.workerPool) {
@@ -1353,7 +1356,7 @@ export class Scheduler<
 						idleTimeout: this.workerPoolOptions?.idleTimeout,
 					});
 				}
-				
+
 				// Execute handler in worker thread
 				const handlerString = handler.toString();
 				await this.workerPool.execute<{ handler: string; job: Job }, void>(
@@ -1363,7 +1366,12 @@ export class Scheduler<
 						// Execute with minimal context (job only, no scope access)
 						return workerHandler(workerJob, {
 							signal: { aborted: false },
-							logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+							logger: {
+								debug: () => {},
+								info: () => {},
+								warn: () => {},
+								error: () => {},
+							},
 							context: {},
 						});
 					},

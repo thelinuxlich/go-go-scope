@@ -138,6 +138,26 @@ export class SQLiteAdapter
 			`CREATE INDEX IF NOT EXISTS idx_cache_expires ON go_goscope_cache(expires_at)`,
 		);
 
+		// Create table for checkpoints
+		await this.run(`
+			CREATE TABLE IF NOT EXISTS go_goscope_checkpoints (
+				id TEXT PRIMARY KEY,
+				task_id TEXT NOT NULL,
+				sequence INTEGER NOT NULL,
+				timestamp INTEGER NOT NULL,
+				progress INTEGER NOT NULL DEFAULT 0,
+				data TEXT NOT NULL,
+				estimated_time_remaining INTEGER,
+				created_at INTEGER DEFAULT (unixepoch())
+			)
+		`);
+		await this.run(
+			`CREATE INDEX IF NOT EXISTS idx_checkpoints_task ON go_goscope_checkpoints(task_id)`,
+		);
+		await this.run(
+			`CREATE INDEX IF NOT EXISTS idx_checkpoints_sequence ON go_goscope_checkpoints(task_id, sequence)`,
+		);
+
 		this.connected = true;
 	}
 

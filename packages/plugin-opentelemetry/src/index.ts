@@ -54,8 +54,8 @@ export function opentelemetryPlugin(
 
 			// Create scope span
 			const parentContext =
-				(scopeOptions as unknown as { parent?: { otelContext?: Context } }).parent
-					?.otelContext ?? otelContext.active();
+				(scopeOptions as unknown as { parent?: { otelContext?: Context } })
+					.parent?.otelContext ?? otelContext.active();
 
 			state.span = tracer.startSpan(
 				options.name ?? (scope as unknown as { name: string }).name ?? "scope",
@@ -71,7 +71,8 @@ export function opentelemetryPlugin(
 			state.context = trace.setSpan(parentContext, state.span);
 
 			// Store state on scope
-			(scope as unknown as { _otelState?: OpenTelemetryState })._otelState = state;
+			(scope as unknown as { _otelState?: OpenTelemetryState })._otelState =
+				state;
 
 			// Add getters
 			Object.defineProperty(scope, "otelSpan", {
@@ -93,37 +94,48 @@ export function opentelemetryPlugin(
 			});
 
 			// Hook into task lifecycle to create and end spans
-			scope.onBeforeTask?.((_taskName: string, index: number, options?: unknown) => {
-				const taskOptions = options as { otel?: TaskSpanOptions; retry?: unknown; timeout?: number } | undefined;
-				const span = state.tracer?.startSpan(
-					taskOptions?.otel?.name ?? _taskName ?? "scope.task",
-					{
-						attributes: {
-							"task.index": index,
-							"task.name": _taskName,
-							"task.has_retry": !!taskOptions?.retry,
-							"task.has_timeout": !!taskOptions?.timeout,
-							...taskOptions?.otel?.attributes,
+			scope.onBeforeTask?.(
+				(_taskName: string, index: number, options?: unknown) => {
+					const taskOptions = options as
+						| { otel?: TaskSpanOptions; retry?: unknown; timeout?: number }
+						| undefined;
+					const span = state.tracer?.startSpan(
+						taskOptions?.otel?.name ?? _taskName ?? "scope.task",
+						{
+							attributes: {
+								"task.index": index,
+								"task.name": _taskName,
+								"task.has_retry": !!taskOptions?.retry,
+								"task.has_timeout": !!taskOptions?.timeout,
+								...taskOptions?.otel?.attributes,
+							},
 						},
-					},
-					state.context ?? otelContext.active(),
-				);
-				if (span) {
-					state.taskSpans.set(index, span);
-				}
-			});
-
-			scope.onAfterTask?.((_taskName: string, _duration: number, error?: unknown, index?: number) => {
-				const span = state.taskSpans.get(index ?? 0);
-				if (span) {
-					if (error) {
-						span.recordException(error as Error);
-						span.setStatus({ code: 2 /* Error */ });
+						state.context ?? otelContext.active(),
+					);
+					if (span) {
+						state.taskSpans.set(index, span);
 					}
-					span.end();
-					state.taskSpans.delete(index ?? 0);
-				}
-			});
+				},
+			);
+
+			scope.onAfterTask?.(
+				(
+					_taskName: string,
+					_duration: number,
+					error?: unknown,
+					index?: number,
+				) => {
+					const span = state.taskSpans.get(index ?? 0);
+					if (span) {
+						if (error) {
+							span.recordException(error as Error);
+							span.setStatus({ code: 2 /* Error */ });
+						}
+						span.end();
+						state.taskSpans.delete(index ?? 0);
+					}
+				},
+			);
 
 			// Register cleanup
 			scope.onDispose(() => {
@@ -139,7 +151,8 @@ export function opentelemetryPlugin(
 		},
 
 		cleanup(scope) {
-			const state = (scope as unknown as { _otelState?: OpenTelemetryState })._otelState;
+			const state = (scope as unknown as { _otelState?: OpenTelemetryState })
+				._otelState;
 			if (state) {
 				for (const span of state.taskSpans.values()) {
 					span.end();
@@ -160,11 +173,14 @@ export function startTaskSpan(
 	taskIndex: number,
 	taskName: string,
 ): Span | undefined {
-	const state = (scope as unknown as { _otelState?: OpenTelemetryState })._otelState;
+	const state = (scope as unknown as { _otelState?: OpenTelemetryState })
+		._otelState;
 	if (!state?.tracer) return undefined;
 
 	// Cast to access optional retry/timeout properties
-	const opts = options as { otel?: TaskSpanOptions; retry?: unknown; timeout?: number } | undefined;
+	const opts = options as
+		| { otel?: TaskSpanOptions; retry?: unknown; timeout?: number }
+		| undefined;
 
 	const span = state.tracer.startSpan(
 		opts?.otel?.name ?? "scope.task",
@@ -192,7 +208,8 @@ export function endTaskSpan(
 	taskIndex: number,
 	error?: Error,
 ): void {
-	const state = (scope as unknown as { _otelState?: OpenTelemetryState })._otelState;
+	const state = (scope as unknown as { _otelState?: OpenTelemetryState })
+		._otelState;
 	if (!state) return;
 
 	const span = state.taskSpans.get(taskIndex);
@@ -210,7 +227,8 @@ export function endTaskSpan(
  * Set span error status
  */
 export function setSpanError(scope: Scope, error: unknown): void {
-	const state = (scope as unknown as { _otelState?: OpenTelemetryState })._otelState;
+	const state = (scope as unknown as { _otelState?: OpenTelemetryState })
+		._otelState;
 	if (state?.span && error instanceof Error) {
 		state.span.recordException(error);
 		state.span.setStatus({ code: 2 /* Error */ });
@@ -238,5 +256,25 @@ declare module "go-go-scope" {
 
 // Re-export OpenTelemetry types
 export type { Context, Span, SpanOptions, Tracer } from "@opentelemetry/api";
+
+// Re-export enhanced tracing features
+export type {
+	DeadlockEdge,
+	DeadlockGraph,
+	DeadlockNode,
+	EnhancedTracingOptions,
+	MessageFlow,
+	SpanLink,
+} from "./tracing-enhanced.js";
+
+export {
+	ChannelTracer,
+	DeadlockDetector,
+	exportTraceData,
+	MessageFlowTracker,
+	ScopeTracer,
+	setupEnhancedTracing,
+	TraceVisualizer,
+} from "./tracing-enhanced.js";
 
 export type { ScopePlugin };

@@ -101,7 +101,9 @@ function formatDate(date: Date | undefined): string {
 }
 
 // Create storage based on arguments
-async function createStorage(args: Record<string, string | boolean | undefined>) {
+async function createStorage(
+	args: Record<string, string | boolean | undefined>,
+) {
 	const storageType = args.storage || args.s || "memory";
 
 	switch (storageType) {
@@ -118,7 +120,7 @@ async function createStorage(args: Record<string, string | boolean | undefined>)
 				]);
 
 			const url = args.url || args.u || "redis://localhost:6379";
-			// @ts-ignore - ioredis ESM import
+			// @ts-expect-error - ioredis ESM import
 			const redis = new (RedisModule.default || RedisModule)(url);
 			const adapter = new RedisAdapter(redis);
 			return new RedisJobStorage(redis, adapter, { keyPrefix: "scheduler:" });
@@ -239,8 +241,14 @@ async function createCommand(
 	args: Record<string, string | boolean | undefined>,
 ) {
 	const cron = typeof args.cron === "string" ? args.cron : undefined;
-	const interval = typeof args.interval === "string" ? parseInt(args.interval, 10) : undefined;
-	const timezone = typeof args.timezone === "string" ? args.timezone : typeof args.tz === "string" ? args.tz : undefined;
+	const interval =
+		typeof args.interval === "string" ? parseInt(args.interval, 10) : undefined;
+	const timezone =
+		typeof args.timezone === "string"
+			? args.timezone
+			: typeof args.tz === "string"
+				? args.tz
+				: undefined;
 
 	if (!cron && !interval) {
 		printError("Either --cron or --interval must be specified");
@@ -251,11 +259,19 @@ async function createCommand(
 		cron,
 		interval,
 		timezone,
-		maxRetries: typeof args.maxRetries === "string" ? parseInt(args.maxRetries, 10) : undefined,
-		retryDelay: typeof args.retryDelay === "string" ? parseInt(args.retryDelay, 10) : undefined,
-		timeout: typeof args.timeout === "string" ? parseInt(args.timeout, 10) : undefined,
+		maxRetries:
+			typeof args.maxRetries === "string"
+				? parseInt(args.maxRetries, 10)
+				: undefined,
+		retryDelay:
+			typeof args.retryDelay === "string"
+				? parseInt(args.retryDelay, 10)
+				: undefined,
+		timeout:
+			typeof args.timeout === "string" ? parseInt(args.timeout, 10) : undefined,
 		concurrent: args.concurrent === "true" ? true : undefined,
-		jitter: typeof args.jitter === "string" ? parseInt(args.jitter, 10) : undefined,
+		jitter:
+			typeof args.jitter === "string" ? parseInt(args.jitter, 10) : undefined,
 	});
 
 	printSuccess(`Schedule '${name}' created`);
@@ -268,13 +284,32 @@ async function updateCommand(
 ) {
 	await scheduler.updateSchedule(name, {
 		cron: typeof args.cron === "string" ? args.cron : undefined,
-		interval: typeof args.interval === "string" ? parseInt(args.interval, 10) : undefined,
-		timezone: typeof args.timezone === "string" ? args.timezone : typeof args.tz === "string" ? args.tz : undefined,
-		maxRetries: typeof args.maxRetries === "string" ? parseInt(args.maxRetries, 10) : undefined,
-		retryDelay: typeof args.retryDelay === "string" ? parseInt(args.retryDelay, 10) : undefined,
-		timeout: typeof args.timeout === "string" ? parseInt(args.timeout, 10) : undefined,
-		concurrent: typeof args.concurrent === "string" ? args.concurrent === "true" : undefined,
-		jitter: typeof args.jitter === "string" ? parseInt(args.jitter, 10) : undefined,
+		interval:
+			typeof args.interval === "string"
+				? parseInt(args.interval, 10)
+				: undefined,
+		timezone:
+			typeof args.timezone === "string"
+				? args.timezone
+				: typeof args.tz === "string"
+					? args.tz
+					: undefined,
+		maxRetries:
+			typeof args.maxRetries === "string"
+				? parseInt(args.maxRetries, 10)
+				: undefined,
+		retryDelay:
+			typeof args.retryDelay === "string"
+				? parseInt(args.retryDelay, 10)
+				: undefined,
+		timeout:
+			typeof args.timeout === "string" ? parseInt(args.timeout, 10) : undefined,
+		concurrent:
+			typeof args.concurrent === "string"
+				? args.concurrent === "true"
+				: undefined,
+		jitter:
+			typeof args.jitter === "string" ? parseInt(args.jitter, 10) : undefined,
 	});
 
 	printSuccess(`Schedule '${name}' updated`);

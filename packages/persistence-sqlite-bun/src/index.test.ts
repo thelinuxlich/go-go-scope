@@ -5,11 +5,13 @@
  *
  * Run with: bun test src/index.test.ts
  */
-import { describe, test, expect, beforeAll } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 import { BunSQLiteAdapter } from "./index.js";
 
 // Import SQLiteAdapter dynamically to handle missing dependency
-let SQLiteAdapter: typeof import("@go-go-scope/persistence-sqlite").SQLiteAdapter | undefined;
+let SQLiteAdapter:
+	| typeof import("@go-go-scope/persistence-sqlite").SQLiteAdapter
+	| undefined;
 
 const isBun = typeof (globalThis as any).Bun !== "undefined";
 
@@ -18,7 +20,7 @@ let hasBunSqlite = false;
 let hasSqlite3 = false;
 
 try {
-	// @ts-ignore - bun:sqlite is a built-in module
+	// @ts-expect-error - bun:sqlite is a built-in module
 	await import("bun:sqlite");
 	hasBunSqlite = true;
 } catch {
@@ -63,7 +65,10 @@ describe("Bun SQLite Persistence", () => {
 			SQLiteAdapter = mod.SQLiteAdapter;
 			console.log("✓ @go-go-scope/persistence-sqlite available");
 		} catch (e) {
-			console.log("✗ @go-go-scope/persistence-sqlite not available:", (e as Error).message);
+			console.log(
+				"✗ @go-go-scope/persistence-sqlite not available:",
+				(e as Error).message,
+			);
 		}
 
 		// Check bun:sqlite availability

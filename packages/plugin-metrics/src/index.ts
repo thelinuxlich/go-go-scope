@@ -327,43 +327,67 @@ function exportAsPrometheus(
 	const lines: string[] = [];
 	const timestamp = includeTimestamps ? ` ${Date.now()}` : "";
 
-	lines.push(`# HELP ${prefix}_tasks_spawned_total Total number of tasks spawned`);
+	lines.push(
+		`# HELP ${prefix}_tasks_spawned_total Total number of tasks spawned`,
+	);
 	lines.push(`# TYPE ${prefix}_tasks_spawned_total counter`);
-	lines.push(`${prefix}_tasks_spawned_total ${metrics.tasksSpawned}${timestamp}`);
+	lines.push(
+		`${prefix}_tasks_spawned_total ${metrics.tasksSpawned}${timestamp}`,
+	);
 
-	lines.push(`# HELP ${prefix}_tasks_completed_total Total number of tasks completed`);
+	lines.push(
+		`# HELP ${prefix}_tasks_completed_total Total number of tasks completed`,
+	);
 	lines.push(`# TYPE ${prefix}_tasks_completed_total counter`);
-	lines.push(`${prefix}_tasks_completed_total ${metrics.tasksCompleted}${timestamp}`);
+	lines.push(
+		`${prefix}_tasks_completed_total ${metrics.tasksCompleted}${timestamp}`,
+	);
 
-	lines.push(`# HELP ${prefix}_tasks_failed_total Total number of tasks failed`);
+	lines.push(
+		`# HELP ${prefix}_tasks_failed_total Total number of tasks failed`,
+	);
 	lines.push(`# TYPE ${prefix}_tasks_failed_total counter`);
 	lines.push(`${prefix}_tasks_failed_total ${metrics.tasksFailed}${timestamp}`);
 
-	lines.push(`# HELP ${prefix}_task_duration_seconds_total Total task execution time`);
+	lines.push(
+		`# HELP ${prefix}_task_duration_seconds_total Total task execution time`,
+	);
 	lines.push(`# TYPE ${prefix}_task_duration_seconds_total counter`);
 	lines.push(
 		`${prefix}_task_duration_seconds_total ${(metrics.totalTaskDuration / 1000).toFixed(3)}${timestamp}`,
 	);
 
-	lines.push(`# HELP ${prefix}_task_duration_avg_seconds Average task execution time`);
+	lines.push(
+		`# HELP ${prefix}_task_duration_avg_seconds Average task execution time`,
+	);
 	lines.push(`# TYPE ${prefix}_task_duration_avg_seconds gauge`);
 	lines.push(
 		`${prefix}_task_duration_avg_seconds ${(metrics.avgTaskDuration / 1000).toFixed(3)}${timestamp}`,
 	);
 
-	lines.push(`# HELP ${prefix}_task_duration_p95_seconds 95th percentile task duration`);
+	lines.push(
+		`# HELP ${prefix}_task_duration_p95_seconds 95th percentile task duration`,
+	);
 	lines.push(`# TYPE ${prefix}_task_duration_p95_seconds gauge`);
 	lines.push(
 		`${prefix}_task_duration_p95_seconds ${(metrics.p95TaskDuration / 1000).toFixed(3)}${timestamp}`,
 	);
 
-	lines.push(`# HELP ${prefix}_resources_registered_total Total resources registered`);
+	lines.push(
+		`# HELP ${prefix}_resources_registered_total Total resources registered`,
+	);
 	lines.push(`# TYPE ${prefix}_resources_registered_total counter`);
-	lines.push(`${prefix}_resources_registered_total ${metrics.resourcesRegistered}${timestamp}`);
+	lines.push(
+		`${prefix}_resources_registered_total ${metrics.resourcesRegistered}${timestamp}`,
+	);
 
-	lines.push(`# HELP ${prefix}_resources_disposed_total Total resources disposed`);
+	lines.push(
+		`# HELP ${prefix}_resources_disposed_total Total resources disposed`,
+	);
 	lines.push(`# TYPE ${prefix}_resources_disposed_total counter`);
-	lines.push(`${prefix}_resources_disposed_total ${metrics.resourcesDisposed}${timestamp}`);
+	lines.push(
+		`${prefix}_resources_disposed_total ${metrics.resourcesDisposed}${timestamp}`,
+	);
 
 	if (metrics.scopeDuration !== undefined) {
 		lines.push(`# HELP ${prefix}_scope_duration_seconds Total scope lifetime`);
@@ -529,11 +553,13 @@ export function metricsPlugin(options: MetricsPluginOptions = {}): ScopePlugin {
 				}
 			).metrics = () => collector.getMetrics();
 
-			(scope as unknown as { histogram?(name: string): Histogram | undefined }).histogram =
-				(name: string) => collector.histogram(name);
+			(
+				scope as unknown as { histogram?(name: string): Histogram | undefined }
+			).histogram = (name: string) => collector.histogram(name);
 
-			(scope as unknown as { counter?(name: string): Counter | undefined }).counter =
-				(name: string) => collector.counter(name);
+			(
+				scope as unknown as { counter?(name: string): Counter | undefined }
+			).counter = (name: string) => collector.counter(name);
 
 			(scope as unknown as { gauge?(name: string): Gauge | undefined }).gauge =
 				(name: string) => collector.gauge(name);
@@ -551,19 +577,23 @@ export function metricsPlugin(options: MetricsPluginOptions = {}): ScopePlugin {
 				const startTime = taskStartTimes.get(
 					(name as unknown as { index?: number }).index ?? 0,
 				);
-				const actualDuration = startTime ? performance.now() - startTime : duration;
+				const actualDuration = startTime
+					? performance.now() - startTime
+					: duration;
 				collector.recordTaskCompleted(actualDuration, !error);
-				taskStartTimes.delete((name as unknown as { index?: number }).index ?? 0);
+				taskStartTimes.delete(
+					(name as unknown as { index?: number }).index ?? 0,
+				);
 			});
 
 			// Override provide to track resources (wrap dispose callback to track disposal)
 			const originalProvide = scope.provide.bind(scope);
 			Object.defineProperty(scope, "provide", {
-				value: function <K extends string, T>(
+				value: <K extends string, T>(
 					key: K,
 					value: T | (() => T),
 					dispose?: (value: T) => void | Promise<void>,
-				) {
+				) => {
 					collector.recordResourceRegistered();
 					// Wrap dispose callback to track disposal
 					const wrappedDispose = dispose

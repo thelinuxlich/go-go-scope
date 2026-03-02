@@ -19,7 +19,9 @@ interface TaskAssertion<T> {
 	/** Assert task rejects with specific error message */
 	toRejectWith: (message: string | RegExp) => Promise<void>;
 	/** Assert task fails with specific error type */
-	toRejectWithType: <E extends Error>(errorClass: new (...args: never[]) => E) => Promise<void>;
+	toRejectWithType: <E extends Error>(
+		errorClass: new (...args: never[]) => E,
+	) => Promise<void>;
 	/** Get the result tuple for manual assertions */
 	result: () => Promise<Result<Error, T>>;
 }
@@ -60,18 +62,22 @@ export function expectTask<T>(task: Task<Result<Error, T>>): TaskAssertion<T> {
 		toResolve: async () => {
 			const [err] = await getResult();
 			if (err) {
-				throw new Error(`Expected task to resolve, but rejected: ${err.message}`);
+				throw new Error(
+					`Expected task to resolve, but rejected: ${err.message}`,
+				);
 			}
 		},
 
 		toResolveWith: async (expected: T) => {
 			const [err, result] = await getResult();
 			if (err) {
-				throw new Error(`Expected task to resolve with ${JSON.stringify(expected)}, but rejected: ${err.message}`);
+				throw new Error(
+					`Expected task to resolve with ${JSON.stringify(expected)}, but rejected: ${err.message}`,
+				);
 			}
 			if (result !== expected) {
 				throw new Error(
-					`Expected task to resolve with ${JSON.stringify(expected)}, but got ${JSON.stringify(result)}`
+					`Expected task to resolve with ${JSON.stringify(expected)}, but got ${JSON.stringify(result)}`,
 				);
 			}
 		},
@@ -89,7 +95,10 @@ export function expectTask<T>(task: Task<Result<Error, T>>): TaskAssertion<T> {
 					await Promise.race([assertion.toResolve(), timeoutPromise]);
 				},
 				toResolveWith: async (expected: T) => {
-					await Promise.race([assertion.toResolveWith(expected), timeoutPromise]);
+					await Promise.race([
+						assertion.toResolveWith(expected),
+						timeoutPromise,
+					]);
 				},
 				toResolveWithin: () => racingAssertion,
 				toReject: async () => {
@@ -98,8 +107,13 @@ export function expectTask<T>(task: Task<Result<Error, T>>): TaskAssertion<T> {
 				toRejectWith: async (message: string | RegExp) => {
 					await Promise.race([assertion.toRejectWith(message), timeoutPromise]);
 				},
-				toRejectWithType: async <E extends Error>(errorClass: new (...args: never[]) => E) => {
-					await Promise.race([assertion.toRejectWithType(errorClass), timeoutPromise]);
+				toRejectWithType: async <E extends Error>(
+					errorClass: new (...args: never[]) => E,
+				) => {
+					await Promise.race([
+						assertion.toRejectWithType(errorClass),
+						timeoutPromise,
+					]);
 				},
 				result: getResult,
 			};
@@ -117,26 +131,33 @@ export function expectTask<T>(task: Task<Result<Error, T>>): TaskAssertion<T> {
 		toRejectWith: async (message: string | RegExp) => {
 			const [err] = await getResult();
 			if (!err) {
-				throw new Error(`Expected task to reject with "${message}", but resolved successfully`);
+				throw new Error(
+					`Expected task to reject with "${message}", but resolved successfully`,
+				);
 			}
-			const matches = typeof message === "string"
-				? err.message === message
-				: message.test(err.message);
+			const matches =
+				typeof message === "string"
+					? err.message === message
+					: message.test(err.message);
 			if (!matches) {
 				throw new Error(
-					`Expected error message "${message}", but got "${err.message}"`
+					`Expected error message "${message}", but got "${err.message}"`,
 				);
 			}
 		},
 
-		toRejectWithType: async <E extends Error>(errorClass: new (...args: never[]) => E) => {
+		toRejectWithType: async <E extends Error>(
+			errorClass: new (...args: never[]) => E,
+		) => {
 			const [err] = await getResult();
 			if (!err) {
-				throw new Error(`Expected task to reject with ${errorClass.name}, but resolved successfully`);
+				throw new Error(
+					`Expected task to reject with ${errorClass.name}, but resolved successfully`,
+				);
 			}
 			if (!(err instanceof errorClass)) {
 				throw new Error(
-					`Expected error to be instance of ${errorClass.name}, but got ${err.constructor.name}`
+					`Expected error to be instance of ${errorClass.name}, but got ${err.constructor.name}`,
 				);
 			}
 		},
@@ -161,10 +182,14 @@ export function expectTask<T>(task: Task<Result<Error, T>>): TaskAssertion<T> {
  * })
  * ```
  */
-export async function assertResolves<T>(task: Task<Result<Error, T>>): Promise<Result<Error, T>> {
+export async function assertResolves<T>(
+	task: Task<Result<Error, T>>,
+): Promise<Result<Error, T>> {
 	const result = await task;
 	if (result[0]) {
-		throw new Error(`Expected task to resolve, but rejected: ${result[0].message}`);
+		throw new Error(
+			`Expected task to resolve, but rejected: ${result[0].message}`,
+		);
 	}
 	return result;
 }
@@ -183,7 +208,9 @@ export async function assertResolves<T>(task: Task<Result<Error, T>>): Promise<R
  * })
  * ```
  */
-export async function assertRejects<T>(task: Task<Result<Error, T>>): Promise<Error> {
+export async function assertRejects<T>(
+	task: Task<Result<Error, T>>,
+): Promise<Error> {
 	const [err] = await task;
 	if (!err) {
 		throw new Error("Expected task to reject, but resolved successfully");

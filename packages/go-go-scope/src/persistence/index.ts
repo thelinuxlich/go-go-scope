@@ -33,6 +33,8 @@
 export type {
 	CacheProvider,
 	CacheStats,
+	Checkpoint,
+	CheckpointProvider,
 	CircuitBreakerPersistedState,
 	CircuitBreakerStateProvider,
 	IdempotencyProvider,

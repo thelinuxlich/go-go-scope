@@ -52,7 +52,9 @@ describe("Stress Tests - High Throughput", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+		await using s = scope() as import("go-go-scope").Scope<
+			Record<string, unknown>
+		>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -101,7 +103,9 @@ describe("Stress Tests - High Throughput", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+		await using s = scope() as import("go-go-scope").Scope<
+			Record<string, unknown>
+		>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -158,7 +162,9 @@ describe("Stress Tests - Many Concurrent Schedules", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+		await using s = scope() as import("go-go-scope").Scope<
+			Record<string, unknown>
+		>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -228,7 +234,9 @@ describe("Stress Tests - Many Concurrent Schedules", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+		await using s = scope() as import("go-go-scope").Scope<
+			Record<string, unknown>
+		>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -289,7 +297,9 @@ describe("Stress Tests - Worker Failure Recovery", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+		await using s = scope() as import("go-go-scope").Scope<
+			Record<string, unknown>
+		>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -368,7 +378,9 @@ describe("Stress Tests - Worker Failure Recovery", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+		await using s = scope() as import("go-go-scope").Scope<
+			Record<string, unknown>
+		>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -419,7 +431,9 @@ describe("Stress Tests - Clock Skew Handling", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+		await using s = scope() as import("go-go-scope").Scope<
+			Record<string, unknown>
+		>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -484,7 +498,9 @@ describe("Stress Tests - Thundering Herd Protection", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+		await using s = scope() as import("go-go-scope").Scope<
+			Record<string, unknown>
+		>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -556,7 +572,9 @@ describe("Stress Tests - Thundering Herd Protection", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+		await using s = scope() as import("go-go-scope").Scope<
+			Record<string, unknown>
+		>;
 
 		const admin = new Scheduler({
 			scope: s,
@@ -622,7 +640,9 @@ describe("Stress Tests - Long-Running Stability", () => {
 		const { InMemoryJobStorage } = await import("./types.js");
 		const storage = new InMemoryJobStorage();
 
-		await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+		await using s = scope() as import("go-go-scope").Scope<
+			Record<string, unknown>
+		>;
 
 		const admin = new Scheduler({
 			scope: s,

@@ -69,7 +69,11 @@ export function koaGoGoScope(options: KoaGoGoScopeOptions = {}): Middleware {
 			throw new Error("Root scope not initialized");
 		}
 
-		const scopeOptions: { parent: Scope<Record<string, unknown>>; name: string; timeout?: number } = {
+		const scopeOptions: {
+			parent: Scope<Record<string, unknown>>;
+			name: string;
+			timeout?: number;
+		} = {
 			parent: rootScope!,
 			name: `request-${ctx.request.url}`,
 		};

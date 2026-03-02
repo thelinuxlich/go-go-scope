@@ -26,6 +26,8 @@
  */
 
 import type {
+	Checkpoint,
+	CheckpointProvider,
 	CircuitBreakerPersistedState,
 	CircuitBreakerStateProvider,
 	LockHandle,
@@ -54,7 +56,11 @@ interface BunDatabase {
  * Bun-native SQLite persistence adapter
  */
 export class BunSQLiteAdapter
-	implements LockProvider, CircuitBreakerStateProvider, PersistenceAdapter
+	implements
+		LockProvider,
+		CircuitBreakerStateProvider,
+		CheckpointProvider,
+		PersistenceAdapter
 {
 	private readonly db: BunDatabase;
 	private readonly keyPrefix: string;
@@ -90,6 +96,25 @@ export class BunSQLiteAdapter
 				updated_at INTEGER NOT NULL
 			)
 		`);
+
+		this.db.run(`
+			CREATE TABLE IF NOT EXISTS go_goscope_checkpoints (
+				id TEXT PRIMARY KEY,
+				task_id TEXT NOT NULL,
+				sequence INTEGER NOT NULL,
+				timestamp INTEGER NOT NULL,
+				progress INTEGER NOT NULL DEFAULT 0,
+				data TEXT NOT NULL,
+				estimated_time_remaining INTEGER,
+				created_at INTEGER DEFAULT (unixepoch())
+			)
+		`);
+		this.db.run(
+			`CREATE INDEX IF NOT EXISTS idx_checkpoints_task ON go_goscope_checkpoints(task_id)`,
+		);
+		this.db.run(
+			`CREATE INDEX IF NOT EXISTS idx_checkpoints_sequence ON go_goscope_checkpoints(task_id, sequence)`,
+		);
 
 		this.connected = true;
 	}
@@ -247,5 +272,126 @@ export class BunSQLiteAdapter
 			failureCount: 0,
 			lastSuccessTime: Date.now(),
 		});
+	}
+
+	// ============================================================================
+	// Checkpoint Provider
+	// ============================================================================
+
+	async save<T>(checkpoint: Checkpoint<T>): Promise<void> {
+		this.db.run(
+			`INSERT INTO go_goscope_checkpoints 
+				(id, task_id, sequence, timestamp, progress, data, estimated_time_remaining)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(id) DO UPDATE SET
+				progress = excluded.progress,
+				data = excluded.data,
+				estimated_time_remaining = excluded.estimated_time_remaining`,
+			[
+				checkpoint.id,
+				checkpoint.taskId,
+				checkpoint.sequence,
+				checkpoint.timestamp,
+				checkpoint.progress,
+				JSON.stringify(checkpoint.data),
+				checkpoint.estimatedTimeRemaining ?? null,
+			],
+		);
+	}
+
+	async load<T>(checkpointId: string): Promise<Checkpoint<T> | undefined> {
+		const stmt = this.db.query<{
+			id: string;
+			task_id: string;
+			sequence: number;
+			timestamp: number;
+			progress: number;
+			data: string;
+			estimated_time_remaining: number | null;
+		}>(`SELECT * FROM go_goscope_checkpoints WHERE id = ?`);
+
+		const row = stmt.get(checkpointId);
+		if (!row) return undefined;
+
+		return {
+			id: row.id,
+			taskId: row.task_id,
+			sequence: row.sequence,
+			timestamp: row.timestamp,
+			progress: row.progress,
+			data: JSON.parse(row.data) as T,
+			estimatedTimeRemaining: row.estimated_time_remaining ?? undefined,
+		};
+	}
+
+	async loadLatest<T>(taskId: string): Promise<Checkpoint<T> | undefined> {
+		const stmt = this.db.query<{
+			id: string;
+			task_id: string;
+			sequence: number;
+			timestamp: number;
+			progress: number;
+			data: string;
+			estimated_time_remaining: number | null;
+		}>(
+			`SELECT * FROM go_goscope_checkpoints WHERE task_id = ? ORDER BY sequence DESC LIMIT 1`,
+		);
+
+		const row = stmt.get(taskId);
+		if (!row) return undefined;
+
+		return {
+			id: row.id,
+			taskId: row.task_id,
+			sequence: row.sequence,
+			timestamp: row.timestamp,
+			progress: row.progress,
+			data: JSON.parse(row.data) as T,
+			estimatedTimeRemaining: row.estimated_time_remaining ?? undefined,
+		};
+	}
+
+	async list(taskId: string): Promise<Checkpoint<unknown>[]> {
+		const stmt = this.db.query<{
+			id: string;
+			task_id: string;
+			sequence: number;
+			timestamp: number;
+			progress: number;
+			data: string;
+			estimated_time_remaining: number | null;
+		}>(
+			`SELECT * FROM go_goscope_checkpoints WHERE task_id = ? ORDER BY sequence ASC`,
+		);
+
+		const rows = stmt.all(taskId);
+		return rows.map((row) => ({
+			id: row.id,
+			taskId: row.task_id,
+			sequence: row.sequence,
+			timestamp: row.timestamp,
+			progress: row.progress,
+			data: JSON.parse(row.data),
+			estimatedTimeRemaining: row.estimated_time_remaining ?? undefined,
+		}));
+	}
+
+	async cleanup(taskId: string, keepCount: number): Promise<void> {
+		this.db.run(
+			`DELETE FROM go_goscope_checkpoints 
+			 WHERE id IN (
+				 SELECT id FROM go_goscope_checkpoints 
+				 WHERE task_id = ? 
+				 ORDER BY sequence DESC 
+				 OFFSET ?
+			 )`,
+			[taskId, keepCount],
+		);
+	}
+
+	async deleteAll(taskId: string): Promise<void> {
+		this.db.run(`DELETE FROM go_goscope_checkpoints WHERE task_id = ?`, [
+			taskId,
+		]);
 	}
 }

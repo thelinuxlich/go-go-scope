@@ -65,7 +65,9 @@ async function runMemoryBenchmark(
 	const initialMemory = getMemoryMB();
 	const startTime = Date.now();
 
-	await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+	await using s = scope() as import("go-go-scope").Scope<
+		Record<string, unknown>
+	>;
 
 	const admin = new Scheduler({
 		scope: s,

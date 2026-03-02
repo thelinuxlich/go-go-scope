@@ -1730,7 +1730,7 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 		return new Stream<T[]>(
 			(async function* () {
 				const buffer: T[] = [];
-				// @ts-ignore - Tracking for future time-based logic
+				// @ts-expect-error - Tracking for future time-based logic
 				let _lastEmit = Date.now();
 				let timeoutId: ReturnType<typeof setTimeout> | undefined;
 				let resolveTimeout: (() => void) | undefined;
@@ -1921,7 +1921,7 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 				};
 
 				// Start prefetching
-				// @ts-ignore - Fire-and-forget prefetch
+				// @ts-expect-error - Fire-and-forget prefetch
 				const _prefetchPromise = prefetchOuter();
 
 				try {
@@ -2783,7 +2783,11 @@ class SharedStream<T> implements AsyncDisposable {
 	private buffer: T[] = [];
 	private started = false;
 
-	constructor(source: Stream<T>, scope: Scope<Record<string, unknown>>, bufferSize: number) {
+	constructor(
+		source: Stream<T>,
+		scope: Scope<Record<string, unknown>>,
+		bufferSize: number,
+	) {
 		this.source = source;
 		this.scope = scope;
 		this.bufferSize = bufferSize;

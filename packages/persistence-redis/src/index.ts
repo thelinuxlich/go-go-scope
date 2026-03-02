@@ -27,6 +27,8 @@
 
 import type {
 	CacheProvider,
+	Checkpoint,
+	CheckpointProvider,
 	CircuitBreakerPersistedState,
 	CircuitBreakerStateProvider,
 	LockHandle,
@@ -47,6 +49,7 @@ export class RedisAdapter
 		LockProvider,
 		CircuitBreakerStateProvider,
 		CacheProvider,
+		CheckpointProvider,
 		PersistenceAdapter
 {
 	private readonly redis: Redis;
@@ -254,4 +257,108 @@ export class RedisAdapter
 				: withoutPrefix;
 		});
 	}
+
+	// ============================================================================
+	// Checkpoint Provider
+	// ============================================================================
+
+	async saveCheckpoint<T>(checkpoint: Checkpoint<T>): Promise<void> {
+		const key = this.prefix(`checkpoint:${checkpoint.taskId}`);
+		const checkpointKey = `${key}:${checkpoint.sequence}`;
+		const data = JSON.stringify(checkpoint);
+
+		// Save the checkpoint
+		await this.redis.set(checkpointKey, data);
+
+		// Add to the list of checkpoints for this task
+		await this.redis.zadd(key, checkpoint.sequence, checkpointKey);
+	}
+
+	async loadCheckpoint<T>(
+		checkpointId: string,
+	): Promise<Checkpoint<T> | undefined> {
+		const data = await this.redis.get(checkpointId);
+		if (!data) return undefined;
+
+		try {
+			return JSON.parse(data) as Checkpoint<T>;
+		} catch {
+			return undefined;
+		}
+	}
+
+	async loadLatestCheckpoint<T>(
+		taskId: string,
+	): Promise<Checkpoint<T> | undefined> {
+		const key = this.prefix(`checkpoint:${taskId}`);
+		const checkpointKeys = await this.redis.zrevrange(key, 0, 0);
+
+		if (checkpointKeys.length === 0) return undefined;
+
+		const checkpointKey = checkpointKeys[0];
+		if (!checkpointKey) return undefined;
+
+		const data = await this.redis.get(checkpointKey);
+		if (!data) return undefined;
+
+		try {
+			return JSON.parse(data) as Checkpoint<T>;
+		} catch {
+			return undefined;
+		}
+	}
+
+	async listCheckpoints(taskId: string): Promise<Checkpoint<unknown>[]> {
+		const key = this.prefix(`checkpoint:${taskId}`);
+		const checkpointKeys = await this.redis.zrange(key, 0, -1);
+
+		const checkpoints: Checkpoint<unknown>[] = [];
+		for (const ck of checkpointKeys) {
+			const data = await this.redis.get(ck);
+			if (data) {
+				try {
+					checkpoints.push(JSON.parse(data) as Checkpoint<unknown>);
+				} catch {
+					// Skip invalid checkpoints
+				}
+			}
+		}
+
+		return checkpoints.sort((a, b) => a.sequence - b.sequence);
+	}
+
+	async cleanupCheckpoints(taskId: string, keepCount: number): Promise<void> {
+		const key = this.prefix(`checkpoint:${taskId}`);
+		const checkpointKeys = await this.redis.zrange(key, 0, -1);
+
+		if (checkpointKeys.length <= keepCount) return;
+
+		// Get keys to delete (oldest first)
+		const toDelete = checkpointKeys.slice(0, checkpointKeys.length - keepCount);
+
+		// Delete old checkpoints
+		for (const ck of toDelete) {
+			await this.redis.del(ck);
+			await this.redis.zrem(key, ck);
+		}
+	}
+
+	async deleteAllCheckpoints(taskId: string): Promise<void> {
+		const key = this.prefix(`checkpoint:${taskId}`);
+		const checkpointKeys = await this.redis.zrange(key, 0, -1);
+
+		// Delete all checkpoints
+		if (checkpointKeys.length > 0) {
+			await this.redis.del(...checkpointKeys);
+		}
+		await this.redis.del(key);
+	}
+
+	// Aliases for CheckpointProvider interface compatibility
+	save = this.saveCheckpoint.bind(this);
+	load = this.loadCheckpoint.bind(this);
+	loadLatest = this.loadLatestCheckpoint.bind(this);
+	list = this.listCheckpoints.bind(this);
+	cleanup = this.cleanupCheckpoints.bind(this);
+	deleteAll = this.deleteAllCheckpoints.bind(this);
 }

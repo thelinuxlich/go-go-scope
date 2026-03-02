@@ -66,7 +66,9 @@ async function runBasicSchedulingTest(
 	describe(`${name} - Basic Scheduling`, () => {
 		test("creates schedule and runs job", async () => {
 			const { storage, cleanup } = await createStorage();
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 
 			// Create admin and schedule FIRST
 			const admin = new Scheduler({
@@ -111,7 +113,9 @@ async function runBasicSchedulingTest(
 
 		test("schedules next occurrence automatically", async () => {
 			const { storage, cleanup } = await createStorage();
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 
 			const admin = new Scheduler({
 				scope: s,
@@ -157,7 +161,9 @@ async function runCronSchedulingTest(
 	describe(`${name} - Cron Scheduling`, () => {
 		test("parses cron and schedules correctly", async () => {
 			const { storage, cleanup } = await createStorage();
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 
 			const admin = new Scheduler({
 				scope: s,
@@ -196,7 +202,9 @@ async function runCronSchedulingTest(
 
 		test("respects timezone in cron", async () => {
 			const { storage, cleanup } = await createStorage();
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 
 			const admin = new Scheduler({
 				scope: s,
@@ -226,7 +234,9 @@ async function runEndDateTest(
 	describe(`${name} - End Date Handling`, () => {
 		test("stops scheduling after end date", async () => {
 			const { storage, cleanup } = await createStorage();
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 
 			const admin = new Scheduler({
 				scope: s,
@@ -282,7 +292,9 @@ async function runMemoryLeakTest(
 			const initialMemory = getMemoryMB();
 
 			const { storage, cleanup } = await createStorage();
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 
 			const admin = new Scheduler({
 				scope: s,
@@ -347,7 +359,9 @@ async function runMemoryLeakTest(
 			const initialMemory = getMemoryMB();
 
 			const { storage, cleanup } = await createStorage();
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 
 			const admin = new Scheduler({
 				scope: s,
@@ -419,7 +433,9 @@ async function runHighAvailabilityTest(
 	describe(`${name} - High Availability`, () => {
 		test("multiple workers process jobs without duplicates", async () => {
 			const { storage, cleanup } = await createStorage();
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 
 			const admin = new Scheduler({
 				scope: s,
@@ -484,7 +500,9 @@ async function runErrorRecoveryTest(
 	describe(`${name} - Error Recovery`, () => {
 		test("retries failed jobs", async () => {
 			const { storage, cleanup } = await createStorage();
-			await using s = scope() as import("go-go-scope").Scope<Record<string, unknown>>;
+			await using s = scope() as import("go-go-scope").Scope<
+				Record<string, unknown>
+			>;
 
 			const admin = new Scheduler({
 				scope: s,
@@ -562,9 +580,8 @@ describe("Scheduler Integration Tests - Redis", () => {
 	beforeAll(async () => {
 		try {
 			// Try to connect to Redis
-			// @ts-ignore - ioredis type issues in test environment
 			const Redis = await import("ioredis");
-			// @ts-ignore - ioredis type issues in test environment
+			// @ts-expect-error - ioredis type issues in test environment
 			redisClient = new Redis.default({
 				host: process.env.REDIS_HOST || "localhost",
 				port: parseInt(process.env.REDIS_PORT || "6380", 10),
@@ -573,7 +590,7 @@ describe("Scheduler Integration Tests - Redis", () => {
 			});
 			await (redisClient as { ping(): Promise<unknown> }).ping();
 			lockProvider = new RedisAdapter(
-				// @ts-ignore - Redis client type mismatch in test environment
+				// @ts-expect-error - Redis client type mismatch in test environment
 				redisClient,
 			);
 			redisAvailable = true;
@@ -649,9 +666,8 @@ describe("Scheduler Integration Tests - PostgreSQL", () => {
 
 	beforeAll(async () => {
 		try {
-			// @ts-ignore - pg type issues in test environment
+			// @ts-expect-error - pg type issues in test environment
 			const { Client } = await import("pg");
-			// @ts-ignore - pg type issues in test environment
 			pgClient = new Client({
 				host: process.env.POSTGRES_HOST || "localhost",
 				port: parseInt(process.env.REDIS_PORT || "5433", 10),
@@ -662,7 +678,7 @@ describe("Scheduler Integration Tests - PostgreSQL", () => {
 			});
 			await (pgClient as { connect(): Promise<void> }).connect();
 			lockProvider = new PostgresAdapter(
-				// @ts-ignore - pg client type mismatch in test environment
+				// @ts-expect-error - pg client type mismatch in test environment
 				pgClient,
 			);
 			pgAvailable = true;
@@ -755,9 +771,7 @@ describe("Scheduler Integration Tests - MySQL", () => {
 
 	beforeAll(async () => {
 		try {
-			// @ts-ignore - mysql2 type issues in test environment
 			const mysql = await import("mysql2/promise");
-			// @ts-ignore - mysql2 type issues in test environment
 			mysqlClient = await mysql.createConnection({
 				host: process.env.MYSQL_HOST || "localhost",
 				port: parseInt(process.env.MYSQL_PORT || "3307", 10),
@@ -767,7 +781,7 @@ describe("Scheduler Integration Tests - MySQL", () => {
 				connectTimeout: 1000,
 			});
 			lockProvider = new MySQLAdapter(
-				// @ts-ignore - mysql2 client type mismatch in test environment
+				// @ts-expect-error - mysql2 client type mismatch in test environment
 				mysqlClient,
 			);
 			mysqlAvailable = true;
@@ -852,9 +866,7 @@ describe("Scheduler Integration Tests - MySQL", () => {
 // SQLite Storage (always available)
 describe("Scheduler Integration Tests - SQLite", () => {
 	async function createSQLiteStorage(): Promise<TestContext> {
-		// @ts-ignore - sqlite3 type issues in test environment
 		const sqlite3 = await import("sqlite3");
-		// @ts-ignore - sqlite type issues in test environment
 		const { open } = await import("sqlite");
 
 		const db = await open({

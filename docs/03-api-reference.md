@@ -531,6 +531,55 @@ interface TaskOptions<E extends Error = Error> {
    * ```
    */
   worker?: boolean
+  
+  /**
+   * Checkpoint configuration for long-running tasks (v2.5.0+).
+   * 
+   * Automatically saves task state at intervals for fault tolerance.
+   * Combined with `scope.resumeTask()`, allows tasks to resume from
+   * the last checkpoint after failures or restarts.
+   * 
+   * Requires a persistence provider with checkpoint support.
+   * 
+   * @example
+   * ```typescript
+   * await using s = scope({
+   *   persistence: { checkpoint: redisAdapter }
+   * })
+   * 
+   * const [err, result] = await s.task(
+   *   async ({ checkpoint, progress }) => {
+   *     const processed = checkpoint?.data?.processed ?? 0
+   *     
+   *     for (let i = processed; i < total; i++) {
+   *       await processItem(i)
+   *       progress.update((i / total) * 100)
+   *       
+   *       // Auto-saved every 60 seconds
+   *       if (i % 100 === 0) {
+   *         await checkpoint.save({ processed: i })
+   *       }
+   *     }
+   *   },
+   *   {
+   *     checkpoint: {
+   *       interval: 60000,  // Auto-save every minute
+   *       maxCheckpoints: 10
+   *     }
+   *   }
+   * )
+   * ```
+   */
+  checkpoint?: {
+    /** Auto-save interval in milliseconds */
+    interval?: number
+    /** Maximum number of checkpoints to keep */
+    maxCheckpoints?: number
+    /** Callback when checkpoint is saved */
+    onCheckpoint?: (checkpoint: Checkpoint<unknown>) => void
+    /** Callback when resuming from checkpoint */
+    onResume?: (checkpoint: Checkpoint<unknown>) => void
+  }
 }
 ```
 
@@ -652,6 +701,90 @@ When multiple options are specified, they execute in this order:
 3. Retry (retry on failure)
 4. Timeout (enforce time limit)
 5. Result Wrapping (`task()` only)
+
+---
+
+### `scope.resumeTask(taskId, fn, options?)`
+
+Resumes a task from its last checkpoint (v2.5.0+).
+
+This method is designed for long-running tasks that need to survive failures and restarts. It loads the latest checkpoint for the given task ID and passes it to the task function.
+
+```typescript
+resumeTask<T, E extends Error = Error>(
+  taskId: string,
+  fn: (ctx: {
+    services: Services
+    signal: AbortSignal
+    logger: Logger
+    context: Record<string, unknown>
+    checkpoint?: { save: (data: unknown) => Promise<void>; data?: unknown }
+    progress?: ProgressContext
+  }) => Promise<T>,
+  options?: Omit<TaskOptions<E>, "id"> & {
+    requireExisting?: boolean
+  }
+): Promise<Result<E, T>>
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `taskId` | `string` | Unique identifier for the task (used to load checkpoints) |
+| `fn` | `Function` | Task function receiving checkpoint data if available |
+| `options` | `object` | Task options plus `requireExisting` flag |
+
+**Options:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `requireExisting` | `boolean` | If true, throws error if no checkpoint exists |
+
+**Returns:** `Promise<Result<E, T>>` - Task result tuple
+
+**Example:**
+
+```typescript
+await using s = scope({
+  persistence: { checkpoint: redisAdapter }
+})
+
+// Resume a data migration from last checkpoint
+const [err, result] = await s.resumeTask(
+  'user-migration-v2',
+  async ({ checkpoint, progress }) => {
+    // checkpoint.data contains saved state from previous run
+    const lastProcessedId = checkpoint?.data?.lastId ?? 0
+    
+    const users = await db.query(
+      'SELECT * FROM users WHERE id > ? LIMIT 1000',
+      [lastProcessedId]
+    )
+    
+    for (const user of users) {
+      await migrateUser(user)
+      
+      // Save progress every 100 users
+      if (user.id % 100 === 0) {
+        await checkpoint.save({ lastId: user.id })
+      }
+      
+      progress.update((user.id / totalUsers) * 100)
+    }
+  },
+  {
+    checkpoint: { interval: 30000 },
+    timeout: 3600000  // 1 hour
+  }
+)
+```
+
+**Use Cases:**
+- Data migrations that take hours/days
+- ETL pipelines that process large datasets
+- Batch jobs that need to resume after crashes
+- Long-running computations with periodic state saves
 
 ---
 

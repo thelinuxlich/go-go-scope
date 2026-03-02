@@ -186,6 +186,49 @@ export interface IdempotencyProvider {
 }
 
 /**
+ * Checkpoint data structure
+ */
+export interface Checkpoint<T = unknown> {
+	/** Unique checkpoint ID */
+	id: string;
+	/** Task identifier */
+	taskId: string;
+	/** Sequence number (monotonically increasing) */
+	sequence: number;
+	/** Timestamp when checkpoint was created */
+	timestamp: number;
+	/** Progress percentage (0-100) */
+	progress: number;
+	/** Checkpoint data (opaque to the framework) */
+	data: T;
+	/** Estimated time remaining in ms */
+	estimatedTimeRemaining?: number;
+}
+
+/**
+ * Checkpoint provider interface for persisting task progress
+ */
+export interface CheckpointProvider {
+	/** Save a checkpoint */
+	save<T>(checkpoint: Checkpoint<T>): Promise<void>;
+
+	/** Load the latest checkpoint for a task */
+	loadLatest<T>(taskId: string): Promise<Checkpoint<T> | undefined>;
+
+	/** Load a specific checkpoint by ID */
+	load<T>(checkpointId: string): Promise<Checkpoint<T> | undefined>;
+
+	/** List all checkpoints for a task */
+	list(taskId: string): Promise<Checkpoint<unknown>[]>;
+
+	/** Delete old checkpoints, keeping N most recent */
+	cleanup(taskId: string, keepCount: number): Promise<void>;
+
+	/** Delete all checkpoints for a task */
+	deleteAll(taskId: string): Promise<void>;
+}
+
+/**
  * Combined persistence providers
  */
 export interface PersistenceProviders {
@@ -197,6 +240,8 @@ export interface PersistenceProviders {
 	cache?: CacheProvider;
 	/** Idempotency provider for caching task results */
 	idempotency?: IdempotencyProvider;
+	/** Checkpoint provider for long-running tasks */
+	checkpoint?: CheckpointProvider;
 }
 
 /**
