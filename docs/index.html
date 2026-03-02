@@ -832,6 +832,7 @@
                     <a href="#introduction" class="nav-link">Introduction</a>
                     <a href="#installation" class="nav-link">Installation</a>
                     <a href="#quickstart" class="nav-link">Quick Start</a>
+                    <a href="#checkpoint-example" class="nav-link">✨ Checkpoint Example</a>
                 </div>
 
                 <div class="nav-section">
@@ -1003,6 +1004,81 @@
 
 <span class="comment">// Everything cancels and cleans up automatically</span>
 <span class="comment">// No memory leaks, no hanging promises, no manual cleanup</span></code></pre>
+            </section>
+
+            <!-- Checkpoint Feature Example -->
+            <section class="quick-start" id="checkpoint-example">
+                <h3>🚀 Real-World Example: Resumable Data Migration</h3>
+                <p style="color: var(--text-muted); margin-bottom: 20px;">
+                    Long-running tasks that survive crashes and resume from where they left off.
+                    Perfect for data migrations, ETL pipelines, and batch processing.
+                </p>
+                <pre><code><span class="keyword">import</span> { scope } <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
+<span class="keyword">import</span> { RedisAdapter } <span class="keyword">from</span> <span class="string">'@go-go-scope/persistence-redis'</span>
+
+<span class="comment">// Connect to Redis for checkpoint storage</span>
+<span class="keyword">const</span> redisAdapter = <span class="keyword">new</span> <span class="function">RedisAdapter</span>(redisClient)
+<span class="keyword">await</span> redisAdapter.<span class="function">connect</span>()
+
+<span class="comment">// Resume migration from last checkpoint (v2.5.0+)</span>
+<span class="keyword">await using</span> s = <span class="function">scope</span>({
+  persistence: { checkpoint: redisAdapter },
+  timeout: <span class="number">3600000</span>  <span class="comment">// 1 hour timeout</span>
+})
+
+<span class="keyword">const</span> [err, result] = <span class="keyword">await</span> s.<span class="function">resumeTask</span>(
+  <span class="string">'user-migration-v2'</span>,  <span class="comment">// Task ID for checkpoint lookup</span>
+  <span class="keyword">async</span> ({ checkpoint, progress }) => {
+    <span class="comment">// Resume from last saved state</span>
+    <span class="keyword">const</span> lastId = checkpoint?.data?.lastId ?? <span class="number">0</span>
+    <span class="keyword">const</span> migrated = checkpoint?.data?.migrated ?? <span class="number">0</span>
+    
+    <span class="comment">// Stream users from last checkpoint</span>
+    <span class="keyword">const</span> users = <span class="keyword">await</span> db.<span class="function">query</span>(<span class="string">'SELECT * FROM users WHERE id > ?'</span>, [lastId])
+    
+    <span class="keyword">for</span> (<span class="keyword">const</span> user <span class="keyword">of</span> users) {
+      <span class="comment">// Migrate user to new schema</span>
+      <span class="keyword">await</span> <span class="function">migrateUser</span>(user)
+      
+      <span class="comment">// Save checkpoint every 100 users</span>
+      <span class="keyword">if</span> (user.id % <span class="number">100</span> === <span class="number">0</span>) {
+        <span class="keyword">await</span> checkpoint.<span class="function">save</span>({ 
+          lastId: user.id, 
+          migrated: migrated + <span class="number">100</span> 
+        })
+        
+        <span class="comment">// Report progress</span>
+        progress.<span class="function">update</span>((user.id / <span class="number">1000000</span>) * <span class="number">100</span>)
+        console.<span class="function">log</span>(<span class="string">`Migrated ${migrated + 100} users...`</span>)
+      }
+    }
+    
+    <span class="keyword">return</span> { totalMigrated: migrated + users.length }
+  },
+  {
+    checkpoint: { 
+      interval: <span class="number">60000</span>,      <span class="comment">// Auto-save every minute</span>
+      maxCheckpoints: <span class="number">10</span>     <span class="comment">// Keep last 10 checkpoints</span>
+    }
+  }
+)
+
+<span class="comment">// If process crashes, restart and it resumes automatically!</span>
+<span class="comment">// No duplicate migrations, no data loss, no manual intervention</span></code></pre>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px;">
+                    <div style="background: var(--surface); border: 2px solid var(--border); padding: 16px;">
+                        <div style="font-weight: 700; margin-bottom: 8px; color: var(--primary);">💾 Automatic Checkpoints</div>
+                        <p style="font-size: 13px; color: var(--text-muted); margin: 0;">State saved periodically with configurable intervals</p>
+                    </div>
+                    <div style="background: var(--surface); border: 2px solid var(--border); padding: 16px;">
+                        <div style="font-weight: 700; margin-bottom: 8px; color: var(--primary);">🔄 Seamless Resume</div>
+                        <p style="font-size: 13px; color: var(--text-muted); margin: 0;">Restart from exact point of failure, no duplicates</p>
+                    </div>
+                    <div style="background: var(--surface); border: 2px solid var(--border); padding: 16px;">
+                        <div style="font-weight: 700; margin-bottom: 8px; color: var(--primary);">📊 Progress Tracking</div>
+                        <p style="font-size: 13px; color: var(--text-muted); margin: 0;">Real-time progress updates for monitoring</p>
+                    </div>
+                </div>
             </section>
 
             <!-- Scope Section -->
