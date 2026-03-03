@@ -14,18 +14,21 @@
  * @example
  * ```typescript
  * import { RedisAdapter } from '@go-go-scope/persistence-redis'
- * import { scope } from 'go-go-scope'
+ * import { scope, Lock } from 'go-go-scope'
  *
  * const redis = new Redis(process.env.REDIS_URL)
  * const persistence = new RedisAdapter(redis)
  *
  * await using s = scope({ persistence })
  *
- * // Acquire a lock with 30 second TTL
- * const lock = await s.acquireLock('resource:123', 30000)
- * if (!lock) {
- *   throw new Error('Could not acquire lock')
- * }
+ * // Acquire a distributed lock with 30 second TTL
+ * const lock = new Lock(s.signal, {
+ *   provider: s.persistence?.lock,
+ *   key: 'resource:123',
+ *   ttl: 30000,
+ * })
+ * await using guard = await lock.acquire()
+ * // Lock automatically released when guard is disposed
  * ```
  */
 

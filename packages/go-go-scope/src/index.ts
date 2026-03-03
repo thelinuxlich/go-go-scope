@@ -60,6 +60,10 @@ export {
 	createProgressContext,
 	InMemoryCheckpointProvider,
 } from "./checkpoint.js";
+export type {
+	CircuitBreakerEvent,
+	EventHandler,
+} from "./circuit-breaker.js";
 export { CircuitBreaker } from "./circuit-breaker.js";
 // Stream is available via @go-go-scope/stream package
 // Re-export DI utilities
@@ -78,6 +82,13 @@ export {
 	type ServiceToken,
 } from "./di.js";
 export { AbortError, ChannelFullError, UnknownError } from "./errors.js";
+// race is available as scope.race()
+// debounce and throttle are available as scope.debounce() and scope.throttle()
+// Re-export EventEmitter
+export {
+	createEventEmitter,
+	ScopedEventEmitter,
+} from "./event-emitter.js";
 // Re-export standalone functions
 export { scope } from "./factory.js";
 export type { GracefulShutdownOptions } from "./graceful-shutdown.js";
@@ -106,6 +117,22 @@ export {
 	createIdempotencyProvider,
 	InMemoryIdempotencyProvider,
 } from "./idempotency.js";
+// Re-export unified Lock API
+export type {
+	LockAcquireOptions,
+	LockOptions,
+} from "./lock.js";
+export { createLock, Lock, LockGuard } from "./lock.js";
+// Re-export log correlation utilities
+export type { CorrelationContext } from "./log-correlation.js";
+export {
+	CorrelatedLogger,
+	createCorrelatedLogger,
+	generateSpanId,
+	generateTraceId,
+	getCorrelationContext,
+	isCorrelatedLogger,
+} from "./log-correlation.js";
 // Re-export logger
 export { ConsoleLogger, createLogger, NoOpLogger } from "./logger.js";
 export { parallel } from "./parallel.js";
@@ -147,8 +174,7 @@ export type {
 export { PriorityChannel } from "./priority-channel.js";
 // parallel is available as scope.parallel()
 export { race } from "./race.js";
-// race is available as scope.race()
-// debounce and throttle are available as scope.debounce() and scope.throttle()
+// Note: LockHandle is already exported from persistence/types.js
 export type { HealthCheckResult } from "./resource-pool.js";
 export { ResourcePool } from "./resource-pool.js";
 // Re-export retry strategies

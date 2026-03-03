@@ -14,6 +14,7 @@ Common patterns and solutions using go-go-scope.
 - [Circuit Breaker Pattern](#circuit-breaker-pattern)
 - [Health Check Endpoint](#health-check-endpoint)
 - [Actor Model](#actor-model)
+- [Scoped EventEmitter](#scoped-eventemitter)
 
 ---
 
@@ -655,6 +656,173 @@ await counter.dispose()
 - Channel-based message passing
 - Supports both tell (async) and ask (sync) patterns
 - Automatic cleanup with scope disposal
+
+---
+
+## Scoped EventEmitter
+
+Use the auto-cleanup EventEmitter for event-driven architectures without memory leaks:
+
+```typescript
+import { scope } from 'go-go-scope'
+
+// WebSocket event manager with automatic cleanup
+class WebSocketEventManager {
+  private emitter: ReturnType<typeof scope.prototype.eventEmitter>
+
+  constructor() {
+    const s = scope()
+    this.scope = s
+    
+    // Create typed event emitter - all listeners auto-removed on scope disposal
+    this.emitter = s.eventEmitter<{
+      message: (data: { user: string; text: string }) => void
+      connect: (userId: string) => void
+      disconnect: (userId: string) => void
+      error: (err: Error) => void
+    }>()
+  }
+
+  onMessage(handler: (data: { user: string; text: string }) => void) {
+    return this.emitter.on('message', handler)
+  }
+
+  onConnect(handler: (userId: string) => void) {
+    return this.emitter.on('connect', handler)
+  }
+
+  onDisconnect(handler: (userId: string) => void) {
+    return this.emitter.on('disconnect', handler)
+  }
+
+  emitMessage(data: { user: string; text: string }) {
+    this.emitter.emit('message', data)
+  }
+
+  async dispose() {
+    await this.scope[Symbol.asyncDispose]()
+    // All listeners automatically removed!
+  }
+}
+
+// Usage
+async function handleWebSocketConnection(ws: WebSocket) {
+  await using s = scope()
+  const events = s.eventEmitter<{
+    message: (text: string) => void
+    close: () => void
+  }>()
+
+  // Subscribe to events
+  events.on('message', (text) => {
+    console.log('Received:', text)
+  })
+
+  events.on('close', () => {
+    console.log('Connection closed')
+  })
+
+  // Forward WebSocket events
+  ws.onmessage = (e) => events.emit('message', e.data)
+  ws.onclose = () => events.emit('close')
+
+  // All listeners auto-removed when scope disposes
+}
+```
+
+### EventEmitter with Async Handlers
+
+Handle async event handlers properly:
+
+```typescript
+import { scope } from 'go-go-scope'
+
+async function setupEventProcessor() {
+  await using s = scope()
+  
+  const events = s.eventEmitter<{
+    userJoined: (userId: string) => Promise<void>
+    orderPlaced: (order: Order) => Promise<void>
+  }>()
+
+  // Async handler - errors don't crash the emitter
+  events.on('userJoined', async (userId) => {
+    await sendWelcomeEmail(userId)
+    await updateAnalytics(userId)
+  })
+
+  // Emit and wait for all async handlers
+  await events.emitAsync('userJoined', 'user-123')
+  // Waits for all handlers to complete
+}
+```
+
+### One-time Events
+
+Use `once` for events that should only be handled once:
+
+```typescript
+import { scope } from 'go-go-scope'
+
+async function waitForReady() {
+  await using s = scope()
+  const events = s.eventEmitter<{
+    ready: () => void
+    error: (err: Error) => void
+  }>()
+
+  // Wait for ready event (only triggers once)
+  return new Promise<void>((resolve, reject) => {
+    events.once('ready', () => resolve())
+    events.once('error', (err) => reject(err))
+  })
+}
+```
+
+### EventEmitter Best Practices
+
+```typescript
+import { scope } from 'go-go-scope'
+
+// 1. Always scope your emitters
+await using s = scope()
+const emitter = s.eventEmitter<{
+  data: (chunk: Buffer) => void
+  end: () => void
+}>()
+
+// 2. Store unsubscribe functions when needed
+const unsubscribes: Array<() => void> = []
+
+unsubscribes.push(
+  emitter.on('data', handleData),
+  emitter.on('data', handleDataForLogging) // Multiple handlers OK
+)
+
+// 3. Check listener count before emitting
+if (emitter.hasListeners('data')) {
+  emitter.emit('data', buffer)
+}
+
+// 4. Remove specific listeners
+const handler = (data: Buffer) => console.log(data)
+emitter.on('data', handler)
+emitter.off('data', handler) // Remove specific handler
+
+// 5. Remove all listeners for an event
+emitter.removeAllListeners('data')
+
+// 6. Get event statistics
+console.log('Listeners:', emitter.listenerCount('data'))
+console.log('Active events:', emitter.eventNames())
+```
+
+**Key features:**
+- **Type-safe**: Full TypeScript support for event names and payloads
+- **Auto-cleanup**: All listeners removed when scope disposes (no memory leaks)
+- **Error isolation**: Errors in handlers don't affect other handlers
+- **Async support**: `emitAsync` waits for all async handlers
+- **Flexible**: Support for multiple handlers, one-time handlers, and manual unsubscribe
 
 ---
 

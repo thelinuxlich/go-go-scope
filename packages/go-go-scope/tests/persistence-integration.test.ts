@@ -20,7 +20,7 @@ import {
 	expect,
 	test,
 } from "vitest";
-import { scope } from "../src/factory.js";
+import { scope, Lock } from "../src/index.js";
 import type {
 	CheckpointProvider,
 	CircuitBreakerStateProvider,
@@ -496,7 +496,8 @@ describe("persistence integration", () => {
 				},
 			});
 
-			const lock = await s.acquireLock("scope-test", 5000);
+			const lock = new Lock(s.signal, { provider: s.persistence?.lock, key: "scope-test", ttl: 5000 });
+			await using guard = await lock.acquire({ timeout: 1000 });
 			expect(lock).not.toBeNull();
 			if (lock) {
 				await lock.release();
@@ -519,7 +520,8 @@ describe("persistence integration", () => {
 				},
 			});
 
-			const lock = await s.acquireLock("scope-test", 5000);
+			const lock = new Lock(s.signal, { provider: s.persistence?.lock, key: "scope-test", ttl: 5000 });
+			await using guard = await lock.acquire({ timeout: 1000 });
 			expect(lock).not.toBeNull();
 			if (lock) {
 				await lock.release();
@@ -539,7 +541,8 @@ describe("persistence integration", () => {
 				},
 			});
 
-			const lock = await s.acquireLock("scope-test", 5000);
+			const lock = new Lock(s.signal, { provider: s.persistence?.lock, key: "scope-test", ttl: 5000 });
+			await using guard = await lock.acquire({ timeout: 1000 });
 			expect(lock).not.toBeNull();
 			if (lock) {
 				await lock.release();
@@ -564,7 +567,8 @@ describe("persistence integration", () => {
 				},
 			});
 
-			const lock = await s.acquireLock("scope-test", 5000);
+			const lock = new Lock(s.signal, { provider: s.persistence?.lock, key: "scope-test", ttl: 5000 });
+			await using guard = await lock.acquire({ timeout: 1000 });
 			expect(lock).not.toBeNull();
 			if (lock) {
 				await lock.release();
@@ -593,23 +597,23 @@ describe("persistence integration", () => {
 			});
 
 			// Try to acquire same lock from both scopes
-			const lock1 = await s1.acquireLock("critical-section", 5000);
-			const lock2 = await s2.acquireLock("critical-section", 100);
+			const lock1 = new Lock(s1.signal, {
+				provider: s1.persistence?.lock,
+				key: "critical-section",
+				ttl: 5000,
+			});
+			const lock2 = new Lock(s2.signal, {
+				provider: s2.persistence?.lock,
+				key: "critical-section",
+				ttl: 5000,
+			});
 
-			// Only one should succeed (not both)
-			expect(!!(lock1 && lock2)).toBe(false);
-			expect(lock1 || lock2).toBeTruthy();
+			// Acquire from first scope
+			await using guard1 = await lock1.acquire();
+			results.push(1);
 
-			if (lock1) {
-				results.push(1);
-				await lock1.release();
-			}
-			if (lock2) {
-				results.push(2);
-				await lock2.release();
-			}
-
-			expect(results.length).toBe(1);
+			// Second should timeout
+			await expect(lock2.acquire({ timeout: 100 })).rejects.toThrow("timed out");
 		});
 
 		test("multiple scopes share same lock provider", async () => {
@@ -637,24 +641,34 @@ describe("persistence integration", () => {
 			});
 
 			// Acquire lock from first scope
-			const lock1 = await s1.acquireLock("shared-resource", 5000);
-			expect(lock1).not.toBeNull();
+			const lock1 = new Lock(s1.signal, {
+				provider: s1.persistence?.lock,
+				key: "shared-resource",
+				ttl: 5000,
+			});
+			await using guard1 = await lock1.acquire();
 
-			// Others should not be able to acquire
-			const lock2 = await s2.acquireLock("shared-resource", 100);
-			const lock3 = await s3.acquireLock("shared-resource", 100);
-			expect(lock2).toBeNull();
-			expect(lock3).toBeNull();
-
-			await lock1!.release();
+			// Others should timeout
+			const lock2 = new Lock(s2.signal, {
+				provider: s2.persistence?.lock,
+				key: "shared-resource",
+				ttl: 5000,
+			});
+			const lock3 = new Lock(s3.signal, {
+				provider: s3.persistence?.lock,
+				key: "shared-resource",
+				ttl: 5000,
+			});
+			await expect(lock2.acquire({ timeout: 100 })).rejects.toThrow("timed out");
+			await expect(lock3.acquire({ timeout: 100 })).rejects.toThrow("timed out");
 		});
 
-		test("scope without lock provider throws error", async () => {
+		test("Lock without provider uses in-memory mode", async () => {
 			await using s = scope({ name: "no-persistence" });
 
-			await expect(s.acquireLock("test", 5000)).rejects.toThrow(
-				"No lock provider configured",
-			);
+			const lock = new Lock(s.signal, { name: "memory-lock" });
+			await using guard = await lock.acquire();
+			expect(guard).toBeTruthy();
 		});
 	});
 
@@ -677,7 +691,7 @@ describe("persistence integration", () => {
 						persistence: { lock: lockProvider },
 					});
 
-					const lock = await s.acquireLock("shared-job", 5000);
+					const lock = new Lock(s.signal, { provider: s.persistence?.lock, key: "shared-job", ttl: 5000 });
 					if (lock) {
 						acquiredBy.push(i);
 						// Hold lock briefly then release

@@ -4,6 +4,23 @@
 
 import type { CircuitBreakerOptions, CircuitState } from "./types.js";
 
+/**
+ * Event handler type for circuit breaker events
+ */
+export type EventHandler = (...args: unknown[]) => void;
+
+/**
+ * Circuit breaker event types
+ */
+export type CircuitBreakerEvent =
+	| "stateChange"
+	| "open"
+	| "close"
+	| "halfOpen"
+	| "success"
+	| "failure"
+	| "thresholdAdapt";
+
 interface RequestRecord {
 	success: boolean;
 	timestamp: number;
@@ -31,6 +48,8 @@ export class CircuitBreaker implements AsyncDisposable {
 	private stateExpiryTime?: number;
 	private readonly hooks: CircuitBreakerOptions;
 	private requestHistory: RequestRecord[] = [];
+	private eventListeners: Map<CircuitBreakerEvent, Set<EventHandler>> =
+		new Map();
 
 	constructor(
 		options: CircuitBreakerOptions = {},
@@ -90,6 +109,7 @@ export class CircuitBreaker implements AsyncDisposable {
 		// Notify about threshold change
 		if (adaptiveThreshold !== this._failureThreshold) {
 			this.hooks.advanced?.onThresholdAdapt?.(adaptiveThreshold, errorRate);
+			this.emit("thresholdAdapt", adaptiveThreshold, errorRate);
 		}
 
 		return Math.max(this._minThreshold, adaptiveThreshold);
@@ -255,6 +275,74 @@ export class CircuitBreaker implements AsyncDisposable {
 	 */
 	async [Symbol.asyncDispose](): Promise<void> {
 		this.reset();
+		this.eventListeners.clear();
+	}
+
+	/**
+	 * Subscribe to a circuit breaker event.
+	 *
+	 * @param event - Event name: 'stateChange', 'open', 'close', 'halfOpen', 'success', 'failure', 'thresholdAdapt'
+	 * @param handler - Event handler function
+	 * @returns Unsubscribe function
+	 *
+	 * @example
+	 * ```typescript
+	 * const unsubscribe = cb.on('open', () => {
+	 *   console.log('Circuit opened!');
+	 * });
+	 *
+	 * // Later: unsubscribe
+	 * unsubscribe();
+	 * ```
+	 */
+	on(event: CircuitBreakerEvent, handler: EventHandler): () => void {
+		if (!this.eventListeners.has(event)) {
+			this.eventListeners.set(event, new Set());
+		}
+		this.eventListeners.get(event)!.add(handler);
+
+		// Return unsubscribe function
+		return () => {
+			this.eventListeners.get(event)?.delete(handler);
+		};
+	}
+
+	/**
+	 * Unsubscribe from a circuit breaker event.
+	 *
+	 * @param event - Event name
+	 * @param handler - Handler to remove
+	 */
+	off(event: CircuitBreakerEvent, handler: EventHandler): void {
+		this.eventListeners.get(event)?.delete(handler);
+	}
+
+	/**
+	 * Subscribe to an event once.
+	 *
+	 * @param event - Event name
+	 * @param handler - Event handler function
+	 */
+	once(event: CircuitBreakerEvent, handler: EventHandler): void {
+		const onceHandler = (...args: unknown[]) => {
+			this.off(event, onceHandler);
+			handler(...args);
+		};
+		this.on(event, onceHandler);
+	}
+
+	/**
+	 * Emit an event to all subscribers.
+	 */
+	private emit(event: CircuitBreakerEvent, ...args: unknown[]): void {
+		// Call handlers
+		this.eventListeners.get(event)?.forEach((handler) => {
+			try {
+				handler(...args);
+			} catch {
+				// Ignore errors in event handlers
+			}
+		});
 	}
 
 	private onSuccess(): void {
@@ -283,6 +371,8 @@ export class CircuitBreaker implements AsyncDisposable {
 				this.successes = 0;
 				this.hooks.onStateChange?.(previousState, "closed", 0);
 				this.hooks.onClose?.();
+				this.emit("stateChange", previousState, "closed", 0);
+				this.emit("close");
 			}
 		} else if (this.state !== "closed") {
 			this.state = "closed";
@@ -290,9 +380,12 @@ export class CircuitBreaker implements AsyncDisposable {
 			this.successes = 0;
 			this.hooks.onStateChange?.(previousState, "closed", 0);
 			this.hooks.onClose?.();
+			this.emit("stateChange", previousState, "closed", 0);
+			this.emit("close");
 		}
 
 		this.stateExpiryTime = undefined;
+		this.emit("success");
 	}
 
 	private onFailure(): void {
@@ -330,7 +423,11 @@ export class CircuitBreaker implements AsyncDisposable {
 			this.stateExpiryTime = now + this._resetTimeout;
 			this.hooks.onStateChange?.(previousState, "open", currentFailures);
 			this.hooks.onOpen?.(currentFailures);
+			this.emit("stateChange", previousState, "open", currentFailures);
+			this.emit("open", currentFailures);
 		}
+
+		this.emit("failure");
 	}
 
 	private transitionToHalfOpen(): void {
@@ -344,6 +441,13 @@ export class CircuitBreaker implements AsyncDisposable {
 			this.getFailureCount(),
 		);
 		this.hooks.onHalfOpen?.();
+		this.emit(
+			"stateChange",
+			previousState,
+			"half-open",
+			this.getFailureCount(),
+		);
+		this.emit("halfOpen");
 	}
 }
 

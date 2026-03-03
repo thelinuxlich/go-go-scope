@@ -647,6 +647,32 @@ export interface RaceOptions {
 		/** Idle timeout in milliseconds (default: 60000) */
 		idleTimeout?: number;
 	};
+	/**
+	 * Staggered start - delay between starting each task.
+	 * Useful for "hedging" pattern: start 1 task, wait, start next if still running.
+	 * @default undefined (all tasks start immediately)
+	 * @example
+	 * ```typescript
+	 * // Start first task immediately, wait 50ms, start second, wait 50ms, start third
+	 * await race([
+	 *   () => fetchFromPrimary(),
+	 *   () => fetchFromBackup(),
+	 *   () => fetchFromFallback(),
+	 * ], { staggerDelay: 50 })
+	 * ```
+	 */
+	staggerDelay?: number;
+	/**
+	 * Maximum number of concurrent tasks when using staggered start.
+	 * If not specified, all tasks will eventually start if race continues.
+	 * @default undefined (no limit)
+	 * @example
+	 * ```typescript
+	 * // Start first task, then add up to 2 more (3 total running)
+	 * await race([...], { staggerDelay: 50, maxConcurrent: 3 })
+	 * ```
+	 */
+	staggerMaxConcurrent?: number;
 }
 
 /**

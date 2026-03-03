@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect } from "vitest";
-import { scope } from "../../src/index.js";
+import { scope, Lock } from "../../src/index.js";
 
 describe("Fastify adapter", () => {
 	test("exports scope for Fastify integration", () => {
@@ -72,5 +72,83 @@ describe("Fastify adapter", () => {
 
 		await requestScope[Symbol.asyncDispose]();
 		await rootScope[Symbol.asyncDispose]();
+	});
+
+	describe("new features", () => {
+		test("Fastify with log correlation", async () => {
+			const rootScope = scope({ 
+				name: "fastify-app",
+				logCorrelation: true 
+			});
+			const requestScope = scope({ 
+				parent: rootScope, 
+				name: "request-abc",
+				logCorrelation: true 
+			});
+
+			// Verify traceId is inherited
+			expect(requestScope.traceId).toBe(rootScope.traceId);
+			expect(requestScope.spanId).toBeDefined();
+			expect(requestScope.spanId).not.toBe(rootScope.spanId);
+
+			await requestScope[Symbol.asyncDispose]();
+			await rootScope[Symbol.asyncDispose]();
+		});
+
+		test("Fastify with debug tree", async () => {
+			const rootScope = scope({ name: "fastify-app" });
+			const requestScope = scope({ 
+				parent: rootScope, 
+				name: "request-debug" 
+			});
+
+			// Generate debug tree
+			const tree = rootScope.debugTree({ format: "ascii" });
+			expect(tree).toContain("fastify-app");
+			expect(tree).toContain("request-debug");
+
+			// Generate mermaid diagram
+			const mermaid = rootScope.debugTree({ format: "mermaid" });
+			expect(mermaid).toContain("graph TD");
+
+			await requestScope[Symbol.asyncDispose]();
+			await rootScope[Symbol.asyncDispose]();
+		});
+
+		test("Fastify with Lock for rate limiting", async () => {
+			const rootScope = scope({ name: "fastify-app" });
+			
+			// Create a lock for protecting shared resource
+			const lock = new Lock(rootScope.signal, { name: "rate-limit-lock" });
+
+			// Test sequential acquisitions (not concurrent to avoid timeout)
+			for (let i = 0; i < 3; i++) {
+				const guard = await lock.acquire();
+				expect(lock.isLocked).toBe(true);
+				await guard.release();
+			}
+
+			await lock[Symbol.asyncDispose]();
+			await rootScope[Symbol.asyncDispose]();
+		});
+
+		test("Fastify with createChild", async () => {
+			const rootScope = scope({ name: "fastify-app" });
+			
+			// Use createChild for nested request handling
+			const requestScope = rootScope.createChild({ name: "request-child" });
+			const subOperationScope = requestScope.createChild({ name: "sub-operation" });
+
+			const [err, result] = await subOperationScope.task(async () => {
+				return { nested: true };
+			});
+
+			expect(err).toBeUndefined();
+			expect(result).toEqual({ nested: true });
+
+			await subOperationScope[Symbol.asyncDispose]();
+			await requestScope[Symbol.asyncDispose]();
+			await rootScope[Symbol.asyncDispose]();
+		});
 	});
 });

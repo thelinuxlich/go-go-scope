@@ -118,7 +118,7 @@ export class GracefulShutdownController {
 		const remainingTime = Math.max(0, timeout - (Date.now() - startTime));
 		try {
 			await Promise.race([
-				this.scope[Symbol.asyncDispose](),
+				(this.scope as unknown as AsyncDisposable)[Symbol.asyncDispose](),
 				new Promise((_, reject) =>
 					setTimeout(
 						() => reject(new Error("Shutdown timeout")),

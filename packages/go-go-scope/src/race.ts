@@ -82,6 +82,8 @@ export async function race<T>(
 	const requireSuccess = options?.requireSuccess ?? false;
 	const timeout = options?.timeout;
 	const concurrency = options?.concurrency ?? 0;
+	const staggerDelay = options?.staggerDelay ?? 0;
+	const staggerMaxConcurrent = options?.staggerMaxConcurrent ?? 0;
 
 	if (totalTasks === 0) {
 		return [new Error("Cannot race empty array of factories"), undefined];
@@ -89,11 +91,12 @@ export async function race<T>(
 
 	if (debugScope.enabled) {
 		debugScope(
-			"starting race with %d competitors (requireSuccess: %s, timeout: %s, concurrency: %s)",
+			"starting race with %d competitors (requireSuccess: %s, timeout: %s, concurrency: %s, stagger: %s)",
 			totalTasks,
 			requireSuccess,
 			timeout ?? "none",
 			concurrency > 0 ? concurrency : "unlimited",
+			staggerDelay > 0 ? `${staggerDelay}ms` : "none",
 		);
 	}
 
@@ -193,6 +196,129 @@ export async function race<T>(
 
 			return { idx, result: [undefined, value as T] };
 		};
+
+		// Handle staggered start (hedging pattern)
+		if (staggerDelay > 0) {
+			if (debugEnabled) {
+				debugScope(
+					"using staggered start with %dms delay (maxConcurrent: %s)",
+					staggerDelay,
+					staggerMaxConcurrent > 0 ? staggerMaxConcurrent : "unlimited",
+				);
+			}
+
+			const runningTasks: Promise<TaskResult<T>>[] = [];
+			const taskIdxMap = new Map<Promise<TaskResult<T>>, number>();
+			let currentIndex = 0;
+			let staggerTimer: ReturnType<typeof setTimeout> | null = null;
+
+			// Helper to start next task with stagger
+			const startNextTask = (): void => {
+				if (currentIndex >= totalTasks) return;
+				if (
+					staggerMaxConcurrent > 0 &&
+					runningTasks.length >= staggerMaxConcurrent
+				) {
+					return;
+				}
+
+				const factory = factories[currentIndex];
+				if (!factory) return;
+
+				const task = processTask(factory, currentIndex);
+				runningTasks.push(task);
+				taskIdxMap.set(task, currentIndex);
+				currentIndex++;
+
+				if (debugEnabled) {
+					debugScope("started task %d/%d (stagger)", currentIndex, totalTasks);
+				}
+
+				// Schedule next task if more remain
+				if (currentIndex < totalTasks) {
+					staggerTimer = setTimeout(startNextTask, staggerDelay);
+				}
+			};
+
+			// Start first task immediately
+			startNextTask();
+
+			try {
+				// Keep racing until we have a winner
+				while (runningTasks.length > 0) {
+					const competitors: Promise<TaskResult<T> | Result<unknown, T>>[] = [
+						...runningTasks,
+						abortPromise,
+					];
+
+					const winner = await Promise.race(competitors);
+
+					// If it's a direct Result (from abort/timeout), return it
+					if (isResultTuple<T>(winner)) {
+						if (staggerTimer) clearTimeout(staggerTimer);
+						return winner;
+					}
+
+					// Find and remove the finished task
+					const finishedTaskIdx = runningTasks.findIndex(
+						(t) => taskIdxMap.get(t) === winner.idx,
+					);
+					if (finishedTaskIdx >= 0) {
+						const finishedTask = runningTasks[finishedTaskIdx];
+						if (finishedTask) {
+							runningTasks.splice(finishedTaskIdx, 1);
+							taskIdxMap.delete(finishedTask);
+						}
+					}
+
+					// Check if this is a valid winner
+					if (!requireSuccess || !winner.result[0]) {
+						if (debugEnabled) {
+							debugScope(
+								"winner! task %d/%d won the race (stagger)",
+								winner.idx + 1,
+								totalTasks,
+							);
+						}
+						if (staggerTimer) clearTimeout(staggerTimer);
+						return winner.result;
+					}
+
+					// Winner was an error and requireSuccess is true - need to continue
+					if (debugEnabled) {
+						debugScope(
+							"task %d/%d failed (requireSuccess), continuing (stagger)...",
+							winner.idx + 1,
+							totalTasks,
+						);
+					}
+
+					// Start next task if we're below max concurrent
+					if (
+						currentIndex < totalTasks &&
+						(staggerMaxConcurrent <= 0 ||
+							runningTasks.length < staggerMaxConcurrent)
+					) {
+						// Clear existing timer and start immediately
+						if (staggerTimer) clearTimeout(staggerTimer);
+						startNextTask();
+					} else if (runningTasks.length === 0) {
+						// No more tasks to start and none running - all failed
+						if (staggerTimer) clearTimeout(staggerTimer);
+						return [
+							createAggregateError(errors.map((e) => e.error)),
+							undefined,
+						];
+					}
+				}
+
+				// Should not reach here
+				if (staggerTimer) clearTimeout(staggerTimer);
+				return [createAggregateError(errors.map((e) => e.error)), undefined];
+			} finally {
+				if (staggerTimer) clearTimeout(staggerTimer);
+			}
+		}
 
 		// If no concurrency limit, run all tasks at once
 		if (concurrency <= 0 || concurrency >= totalTasks) {
@@ -339,7 +465,7 @@ export async function race<T>(
 		return [createAggregateError(errors.map((e) => e.error)), undefined];
 	} finally {
 		// Clean up scope - cancels all tasks
-		await s[Symbol.asyncDispose]();
+		await (s as unknown as AsyncDisposable)[Symbol.asyncDispose]();
 	}
 }
 

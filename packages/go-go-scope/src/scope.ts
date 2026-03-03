@@ -16,6 +16,12 @@ import {
 } from "./checkpoint.js";
 import { CircuitBreaker } from "./circuit-breaker.js";
 import { AbortError, UnknownError } from "./errors.js";
+import { ScopedEventEmitter } from "./event-emitter.js";
+import {
+	createCorrelatedLogger,
+	generateSpanId,
+	generateTraceId,
+} from "./log-correlation.js";
 import { createLogger, createTaskLogger } from "./logger.js";
 import type { Checkpoint } from "./persistence/types.js";
 import { installPlugins } from "./plugin.js";
@@ -165,6 +171,17 @@ export interface ScopeOptions<
 	 * Optional context object accessible in all tasks.
 	 */
 	context?: Record<string, unknown>;
+	/**
+	 * Enable log correlation with traceId and spanId.
+	 * When enabled, all logs from this scope and its tasks include correlation IDs.
+	 * Default: false
+	 */
+	logCorrelation?: boolean;
+	/**
+	 * External trace ID for log correlation (for continuing traces from external sources).
+	 * If not provided, a new trace ID is generated when logCorrelation is enabled.
+	 */
+	traceId?: string;
 }
 
 /**
@@ -212,12 +229,40 @@ export class Scope<
 	readonly idempotency?: { defaultTTL?: number };
 	private _workerPool?: WorkerPool;
 	private readonly _workerPoolOptions?: { size?: number; idleTimeout?: number };
+	/** Trace ID for log correlation */
+	readonly traceId?: string;
+	/** Span ID for log correlation */
+	readonly spanId?: string;
 
 	constructor(options?: ScopeOptions<Record<string, unknown>>) {
 		this.id = ++scopeIdCounter;
 		this.name = options?.name ?? `scope-${this.id}`;
 		this.hooks = options?.hooks;
-		this.logger = createLogger(this.name, options?.logger, options?.logLevel);
+
+		// Initialize log correlation
+		if (options?.logCorrelation) {
+			// Inherit traceId from parent or use provided/external one
+			const parentTraceId = (options?.parent as unknown as { traceId?: string })
+				?.traceId;
+			this.traceId = options?.traceId ?? parentTraceId ?? generateTraceId();
+			this.spanId = generateSpanId();
+
+			// Wrap logger with correlation
+			const baseLogger = createLogger(
+				this.name,
+				options?.logger,
+				options?.logLevel,
+			);
+			this.logger = createCorrelatedLogger(baseLogger, {
+				traceId: this.traceId,
+				spanId: this.spanId,
+				scopeName: this.name,
+				parentSpanId: (options?.parent as unknown as { spanId?: string })
+					?.spanId,
+			});
+		} else {
+			this.logger = createLogger(this.name, options?.logger, options?.logLevel);
+		}
 
 		// Initialize request context
 		const parentRequestContext =
@@ -1402,6 +1447,29 @@ export class Scope<
 		return bc;
 	}
 
+	/**
+	 * Create a scoped EventEmitter with automatic cleanup.
+	 * All listeners are automatically removed when the scope is disposed.
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope();
+	 * const emitter = s.eventEmitter<{
+	 *   data: (chunk: string) => void;
+	 *   end: () => void;
+	 * }>();
+	 *
+	 * emitter.on("data", (chunk) => console.log(chunk));
+	 * emitter.emit("data", "Hello!");
+	 * ```
+	 */
+	eventEmitter<
+		Events extends Record<string, (...args: unknown[]) => void>,
+	>(): ScopedEventEmitter<Events> {
+		const emitter = new ScopedEventEmitter<Events>(this);
+		return emitter;
+	}
+
 	priorityChannel<T>(options: PriorityChannelOptions<T>): PriorityChannel<T> {
 		const pc = new PriorityChannel<T>(options, this.abortController.signal);
 		this.registerDisposable(pc);
@@ -1553,17 +1621,6 @@ export class Scope<
 		return undefined;
 	}
 
-	async acquireLock(
-		key: string,
-		ttlMs: number,
-	): Promise<{ release: () => Promise<void> } | null> {
-		const provider = this._persistence?.lock;
-		if (!provider) {
-			throw new Error("No lock provider configured");
-		}
-		return provider.acquire(key, ttlMs);
-	}
-
 	onDispose(fn: () => void | Promise<void>): void {
 		this.disposables.push({
 			[Symbol.dispose]: () => {},
@@ -1604,6 +1661,173 @@ export class Scope<
 		this.childScopes.push(child);
 	}
 
+	/**
+	 * Create a child scope that inherits from this scope.
+	 * The child scope inherits signal, services, and traceId from the parent.
+	 *
+	 * @example
+	 * ```typescript
+	 * await using parent = scope({ name: 'parent' });
+	 * const child = parent.createChild({ name: 'child' });
+	 * const grandchild = child.createChild({ name: 'grandchild' });
+	 * ```
+	 */
+	createChild<
+		ChildServices extends Record<string, unknown> = Record<string, never>,
+	>(
+		options?: Omit<ScopeOptions<Services>, "parent"> & {
+			provide?: {
+				[K in keyof ChildServices]: (ctx: {
+					services: Services;
+				}) => ChildServices[K] | Promise<ChildServices[K]>;
+			};
+		},
+	): Scope<Services & ChildServices> {
+		const childScope = new Scope<Services & ChildServices>({
+			...options,
+			parent: this as unknown as Scope<Services>,
+		} as ScopeOptions<Services>);
+
+		this.registerChild(childScope as unknown as Scope<Record<string, unknown>>);
+
+		return childScope;
+	}
+
+	/**
+	 * Generate a visual tree representation of the scope hierarchy.
+	 * Supports ASCII and Mermaid diagram formats.
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope({ name: 'root' });
+	 * const child = s.createChild({ name: 'child' });
+	 * const grandchild = child.createChild({ name: 'grandchild' });
+	 *
+	 * console.log(s.debugTree());
+	 * // Output:
+	 * // 📦 root (id: 1)
+	 * //    ├─ 📦 child (id: 2)
+	 * //    │  └─ 📦 grandchild (id: 3)
+	 * //
+	 * console.log(s.debugTree({ format: 'mermaid' }));
+	 * // Output:
+	 * // graph TD
+	 * //     scope_1[📦 root]
+	 * //     scope_1 --> scope_2[📦 child]
+	 * //     scope_2 --> scope_3[📦 grandchild]
+	 * ```
+	 */
+	debugTree(
+		options: { format?: "ascii" | "mermaid"; includeStats?: boolean } = {},
+	): string {
+		const { format = "ascii", includeStats = true } = options;
+
+		if (format === "mermaid") {
+			return this.generateMermaidTree();
+		}
+
+		return this.generateAsciiTree(includeStats);
+	}
+
+	private generateAsciiTree(includeStats: boolean): string {
+		const lines: string[] = [];
+
+		const buildTree = (
+			scope: Scope<Record<string, unknown>>,
+			prefix: string = "",
+			isLast: boolean = true,
+		): void => {
+			const children = scope.childScopes;
+
+			// Build status indicator
+			let statusIcon = "📦";
+			if (scope.isDisposed) {
+				statusIcon = "💀";
+			} else if (scope.signal.aborted) {
+				statusIcon = "⚠️";
+			}
+
+			// Build scope info
+			const scopeInfo = `${statusIcon} ${scope.name} (id: ${scope.id})`;
+			const stats = includeStats ? this.getScopeStats(scope) : "";
+
+			// Add the line
+			const connector = prefix === "" ? "" : isLast ? "└─ " : "├─ ";
+			lines.push(`${prefix}${connector}${scopeInfo}${stats}`);
+
+			// Process children
+			const newPrefix = prefix + (isLast ? "   " : "│  ");
+			for (let i = 0; i < children.length; i++) {
+				const child = children[i];
+				if (child) {
+					buildTree(child, newPrefix, i === children.length - 1);
+				}
+			}
+		};
+
+		buildTree(this);
+		return lines.join("\n");
+	}
+
+	private getScopeStats(scope: Scope<Record<string, unknown>>): string {
+		const stats: string[] = [];
+
+		if (scope.concurrency !== undefined) {
+			stats.push(`concurrency:${scope.concurrency}`);
+		}
+
+		if (scope.circuitBreaker !== undefined) {
+			stats.push("circuitBreaker");
+		}
+
+		const activeCount = scope.activeTasks?.size ?? 0;
+		if (activeCount > 0) {
+			stats.push(`tasks:${activeCount}`);
+		}
+
+		if (scope.childScopes.length > 0) {
+			stats.push(`children:${scope.childScopes.length}`);
+		}
+
+		return stats.length > 0 ? ` [${stats.join(", ")}]` : "";
+	}
+
+	private generateMermaidTree(): string {
+		const lines: string[] = ["graph TD"];
+		const nodes = new Set<string>();
+
+		const buildMermaid = (scope: Scope<Record<string, unknown>>): void => {
+			const nodeId = `scope_${scope.id}`;
+			if (nodes.has(nodeId)) return;
+			nodes.add(nodeId);
+
+			// Add node definition with styling
+			const statusIcon = scope.isDisposed
+				? "💀"
+				: scope.signal.aborted
+					? "⚠️"
+					: "📦";
+			lines.push(`    ${nodeId}["${statusIcon} ${scope.name}"]`);
+
+			// Style classes
+			if (scope.isDisposed) {
+				lines.push(`    style ${nodeId} fill:#ffcccc,stroke:#cc0000`);
+			} else if (scope.signal.aborted) {
+				lines.push(`    style ${nodeId} fill:#ffeecc,stroke:#cc9900`);
+			}
+
+			// Add edges to children
+			for (const child of scope.childScopes) {
+				const childId = `scope_${child.id}`;
+				lines.push(`    ${nodeId} --> ${childId}`);
+				buildMermaid(child);
+			}
+		};
+
+		buildMermaid(this);
+		return lines.join("\n");
+	}
+
 	async [Symbol.asyncDispose](): Promise<void> {
 		if (this.disposed) return;
 		this.disposed = true;
@@ -1631,7 +1855,7 @@ export class Scope<
 		// Dispose all child scopes first
 		for (const child of this.childScopes) {
 			try {
-				await child[Symbol.asyncDispose]();
+				await (child as unknown as AsyncDisposable)[Symbol.asyncDispose]();
 			} catch {
 				// Ignore child disposal errors
 			}

@@ -219,7 +219,7 @@ export async function parallel<
 
 		return results as ParallelResults<T>;
 	} finally {
-		await s[Symbol.asyncDispose]();
+		await (s as unknown as AsyncDisposable)[Symbol.asyncDispose]();
 	}
 }
 

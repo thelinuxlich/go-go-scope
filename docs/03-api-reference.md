@@ -14,6 +14,7 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.use(key)`](#scopeusekey)
   - [`scope.has(key)`](#scopehaskey)
   - [`scope.override(key, factory, cleanup?)`](#scopeoverridekey-factory-cleanup)
+  - [`scope.createChild(options?)`](#scopecreatechildoptions)
   - [`scope.race(factories)`](#scoperacefactories)
   - [`scope.parallel(factories, options?)`](#scopeparallelfactories-options)
   - [`scope.channel(capacity?)`](#scopechannelcapacity)
@@ -24,14 +25,20 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.select(cases)`](#scopeselectcases)
   - [`scope.metrics()`](#scopemetrics)
   - [`scope.broadcast()`](#scopebroadcast)
+  - [`scope.eventEmitter<Events>()`](#scopeeventemitterevents)
+  - [`scope.debugTree(options?)`](#scopedebugtreeoptions)
   - [`scope.priorityChannel(options)`](#scopeprioritychanneloptions)
   - [`scope.pool(options)`](#scopepooloptions)
   - [`scope.getProfileReport()`](#scopegetprofilereport)
   - [`scope.onDispose(callback)`](#scopeondisposecallback)
   - [`scope.tokenBucket(options)`](#scopetokenbucketoptions)
 - [Additional Classes](#additional-classes)
+  - [`Lock`](#lock)
+  - [`createLock()`](#createlocksignal-options)
+  - [`CircuitBreaker`](#circuitbreaker)
   - [`WorkerPool`](#workerpool) (advanced/internal use)
   - [`AsyncDisposableResource`](#asyncdisposableresource)
+  - [`ScopedEventEmitter`](#scopedeventemitter)
   - [`TokenBucket`](#tokenbucket)
   - [`GracefulShutdownController`](#gracefulshutdowncontroller)
   - [`PerformanceMonitor`](#performancemonitor)
@@ -63,6 +70,7 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
 - [Resource Pool Methods](#resource-pool-methods)
 - [MetricsReporter Class](#metricsreporter-class)
 - [Logger Interface](#logger-interface)
+- [Log Correlation](#log-correlation)
 - [Additional Types](#additional-types)
 - [Standalone Functions](#standalone-functions)
 - [Cancellation Utilities](#cancellation-utilities)
@@ -999,7 +1007,84 @@ test('should fetch user', async () => {
 
 ---
 
-### `scope.race(factories, options?)`
+### `scope.createChild(options?)`
+
+Create a child scope that inherits from the current scope. The child scope inherits the parent's signal, services, and traceId.
+
+```typescript
+createChild<ChildServices extends Record<string, unknown> = Record<string, never>>(
+  options?: Omit<ScopeOptions<Services>, 'parent'> & {
+    provide?: { [K in keyof ChildServices]: (ctx: { services: Services }) => ChildServices[K] | Promise<ChildServices[K]> }
+  }
+): Scope<Services & ChildServices>
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `options` | `ScopeOptions` | Same options as `scope()`, except `parent` |
+| `options.provide` | `object` | Additional services for the child scope |
+
+**Returns:** `Scope<Services & ChildServices>` - A new child scope
+
+**Features:**
+
+- Inherits parent's AbortSignal (child is cancelled when parent is)
+- Inherits parent's services (can be extended with `provide`)
+- Inherits parent's `traceId` (for log correlation)
+- Gets a new unique `spanId`
+
+**Example:**
+
+```typescript
+await using parent = scope({ 
+  name: 'parent',
+  logCorrelation: true 
+})
+
+// Create child scope
+const child = parent.createChild({ name: 'child' })
+
+// Child inherits parent's traceId
+console.log(child.traceId === parent.traceId) // true
+console.log(child.spanId) // Different spanId
+
+// Create nested hierarchy
+const grandchild = child.createChild({ name: 'grandchild' })
+
+// Visualize with debugTree
+console.log(parent.debugTree())
+// 📦 parent (id: 1)
+//    └─ 📦 child (id: 2)
+//       └─ 📦 grandchild (id: 3)
+```
+
+**Child with Additional Services:**
+
+```typescript
+await using parent = scope()
+  .provide('db', () => createDatabase())
+
+// Child inherits 'db' and adds 'cache'
+const child = parent.createChild({
+  name: 'child-operation',
+  provide: {
+    cache: () => createCache()
+  }
+})
+
+// Child has access to both 'db' and 'cache'
+await child.task(async ({ services }) => {
+  const data = await services.db.query('SELECT * FROM users')
+  await services.cache.set('users', data)
+  return data
+})
+```
+
+---
+
+### `scope.race(factories, options?)
 
 Race multiple operations - first to complete wins, others are cancelled. Uses the scope's signal for cancellation.
 
@@ -1011,6 +1096,8 @@ race<T>(
     timeout?: number
     concurrency?: number
     workers?: { threads: number; idleTimeout?: number }  // Use worker threads (v2.4.0+)
+    staggerDelay?: number           // Delay between starting tasks (hedging pattern)
+    staggerMaxConcurrent?: number   // Max concurrent during stagger
   }
 ): Promise<Result<unknown, T>>
 ```
@@ -1026,6 +1113,8 @@ race<T>(
 | `options.workers` | `{ threads: number; idleTimeout?: number }` | Worker thread configuration (v2.4.0+) |
 | `options.workers.threads` | `number` | Number of worker threads |
 | `options.workers.idleTimeout` | `number` | Idle timeout for worker pool in ms (default: 60000) |
+| `options.staggerDelay` | `number` | Delay in milliseconds between starting tasks (hedging pattern) |
+| `options.staggerMaxConcurrent` | `number` | Maximum concurrent tasks during stagger (default: unlimited) |
 
 **Returns:** `Promise<Result<unknown, T>>` - Result tuple of the winner
 
@@ -1069,6 +1158,19 @@ const [err, hash] = await race([
 ], { 
   workers: { threads: 3 },  // Use 3 worker threads
   requireSuccess: true       // First successful hash wins
+})
+
+// Race with staggered start (request hedging pattern)
+// Start with 2 tasks, add more if slow (cost-optimized hedging)
+const [err, result] = await race([
+  () => callExpensiveAPI('primary'),   // Start immediately
+  () => callExpensiveAPI('secondary'), // Start immediately
+  () => callExpensiveAPI('tertiary'),  // Start after staggerDelay
+  () => callExpensiveAPI('quaternary'),// Start after staggerDelay
+], {
+  staggerDelay: 100,        // Wait 100ms before starting next task
+  staggerMaxConcurrent: 2,  // Keep max 2 running concurrently
+  requireSuccess: true
 })
 
 if (err) {
@@ -1478,6 +1580,45 @@ console.log(metrics)
 
 ---
 
+### `createEventEmitter(scope)`
+
+Creates a typed EventEmitter with automatic listener cleanup when the scope disposes.
+
+```typescript
+function createEventEmitter<Events extends Record<string, (...args: unknown[]) => void>>(
+  scope: Scope
+): ScopedEventEmitter<Events>
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `scope` | `Scope` | Parent scope for automatic cleanup |
+
+**Returns:** `ScopedEventEmitter<Events>`
+
+**Example:**
+
+```typescript
+import { scope, createEventEmitter } from 'go-go-scope'
+
+await using s = scope()
+
+// Create standalone emitter
+const emitter = createEventEmitter<{
+  message: (text: string) => void
+  error: (err: Error) => void
+}>(s)
+
+emitter.on('message', (text) => console.log(text))
+emitter.emit('message', 'Hello!')
+```
+
+**Note:** Prefer `scope.eventEmitter()` when creating emitters within a scope context. Use `createEventEmitter()` when you need to pass the scope reference explicitly.
+
+---
+
 ## Types
 
 ### Result
@@ -1724,6 +1865,115 @@ broadcast<T>(): BroadcastChannel<T>
 ```
 
 **Returns:** `BroadcastChannel<T>` - A broadcast channel where all subscribers receive every message
+
+---
+
+### `scope.eventEmitter<Events>()`
+
+Creates a typed EventEmitter with automatic listener cleanup when the scope disposes.
+
+```typescript
+eventEmitter<Events extends Record<string, (...args: unknown[]) => void>>(): ScopedEventEmitter<Events>
+```
+
+**Type Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `Events` | `Record<string, (...args: unknown[]) => void>` | Event name to handler type mapping |
+
+**Returns:** `ScopedEventEmitter<Events>` - A typed event emitter
+
+**Example:**
+
+```typescript
+await using s = scope()
+
+// Create typed event emitter
+const emitter = s.eventEmitter<{
+  data: (chunk: string) => void
+  end: () => void
+  error: (err: Error) => void
+}>()
+
+// Subscribe to events
+emitter.on('data', (chunk) => console.log(chunk))
+emitter.on('end', () => console.log('Done'))
+
+// Emit events
+emitter.emit('data', 'Hello')
+emitter.emit('end')
+
+// All listeners auto-removed when scope disposes
+```
+
+**Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `on(event, handler)` | Subscribe to an event (returns unsubscribe function) |
+| `once(event, handler)` | Subscribe once (auto-removes after first call) |
+| `off(event, handler)` | Unsubscribe a specific handler |
+| `emit(event, ...args)` | Emit an event synchronously |
+| `emitAsync(event, ...args)` | Emit an event asynchronously (awaits all handlers) |
+| `listenerCount(event)` | Get number of listeners for an event |
+| `hasListeners(event)` | Check if event has any listeners |
+| `eventNames()` | Get all event names with listeners |
+| `removeAllListeners(event?)` | Remove all listeners (for specific event or all) |
+
+**Key Features:**
+
+- **Type-safe**: Full TypeScript support for event names and payloads
+- **Auto-cleanup**: All listeners removed when scope disposes (prevents memory leaks)
+- **Error isolation**: Errors in handlers don't affect other handlers
+- **Multiple handlers**: Multiple handlers can subscribe to the same event
+
+---
+
+### `scope.debugTree(options?)`
+
+Generate a visual representation of the scope hierarchy for debugging purposes.
+
+```typescript
+debugTree(options?: { format?: 'ascii' | 'mermaid'; includeStats?: boolean }): string
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `options.format` | `'ascii' \| 'mermaid'` | Output format (default: 'ascii') |
+| `options.includeStats` | `boolean` | Include statistics in output (default: true) |
+
+**Returns:** `string` - Visual tree representation
+
+**Example:**
+
+```typescript
+await using s = scope({ name: 'root' })
+const child = s.createChild({ name: 'child' })
+const grandchild = child.createChild({ name: 'grandchild' })
+
+// ASCII format (default)
+console.log(s.debugTree())
+// 📦 root (id: 1)
+//    ├─ 📦 child (id: 2)
+//    │  └─ 📦 grandchild (id: 3)
+
+// Mermaid format for documentation
+console.log(s.debugTree({ format: 'mermaid' }))
+// graph TD
+//     scope_1[📦 root]
+//     scope_1 --> scope_2[📦 child]
+//     scope_2 --> scope_3[📦 grandchild]
+```
+
+**Use Cases:**
+
+- Debugging complex scope hierarchies
+- Documentation (Mermaid diagrams)
+- Logging scope structure during development
+- Visualizing parent-child relationships
 
 ---
 
@@ -2071,6 +2321,121 @@ await s.task(() => fetchData())
 
 ---
 
+### Log Correlation
+
+Generate and manage trace IDs and span IDs for distributed logging.
+
+```typescript
+import { 
+  generateTraceId, 
+  generateSpanId,
+  createCorrelatedLogger,
+  isCorrelatedLogger,
+  getCorrelationContext
+} from 'go-go-scope'
+```
+
+#### `generateTraceId()`
+
+Generate a random trace ID (16 bytes hex string).
+
+```typescript
+const traceId = generateTraceId() // e.g., "a1b2c3d4e5f6..."
+```
+
+#### `generateSpanId()`
+
+Generate a random span ID (8 bytes hex string).
+
+```typescript
+const spanId = generateSpanId() // e.g., "a1b2c3d4..."
+```
+
+#### `createCorrelatedLogger(delegate, correlation)`
+
+Create a logger that automatically includes correlation IDs in all log messages.
+
+```typescript
+const logger = createCorrelatedLogger(
+  new ConsoleLogger('my-app'),
+  {
+    traceId: generateTraceId(),
+    spanId: generateSpanId(),
+    scopeName: 'api-request'
+  }
+)
+
+logger.info('Processing request')
+// Output: [traceId=abc123] [spanId=xyz789] Processing request
+```
+
+#### `isCorrelatedLogger(logger)`
+
+Check if a logger is a CorrelatedLogger.
+
+```typescript
+if (isCorrelatedLogger(logger)) {
+  const context = logger.getCorrelationContext()
+  console.log(context.traceId)
+}
+```
+
+#### `getCorrelationContext(logger)`
+
+Extract correlation context from a logger if available.
+
+```typescript
+const context = getCorrelationContext(logger)
+if (context) {
+  console.log('Trace:', context.traceId)
+  console.log('Span:', context.spanId)
+}
+```
+
+#### Log Correlation in Scopes
+
+Enable automatic log correlation in scopes:
+
+```typescript
+await using s = scope({
+  name: 'api-request',
+  logCorrelation: true // Auto-generates traceId and spanId
+})
+
+// Access correlation IDs in tasks
+await s.task(async ({ logger }) => {
+  // Logs automatically include traceId and spanId
+  logger.info('Processing') 
+  // Output: [traceId=...] [spanId=...] Processing
+})
+
+// Access scope traceId directly
+console.log(s.traceId)
+console.log(s.spanId)
+
+// Child scopes inherit parent's traceId
+await using child = s.createChild({ name: 'child-operation' })
+console.log(child.traceId === s.traceId) // true
+console.log(child.spanId) // Different spanId
+```
+
+**External Trace ID:**
+
+Continue traces from external sources:
+
+```typescript
+// Incoming request has trace ID in header
+const externalTraceId = req.headers['x-trace-id']
+
+await using s = scope({
+  name: 'api-handler',
+  logCorrelation: true,
+  traceId: externalTraceId // Continue existing trace
+})
+```
+
+---
+
 ## Additional Types (Extended)
 
 ### ScopeOptions (Extended)
@@ -2103,6 +2468,20 @@ interface ScopeOptions {
    * @default 'info'
    */
   logLevel?: 'debug' | 'info' | 'warn' | 'error'
+  
+  /**
+   * Enable log correlation with traceId and spanId.
+   * When enabled, all logs from this scope and its tasks include correlation IDs.
+   * @default false
+   */
+  logCorrelation?: boolean
+  
+  /**
+   * External trace ID for log correlation.
+   * Use this to continue traces from external sources (e.g., incoming requests).
+   * If not provided, a new trace ID is generated when logCorrelation is enabled.
+   */
+  traceId?: string
 }
 ```
 
@@ -2324,6 +2703,238 @@ await s.task(() => fetchData(), {
 ---
 
 ## Additional Classes
+
+### `Lock`
+
+A unified lock implementation supporting exclusive (mutex), read-write, and distributed locking modes.
+
+```typescript
+import { Lock, createLock } from 'go-go-scope'
+
+// Exclusive lock (mutex)
+const mutex = new Lock(s.signal)
+await using guard = await mutex.acquire()
+
+// Read-write lock
+const rwlock = new Lock(s.signal, { allowMultipleReaders: true })
+await using readGuard = await rwlock.read()
+
+// Distributed lock (with persistence provider)
+const distLock = new Lock(s.signal, {
+  provider: redisAdapter,
+  key: 'resource:123',
+  ttl: 30000
+})
+await using guard = await distLock.acquire()
+```
+
+**Constructor:**
+
+```typescript
+new Lock(signal?: AbortSignal, options?: LockOptions)
+```
+
+**LockOptions:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `provider` | `LockProvider` | Persistence provider for distributed locks |
+| `key` | `string` | Unique key for distributed locks (required with provider) |
+| `ttl` | `number` | Lock TTL in milliseconds (default: 30000) |
+| `owner` | `string` | Owner identifier for distributed locks |
+| `allowMultipleReaders` | `boolean` | Enable read-write mode (default: false) |
+| `name` | `string` | Name for debugging |
+
+**Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `acquire(options?)` | Acquire exclusive lock (mutex mode only) |
+| `read(options?)` | Acquire read lock (read-write mode only) |
+| `write(options?)` | Acquire write lock (read-write mode only) |
+| `tryAcquire()` | Try to acquire exclusive lock immediately (returns null if unavailable) |
+| `tryRead()` | Try to acquire read lock immediately |
+| `tryWrite()` | Try to acquire write lock immediately |
+| `[Symbol.asyncDispose]()` | Dispose the lock and reject pending requests |
+
+**Properties:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `isLocked` | `boolean` | Whether the lock is currently held (in-memory only) |
+| `stats` | `object` | Lock statistics (readerCount, writerActive, etc.) |
+
+**LockGuard:**
+
+The acquire methods return a `LockGuard` that automatically releases the lock when disposed:
+
+```typescript
+// Automatic release with `await using`
+await using guard = await lock.acquire()
+// Lock is held here
+// Automatically released when guard goes out of scope
+
+// Manual release
+const guard = await lock.acquire()
+await guard.release()
+```
+
+**Read-Write Lock Example:**
+
+```typescript
+const lock = new Lock(s.signal, { allowMultipleReaders: true })
+
+// Multiple concurrent readers
+await using guard1 = await lock.read()
+await using guard2 = await lock.read() // OK, concurrent reads allowed
+
+// Exclusive writer
+await using writeGuard = await lock.write() // Waits for all readers
+```
+
+---
+
+### `createLock(signal?, options?)`
+
+Factory function for creating a Lock instance.
+
+```typescript
+import { createLock } from 'go-go-scope'
+
+const lock = createLock(s.signal, { 
+  allowMultipleReaders: true,
+  name: 'my-lock'
+})
+```
+
+---
+
+### `CircuitBreaker`
+
+Fault tolerance circuit breaker that automatically stops calling failing services.
+
+```typescript
+import { CircuitBreaker } from 'go-go-scope'
+
+// Create circuit breaker
+const cb = new CircuitBreaker({
+  failureThreshold: 5,      // Open after 5 failures
+  resetTimeout: 30000,      // Try again after 30 seconds
+  successThreshold: 2       // Require 2 successes to close
+}, abortSignal)
+
+// Execute with protection
+await using guard = scope()
+try {
+  const result = await cb.execute(async (signal) => {
+    return await fetchData({ signal })
+  })
+} catch (err) {
+  if (err.message === 'Circuit breaker is open') {
+    // Use fallback
+  }
+}
+```
+
+**Constructor:**
+
+```typescript
+new CircuitBreaker(options?: CircuitBreakerOptions, parentSignal?: AbortSignal)
+```
+
+**CircuitBreakerOptions:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `failureThreshold` | `number` | Failures before opening (default: 5) |
+| `resetTimeout` | `number` | Milliseconds before retry (default: 30000) |
+| `successThreshold` | `number` | Consecutive successes to close from half-open (default: 1) |
+| `advanced.adaptiveThreshold` | `boolean` | Enable adaptive threshold based on error rate |
+| `advanced.minThreshold` | `number` | Minimum threshold for adaptive mode (default: 2) |
+| `advanced.maxThreshold` | `number` | Maximum threshold for adaptive mode (default: 10) |
+| `advanced.slidingWindow` | `boolean` | Use sliding window for failure count |
+| `advanced.slidingWindowSizeMs` | `number` | Window size for sliding window (default: 60000) |
+| `onStateChange` | `(from, to, failureCount) => void` | State change callback |
+| `onOpen` | `(failureCount) => void` | Circuit opened callback |
+| `onClose` | `() => void` | Circuit closed callback |
+| `onHalfOpen` | `() => void` | Circuit half-open callback |
+
+**Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `execute(fn)` | Execute function with circuit breaker protection |
+| `reset()` | Manually reset to closed state |
+| `on(event, handler)` | Subscribe to circuit breaker events |
+| `off(event, handler)` | Unsubscribe from events |
+| `once(event, handler)` | Subscribe once to an event |
+| `[Symbol.asyncDispose]()` | Dispose the circuit breaker |
+
+**Properties:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `currentState` | `'closed' \| 'open' \| 'half-open'` | Current circuit state |
+| `failureCount` | `number` | Current failure count |
+| `successCount` | `number` | Consecutive success count (half-open) |
+| `failureThreshold` | `number` | Current failure threshold |
+| `resetTimeout` | `number` | Reset timeout in milliseconds |
+| `isAdaptiveEnabled` | `boolean` | Whether adaptive threshold is enabled |
+| `isSlidingWindowEnabled` | `boolean` | Whether sliding window is enabled |
+| `errorRate` | `number` | Current error rate (0-1) |
+
+**Events:**
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `stateChange` | `(from, to, failureCount)` | State transition occurred |
+| `open` | `(failureCount)` | Circuit opened |
+| `close` | `()` | Circuit closed |
+| `halfOpen` | `()` | Circuit entered half-open |
+| `success` | `()` | Request succeeded |
+| `failure` | `()` | Request failed |
+| `thresholdAdapt` | `(newThreshold, errorRate)` | Adaptive threshold changed |
+
+**Event Example:**
+
+```typescript
+const cb = new CircuitBreaker({ failureThreshold: 3 })
+
+// Subscribe to events
+const unsubscribe = cb.on('open', (failureCount) => {
+  console.log(`Circuit opened after ${failureCount} failures`)
+  alertOpsTeam('Service degraded')
+})
+
+cb.on('close', () => {
+  console.log('Circuit closed - service recovered')
+})
+
+cb.on('stateChange', (from, to, count) => {
+  console.log(`Circuit: ${from} -> ${to} (failures: ${count})`)
+})
+
+// Unsubscribe when done
+unsubscribe()
+```
+
+**Adaptive Threshold Example:**
+
+```typescript
+const cb = new CircuitBreaker({
+  advanced: {
+    adaptiveThreshold: true,
+    minThreshold: 2,
+    maxThreshold: 10,
+    errorRateWindowMs: 60000
+  }
+})
+
+// Threshold automatically adjusts based on error rate
+// Higher error rate = lower threshold (faster to open)
+```
+
+---
 
 ### `scope.tokenBucket(options)`
 
@@ -2714,6 +3325,93 @@ const monitor = performanceMonitor(s, {
 // Automatically tracks metrics
 // Access via monitor.getMetrics()
 ```
+
+---
+
+### `ScopedEventEmitter`
+
+A typed EventEmitter with automatic listener cleanup when the parent scope disposes.
+
+```typescript
+class ScopedEventEmitter<Events extends Record<string, (...args: unknown[]) => void>> {
+  on<K extends keyof Events>(event: K, handler: Events[K]): () => void
+  once<K extends keyof Events>(event: K, handler: Events[K]): void
+  off<K extends keyof Events>(event: K, handler: Events[K]): void
+  emit<K extends keyof Events>(event: K, ...args: Parameters<Events[K]>): number
+  emitAsync<K extends keyof Events>(event: K, ...args: Parameters<Events[K]>): Promise<number>
+  listenerCount<K extends keyof Events>(event: K): number
+  hasListeners<K extends keyof Events>(event: K): boolean
+  eventNames(): (keyof Events)[]
+  removeAllListeners<K extends keyof Events>(event?: K): void
+}
+```
+
+**Type Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `Events` | `Record<string, (...args: unknown[]) => void>` | Event name to handler type mapping |
+
+**Constructor:**
+
+```typescript
+new ScopedEventEmitter<Events>(scope: Scope)
+```
+
+**Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `on(event, handler)` | Subscribe to an event. Returns unsubscribe function. |
+| `once(event, handler)` | Subscribe once. Handler auto-removed after first call. |
+| `off(event, handler)` | Unsubscribe a specific handler. |
+| `emit(event, ...args)` | Emit event synchronously. Returns count of handlers called. |
+| `emitAsync(event, ...args)` | Emit event asynchronously. Awaits all async handlers. |
+| `listenerCount(event)` | Get number of listeners for an event. |
+| `hasListeners(event)` | Check if event has any listeners. |
+| `eventNames()` | Get array of event names with listeners. |
+| `removeAllListeners(event?)` | Remove all listeners for a specific event or all events. |
+
+**Example:**
+
+```typescript
+import { scope, ScopedEventEmitter } from 'go-go-scope'
+
+await using s = scope()
+
+// Create typed emitter
+const emitter = new ScopedEventEmitter<{
+  data: (chunk: string) => void
+  end: () => void
+  error: (err: Error) => void
+}>(s)
+
+// Subscribe
+const unsubscribe = emitter.on('data', (chunk) => {
+  console.log('Received:', chunk)
+})
+
+// Emit
+emitter.emit('data', 'Hello World')
+
+// Unsubscribe
+unsubscribe()
+
+// Or use once
+emitter.once('end', () => {
+  console.log('Stream ended')
+})
+
+// All listeners auto-removed when scope disposes
+```
+
+**Features:**
+
+- **Type-safe**: Full TypeScript support for event names and payloads
+- **Auto-cleanup**: All listeners removed when parent scope disposes
+- **Error isolation**: Errors in handlers don't affect other handlers
+- **Multiple handlers**: Multiple handlers can subscribe to the same event
+- **Async support**: `emitAsync` waits for all async handlers to complete
 
 ---
 
