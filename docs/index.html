@@ -1187,19 +1187,21 @@ const [err, result] = await race([
                     
                     <div style="background: var(--surface); border: 2px solid var(--border); padding: 20px;">
                         <div style="font-weight: 700; margin-bottom: 12px; color: var(--primary); font-size: 16px;">📡 Circuit Breaker Events</div>
-                        <pre style="margin: 0; font-size: 12px;"><code>const cb = new CircuitBreaker({ 
-  failureThreshold: 3 
+                        <pre style="margin: 0; font-size: 12px;"><code>await using s = scope({
+  circuitBreaker: {
+    failureThreshold: 3,
+    onOpen: (failureCount) => {
+      console.log(`Circuit opened after ${failureCount} failures`)
+      alertOpsTeam('Service degraded')
+    },
+    onStateChange: (from, to, count) => {
+      console.log(`Circuit: ${from} -> ${to}`)
+    }
+  }
 })
 
-// Subscribe to events
-cb.on('open', (failureCount) => {
-  console.log(`Circuit opened after ${failureCount} failures`)
-  alertOpsTeam('Service degraded')
-})
-
-cb.on('stateChange', (from, to, count) => {
-  console.log(`Circuit: ${from} -> ${to}`)
-})</code></pre>
+// All tasks use circuit breaker automatically
+const [err, data] = await s.task(() => fetchData())</code></pre>
                     </div>
                     
                     <div style="background: var(--surface); border: 2px solid var(--border); padding: 20px;">
@@ -2180,21 +2182,6 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
     <p>Creates an in-memory cache with TTL and LRU support.</p>
     <pre><code><span class="keyword">function</span> <span class="function">createCache</span>(options?: { maxSize?: <span class="type">number</span> }): <span class="type">InMemoryCache</span></code></pre>
 
-    <h4 id="setupgracefulshutdown-function" class="section-anchor"><code>setupGracefulShutdown(scope, options?)</code></h4>
-    <p>Sets up graceful shutdown handling for a scope.</p>
-    <pre><code><span class="keyword">function</span> <span class="function">setupGracefulShutdown</span>(
-  scope: <span class="type">Scope</span>,
-  options?: <span class="type">GracefulShutdownOptions</span>
-): <span class="type">GracefulShutdownController</span></code></pre>
-
-    <h4 id="isshutdownrequested-function" class="section-anchor"><code>isShutdownRequested(scope)</code></h4>
-    <p>Check if shutdown has been requested on a scope.</p>
-    <pre><code><span class="keyword">function</span> <span class="function">isShutdownRequested</span>(scope: <span class="type">Scope</span>): <span class="type">boolean</span></code></pre>
-
-    <h4 id="waitforshutdown-function" class="section-anchor"><code>waitForShutdown(scope)</code></h4>
-    <p>Wait for shutdown signal on a scope.</p>
-    <pre><code><span class="keyword">function</span> <span class="function">waitForShutdown</span>(scope: <span class="type">Scope</span>): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;</code></pre>
-
     <h4 id="performancemonitor-function" class="section-anchor"><code>performanceMonitor(scope, options?)</code></h4>
     <p>Create a performance monitor for a scope.</p>
     <pre><code><span class="keyword">function</span> <span class="function">performanceMonitor</span>(
@@ -2246,13 +2233,16 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
   options?: <span class="type">TaskOptions</span>&lt;E&gt;
 ): <span class="type">Task</span>&lt;<span class="type">Result</span>&lt;E, T&gt;&gt;</code></pre>
 
-    <h5 id="scope-provide" class="section-anchor"><code>scope.provide(key, factory, cleanup?)</code></h5>
+    <h5 id="scope-provide" class="section-anchor"><code>scope.provide(key, factory, options?)</code></h5>
     <p>Provide a service to the scope's dependency injection container.</p>
     <pre><code><span class="function">provide</span>&lt;K <span class="keyword">extends</span> <span class="type">string</span>, T&gt;(
   key: K,
   factory: () => <span class="type">Promise</span>&lt;T&gt; | T,
-  cleanup?: (value: T) => <span class="type">Promise</span>&lt;<span class="type">void</span>&gt; | <span class="type">void</span>
-): <span class="type">Promise</span>&lt;<span class="type">Scope</span>&lt;Services & { [P <span class="keyword">in</span> K]: T }&gt;&gt;</code></pre>
+  options?: {
+    dispose?: (value: T) => <span class="type">Promise</span>&lt;<span class="type">void</span>&gt; | <span class="type">void</span>
+    singleton?: <span class="type">boolean</span>
+  }
+): <span class="type">Scope</span>&lt;Services & { [P <span class="keyword">in</span> K]: T }&gt;</code></pre>
 
     <h5 id="scope-use" class="section-anchor"><code>scope.use(key)</code></h5>
     <p>Retrieve a previously provided service.</p>
@@ -2262,13 +2252,15 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
     <p>Check if a service exists in the scope.</p>
     <pre><code><span class="function">has</span>(key: <span class="type">string</span>): <span class="type">boolean</span></code></pre>
 
-    <h5 id="scope-override" class="section-anchor"><code>scope.override(key, factory, cleanup?)</code></h5>
+    <h5 id="scope-override" class="section-anchor"><code>scope.override(key, factory, options?)</code></h5>
     <p>Override an existing service (for testing/mocking).</p>
     <pre><code><span class="function">override</span>&lt;K <span class="keyword">extends</span> <span class="type">string</span>, T&gt;(
   key: K,
   factory: () => <span class="type">Promise</span>&lt;T&gt; | T,
-  cleanup?: (value: T) => <span class="type">Promise</span>&lt;<span class="type">void</span>&gt; | <span class="type">void</span>
-): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;</code></pre>
+  options?: {
+    dispose?: (value: T) => <span class="type">Promise</span>&lt;<span class="type">void</span>&gt; | <span class="type">void</span>
+  }
+): <span class="type">void</span></code></pre>
 
     <h5 id="scope-race" class="section-anchor"><code>scope.race(factories, options?)</code></h5>
     <p>Race multiple tasks - first to settle wins, losers are cancelled.</p>
@@ -2668,8 +2660,8 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
   <span class="keyword">async</span> [<span class="type">Symbol</span>.asyncDispose](): <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
 }</code></pre>
 
-    <h3 id="workerpool-class">WorkerPool Class (v2.4.0+) - Advanced Use</h3>
-    <p>Manages a pool of worker threads for CPU-intensive operations. <strong>For advanced/internal use</strong> - most users should use <code>parallel()</code>, <code>race()</code>, <code>scope.task()</code>, or <code>benchmark()</code> with worker options instead.</p>
+    <h3 id="workerpool-class">WorkerPool Class (v2.4.0+) - @internal</h3>
+    <p>Manages a pool of worker threads for CPU-intensive operations. <strong>For workspace packages and internal use only</strong> - most users should use <code>parallel()</code>, <code>race()</code>, <code>scope.task()</code>, or <code>benchmark()</code> with worker options instead.</p>
     <pre><code><span class="keyword">class</span> <span class="type">WorkerPool</span> <span class="keyword">implements</span> <span class="type">AsyncDisposable</span> {
   <span class="keyword">constructor</span>(options?: {
     size?: <span class="type">number</span>           <span class="comment">// Pool size (default: CPU count)</span>
@@ -2710,9 +2702,34 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
     </table>
 
     <h3 id="gracefulshutdowncontroller-class">GracefulShutdownController Class</h3>
-    <p>Manages graceful application shutdown.</p>
+    <p>Manages graceful application shutdown. Use via <code>gracefulShutdown</code> scope option (v2.6.0+).</p>
 
-    <h4>Properties</h4>
+    <pre><code>await using s = scope({
+  gracefulShutdown: {
+    signals: ['SIGTERM', 'SIGINT'],
+    timeout: 30000,
+    onShutdown: async (signal) => {
+      console.log(`Received ${signal}, cleaning up...`);
+    }
+  }
+});
+
+// Check shutdown status
+if (s.isShutdownRequested) {
+  // Shutdown requested
+}</code></pre>
+
+    <h4>Scope Property (v2.6.0+)</h4>
+    <table>
+        <thead>
+            <tr><th>Property</th><th>Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>isShutdownRequested</code></td><td><code>boolean</code></td><td>Whether shutdown was requested</td></tr>
+        </tbody>
+    </table>
+
+    <h4>Controller Properties</h4>
     <table>
         <thead>
             <tr><th>Property</th><th>Type</th><th>Description</th></tr>
@@ -3650,9 +3667,7 @@ app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) =
             { title: 'decorrelatedJitter()', desc: 'Decorrelated jitter strategy', href: '#decorrelatedjitter-function' },
             // Utilities
             { title: 'createCache()', desc: 'Create LRU cache', href: '#createcache-function' },
-            { title: 'setupGracefulShutdown()', desc: 'Setup graceful shutdown', href: '#setupgracefulshutdown-function' },
-            { title: 'isShutdownRequested()', desc: 'Check shutdown status', href: '#isshutdownrequested-function' },
-            { title: 'waitForShutdown()', desc: 'Wait for shutdown', href: '#waitforshutdown-function' },
+
             { title: 'benchmark()', desc: 'Benchmark function', href: '#benchmark-function' },
             { title: 'installPlugins()', desc: 'Install plugins', href: '#installplugins-function' },
             // Error Classes

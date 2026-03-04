@@ -2,7 +2,7 @@
  * Circuit Breaker Events Tests
  */
 import { describe, expect, test, vi } from "vitest";
-import { CircuitBreaker } from "../src/index.js";
+import { CircuitBreaker } from "../src/circuit-breaker.js";
 
 describe("CircuitBreaker events", () => {
 	describe("on/off", () => {

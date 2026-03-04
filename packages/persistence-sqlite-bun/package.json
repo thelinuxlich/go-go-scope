@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/persistence-sqlite-bun",
-	"version": "2.6.0",
+	"version": "2.6.1",
 	"description": "Bun-native SQLite persistence adapter for go-go-scope - uses bun:sqlite for optimal performance",
 	"type": "module",
 	"main": "./dist/index.mjs",

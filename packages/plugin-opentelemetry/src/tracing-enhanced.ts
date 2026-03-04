@@ -773,43 +773,6 @@ export interface EnhancedTracingOptions {
 }
 
 /**
- * Setup enhanced tracing on a scope
- */
-export function setupEnhancedTracing(
-	scope: Scope,
-	options: EnhancedTracingOptions = {},
-	tracer?: Tracer,
-): {
-	channelTracer: ChannelTracer<unknown>;
-	deadlockDetector: DeadlockDetector;
-} {
-	const channelTracer = new ChannelTracer<unknown>(tracer);
-	const deadlockDetector = new DeadlockDetector(tracer);
-
-	// Start deadlock detection if enabled
-	if (options.enableDeadlockDetection) {
-		deadlockDetector.startDetection(
-			options.deadlockCheckInterval ?? 5000,
-			options.onDeadlock,
-		);
-
-		scope.onDispose(() => {
-			deadlockDetector.stopDetection();
-		});
-	}
-
-	// Register scope with deadlock detector
-	deadlockDetector.registerNode(
-		scope.scopeName,
-		"task",
-		"running",
-		undefined, // span context
-	);
-
-	return { channelTracer, deadlockDetector };
-}
-
-/**
  * Export trace data for visualization
  */
 export function exportTraceData(

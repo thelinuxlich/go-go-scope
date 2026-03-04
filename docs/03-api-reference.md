@@ -10,7 +10,7 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
 - [Scope Methods](#scope-methods)
   - [`scope.task(fn, options?)`](#scopetaskfn-options)
   - [TaskOptions](#taskoptions-type)
-  - [`scope.provide(key, factory, cleanup?)`](#scopeprovidekey-factory-cleanup)
+  - [`scope.provide(key, factory, options?)`](#scopeprovidekey-factory-options)
   - [`scope.use(key)`](#scopeusekey)
   - [`scope.has(key)`](#scopehaskey)
   - [`scope.override(key, factory, cleanup?)`](#scopeoverridekey-factory-cleanup)
@@ -35,8 +35,8 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
 - [Additional Classes](#additional-classes)
   - [`Lock`](#lock)
   - [`createLock()`](#createlocksignal-options)
-  - [`CircuitBreaker`](#circuitbreaker)
-  - [`WorkerPool`](#workerpool) (advanced/internal use)
+  - [`scope({ circuitBreaker })`](#scope-circuitbreaker-options)
+  - [`WorkerPool`](#workerpool) (@internal - workspace use)
   - [`AsyncDisposableResource`](#asyncdisposableresource)
   - [`ScopedEventEmitter`](#scopedeventemitter)
   - [`TokenBucket`](#tokenbucket)
@@ -47,9 +47,7 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`exportMetrics()`](#exportmetricsmetrics-options)
   - [`createCache()`](#createcache)
   - [`createIdempotencyProvider()`](#createidempotencyprovider)
-  - [`setupGracefulShutdown()`](#setupgracefulshutdown)
-  - [`isShutdownRequested()`](#isshutdownrequested)
-  - [`waitForShutdown()`](#waitforshutdown)
+  - [`gracefulShutdown` option (v2.6.0+)](#gracefulshutdownoptions)
   - [`installPlugins()`](#installplugins)
   - [`benchmark()`](#benchmark)
   - [`performanceMonitor()`](#performancemonitor)
@@ -796,7 +794,7 @@ const [err, result] = await s.resumeTask(
 
 ---
 
-### `scope.provide(key, factory, cleanup?)`
+### `scope.provide(key, factory, options?)`
 
 Registers a service/dependency that can be used by tasks in this scope. Services are automatically cleaned up when the scope exits.
 
@@ -804,7 +802,10 @@ Registers a service/dependency that can be used by tasks in this scope. Services
 provide<K extends string, T>(
   key: K,
   factory: () => T,
-  cleanup?: (service: T) => void | Promise<void>
+  options?: {
+    dispose?: (service: T) => void | Promise<void>
+    singleton?: boolean
+  }
 ): Scope<Services & Record<K, T>>
 ```
 
@@ -814,7 +815,8 @@ provide<K extends string, T>(
 |------|------|-------------|
 | `key` | `string` | Service identifier |
 | `factory` | `() => T` | Function to create the service |
-| `cleanup` | `(T) => void \| Promise<void>` | Optional cleanup function |
+| `options.dispose` | `(T) => void \| Promise<void>` | Optional cleanup function |
+| `options.singleton` | `boolean` | If true, only create once and reuse |
 
 **Returns:** `Scope` with updated types
 
@@ -824,7 +826,7 @@ provide<K extends string, T>(
 import { assert } from 'go-go-try'
 
 await using s = scope()
-  .provide('db', () => openDatabase(), (db) => db.close())
+  .provide('db', () => openDatabase(), { dispose: (db) => db.close() })
   .provide('cache', () => createCache())
 
 // Access in tasks
@@ -833,6 +835,22 @@ const [err, result] = await s.task(({ services }) => {
 })
 
 return assert(result, err)
+```
+
+**Singleton Example:**
+
+```typescript
+await using s = scope()
+
+// First call creates the value
+s.provide('config', () => loadConfig(), { singleton: true })
+const config1 = s.use('config')
+
+// Second call returns the same instance
+s.provide('config', () => loadConfig(), { singleton: true })
+const config2 = s.use('config')
+
+// config1 === config2
 ```
 
 **Note:** Resources are disposed in LIFO order (reverse of creation).
@@ -2809,37 +2827,30 @@ const lock = createLock(s.signal, {
 
 ---
 
-### `CircuitBreaker`
+### `scope({ circuitBreaker: options })`
 
-Fault tolerance circuit breaker that automatically stops calling failing services.
+Fault tolerance circuit breaker that automatically stops calling failing services. Circuit breaker is automatically applied to all tasks spawned within the scope.
 
 ```typescript
-import { CircuitBreaker } from 'go-go-scope'
+import { scope } from 'go-go-scope'
 
-// Create circuit breaker
-const cb = new CircuitBreaker({
-  failureThreshold: 5,      // Open after 5 failures
-  resetTimeout: 30000,      // Try again after 30 seconds
-  successThreshold: 2       // Require 2 successes to close
-}, abortSignal)
-
-// Execute with protection
-await using guard = scope()
-try {
-  const result = await cb.execute(async (signal) => {
-    return await fetchData({ signal })
-  })
-} catch (err) {
-  if (err.message === 'Circuit breaker is open') {
-    // Use fallback
+// Create scope with circuit breaker
+await using s = scope({
+  circuitBreaker: {
+    failureThreshold: 5,      // Open after 5 failures
+    resetTimeout: 30000,      // Try again after 30 seconds
+    successThreshold: 2       // Require 2 successes to close
   }
+})
+
+// All tasks automatically use circuit breaker protection
+const [err, result] = await s.task(async (signal) => {
+  return await fetchData({ signal })
+})
+
+if (err && err.message === 'Circuit breaker is open') {
+  // Use fallback
 }
-```
-
-**Constructor:**
-
-```typescript
-new CircuitBreaker(options?: CircuitBreakerOptions, parentSignal?: AbortSignal)
 ```
 
 **CircuitBreakerOptions:**
@@ -2859,30 +2870,6 @@ new CircuitBreaker(options?: CircuitBreakerOptions, parentSignal?: AbortSignal)
 | `onClose` | `() => void` | Circuit closed callback |
 | `onHalfOpen` | `() => void` | Circuit half-open callback |
 
-**Methods:**
-
-| Method | Description |
-|--------|-------------|
-| `execute(fn)` | Execute function with circuit breaker protection |
-| `reset()` | Manually reset to closed state |
-| `on(event, handler)` | Subscribe to circuit breaker events |
-| `off(event, handler)` | Unsubscribe from events |
-| `once(event, handler)` | Subscribe once to an event |
-| `[Symbol.asyncDispose]()` | Dispose the circuit breaker |
-
-**Properties:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `currentState` | `'closed' \| 'open' \| 'half-open'` | Current circuit state |
-| `failureCount` | `number` | Current failure count |
-| `successCount` | `number` | Consecutive success count (half-open) |
-| `failureThreshold` | `number` | Current failure threshold |
-| `resetTimeout` | `number` | Reset timeout in milliseconds |
-| `isAdaptiveEnabled` | `boolean` | Whether adaptive threshold is enabled |
-| `isSlidingWindowEnabled` | `boolean` | Whether sliding window is enabled |
-| `errorRate` | `number` | Current error rate (0-1) |
-
 **Events:**
 
 | Event | Payload | Description |
@@ -2898,35 +2885,37 @@ new CircuitBreaker(options?: CircuitBreakerOptions, parentSignal?: AbortSignal)
 **Event Example:**
 
 ```typescript
-const cb = new CircuitBreaker({ failureThreshold: 3 })
-
-// Subscribe to events
-const unsubscribe = cb.on('open', (failureCount) => {
-  console.log(`Circuit opened after ${failureCount} failures`)
-  alertOpsTeam('Service degraded')
+await using s = scope({
+  circuitBreaker: {
+    failureThreshold: 3,
+    onOpen: (failureCount) => {
+      console.log(`Circuit opened after ${failureCount} failures`)
+      alertOpsTeam('Service degraded')
+    },
+    onClose: () => {
+      console.log('Circuit closed - service recovered')
+    },
+    onStateChange: (from, to, count) => {
+      console.log(`Circuit: ${from} -> ${to} (failures: ${count})`)
+    }
+  }
 })
 
-cb.on('close', () => {
-  console.log('Circuit closed - service recovered')
-})
-
-cb.on('stateChange', (from, to, count) => {
-  console.log(`Circuit: ${from} -> ${to} (failures: ${count})`)
-})
-
-// Unsubscribe when done
-unsubscribe()
+// Tasks automatically use circuit breaker
+const [err, data] = await s.task(() => fetchData())
 ```
 
 **Adaptive Threshold Example:**
 
 ```typescript
-const cb = new CircuitBreaker({
-  advanced: {
-    adaptiveThreshold: true,
-    minThreshold: 2,
-    maxThreshold: 10,
-    errorRateWindowMs: 60000
+await using s = scope({
+  circuitBreaker: {
+    advanced: {
+      adaptiveThreshold: true,
+      minThreshold: 2,
+      maxThreshold: 10,
+      errorRateWindowMs: 60000
+    }
   }
 })
 
@@ -2970,12 +2959,12 @@ if (await bucket.tryConsume(1)) {
 
 ---
 
-### `WorkerPool`
+### `WorkerPool` (Internal)
 
-A pool of worker threads for executing CPU-intensive tasks in parallel (v2.4.0+). **For advanced/internal use** - most users should use `parallel()`, `race()`, `scope.task()`, or `benchmark()` with worker options instead.
+A pool of worker threads for executing CPU-intensive tasks in parallel (v2.4.0+). **For internal and workspace package use only** - most users should use `parallel()`, `race()`, `scope.task()`, or `benchmark()` with worker options instead.
 
 ```typescript
-import { WorkerPool } from "go-go-scope";
+import { WorkerPool } from "go-go-scope";  // @internal - workspace packages only
 
 // Create a pool with 4 workers
 await using pool = new WorkerPool({ size: 4 });
@@ -3057,21 +3046,24 @@ await conn.query("SELECT 1");
 
 Handles shutdown signals (SIGTERM, SIGINT) gracefully.
 
+**New in v2.6.0:** Use the `gracefulShutdown` scope option for automatic setup:
+
 ```typescript
-import { setupGracefulShutdown, isShutdownRequested } from "go-go-scope";
-
-await using s = scope();
-
-const shutdown = setupGracefulShutdown(s, {
-  timeout: 30000,
-  onShutdown: async (signal) => {
-    console.log(`Received ${signal}, starting cleanup...`);
+await using s = scope({
+  gracefulShutdown: {
+    timeout: 30000,
+    onShutdown: async (signal) => {
+      console.log(`Received ${signal}, starting cleanup...`);
+    },
+    onComplete: () => {
+      console.log('Shutdown complete');
+    }
   }
 });
 
-// Check if shutdown requested in tasks
+// Check if shutdown requested using scope property
 s.task(async () => {
-  while (!isShutdownRequested(s)) {
+  while (!s.isShutdownRequested) {
     await processWork();
   }
 });
@@ -3090,6 +3082,18 @@ s.task(async () => {
 |--------|-------------|
 | `shutdown(signal?)` | Manually trigger shutdown |
 | `cleanup()` | Remove signal handlers |
+
+**Scope Property:**
+
+When using the `gracefulShutdown` option, the scope gets an `isShutdownRequested` property:
+
+```typescript
+await using s = scope({ gracefulShutdown: {} });
+
+if (s.isShutdownRequested) {
+  // Shutdown has been requested
+}
+```
 
 ---
 
@@ -3175,62 +3179,6 @@ const [err, result] = await s.task(
   () => processPayment(orderId),
   { idempotency: { key: `payment:${orderId}`, ttl: 60000 } }
 );
-```
-
----
-
-### `setupGracefulShutdown()`
-
-Set up graceful shutdown handling for a scope.
-
-```typescript
-import { setupGracefulShutdown } from "go-go-scope";
-
-await using s = scope();
-
-setupGracefulShutdown(s, {
-  signals: ['SIGTERM', 'SIGINT'],
-  timeout: 30000,
-  onShutdown: async (signal) => {
-    console.log(`Received ${signal}, cleaning up...`);
-  },
-  onComplete: () => {
-    console.log('Shutdown complete');
-  }
-});
-```
-
----
-
-### `isShutdownRequested()`
-
-Check if shutdown has been requested on a scope.
-
-```typescript
-import { isShutdownRequested } from "go-go-scope";
-
-s.task(async () => {
-  while (!isShutdownRequested(s)) {
-    await processWork();
-  }
-});
-```
-
----
-
-### `waitForShutdown()`
-
-Wait for shutdown to complete on a scope.
-
-```typescript
-import { waitForShutdown } from "go-go-scope";
-
-await using s = scope();
-setupGracefulShutdown(s);
-
-// Wait for shutdown
-await waitForShutdown(s);
-console.log('Shutdown finished');
 ```
 
 ---
@@ -3505,18 +3453,42 @@ interface ScopePlugin {
 
 ### `GracefulShutdownOptions`
 
-Options for graceful shutdown configuration.
+Options for graceful shutdown configuration. Pass to the `gracefulShutdown` scope option.
 
 ```typescript
 interface GracefulShutdownOptions {
+  /** Signals to listen for (default: ['SIGTERM', 'SIGINT']) */
   signals?: NodeJS.Signals[];
+  /** Timeout in milliseconds before forceful exit (default: 30000) */
   timeout?: number;
+  /** Callback when shutdown is requested */
   onShutdown?: (signal: NodeJS.Signals) => void | Promise<void>;
+  /** Callback when shutdown is complete */
   onComplete?: () => void | Promise<void>;
+  /** Exit process after shutdown (default: true) */
   exit?: boolean;
+  /** Exit code on success (default: 0) */
   successExitCode?: number;
+  /** Exit code on timeout (default: 1) */
   timeoutExitCode?: number;
 }
+```
+
+**Example:**
+
+```typescript
+await using s = scope({
+  gracefulShutdown: {
+    signals: ['SIGTERM', 'SIGINT'],
+    timeout: 30000,
+    onShutdown: async (signal) => {
+      console.log(`Received ${signal}, cleaning up...`);
+    },
+    onComplete: () => {
+      console.log('Shutdown complete');
+    }
+  }
+});
 ```
 
 ---

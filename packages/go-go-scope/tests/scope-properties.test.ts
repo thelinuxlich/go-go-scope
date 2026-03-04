@@ -14,7 +14,6 @@ describe("Scope Property-Based Tests", () => {
 					fc.integer(),
 					async (value) => {
 						await using s = scope();
-
 						const task = s.task(async () => value);
 
 						// Await the same task multiple times

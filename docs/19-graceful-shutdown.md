@@ -15,24 +15,24 @@ Handle process shutdown signals (SIGTERM, SIGINT) gracefully, allowing ongoing o
 ## Basic Usage
 
 ```typescript
-import { scope, setupGracefulShutdown } from 'go-go-scope'
+import { scope } from 'go-go-scope'
 
-await using s = scope()
-
-// Set up graceful shutdown
-const shutdown = setupGracefulShutdown(s, {
-  timeout: 30000,  // 30 seconds before force exit
-  onShutdown: async (signal) => {
-    console.log(`Received ${signal}, starting cleanup...`)
-  },
-  onComplete: () => {
-    console.log('Shutdown complete')
+// Set up graceful shutdown via scope option
+await using s = scope({
+  gracefulShutdown: {
+    timeout: 30000,  // 30 seconds before force exit
+    onShutdown: async (signal) => {
+      console.log(`Received ${signal}, starting cleanup...`)
+    },
+    onComplete: () => {
+      console.log('Shutdown complete')
+    }
   }
 })
 
 // Your application logic here
 s.task(async () => {
-  while (!isShutdownRequested(s)) {
+  while (!s.isShutdownRequested) {
     await processWork()
   }
 })
@@ -64,34 +64,30 @@ interface GracefulShutdownOptions {
 ### Custom Signals
 
 ```typescript
-import { setupGracefulShutdown } from 'go-go-scope'
-
-await using s = scope()
-
-// Handle additional signals
-setupGracefulShutdown(s, {
-  signals: ['SIGTERM', 'SIGINT', 'SIGUSR2'],  // Also handle SIGUSR2 (nodemon)
-  timeout: 60000
+await using s = scope({
+  gracefulShutdown: {
+    // Handle additional signals
+    signals: ['SIGTERM', 'SIGINT', 'SIGUSR2'],  // Also handle SIGUSR2 (nodemon)
+    timeout: 60000
+  }
 })
 ```
 
 ### Without Process Exit
 
 ```typescript
-import { setupGracefulShutdown, waitForShutdown } from 'go-go-scope'
-
-await using s = scope()
-
-// Don't exit process (useful for testing or embedded scenarios)
-setupGracefulShutdown(s, {
-  exit: false,
-  onComplete: async () => {
-    console.log('Cleanup done, but process continues')
+await using s = scope({
+  gracefulShutdown: {
+    // Don't exit process (useful for testing or embedded scenarios)
+    exit: false,
+    onComplete: async () => {
+      console.log('Cleanup done, but process continues')
+    }
   }
 })
 
 // Wait for shutdown in your code
-await waitForShutdown(s)
+await s._shutdownController?.shutdownComplete
 console.log('Shutdown complete, can proceed')
 ```
 
@@ -102,15 +98,15 @@ console.log('Shutdown complete, can proceed')
 Tasks can check if shutdown has been requested and exit cleanly:
 
 ```typescript
-import { scope, setupGracefulShutdown, isShutdownRequested } from 'go-go-scope'
+import { scope } from 'go-go-scope'
 
-await using s = scope()
-
-setupGracefulShutdown(s, { timeout: 30000 })
+await using s = scope({
+  gracefulShutdown: { timeout: 30000 }
+})
 
 // Long-running task that checks for shutdown
 s.task(async ({ signal }) => {
-  while (!isShutdownRequested(s) && !signal.aborted) {
+  while (!s.isShutdownRequested && !signal.aborted) {
     const work = await getNextWorkItem()
     if (!work) {
       await new Promise(r => setTimeout(r, 1000))
@@ -128,7 +124,7 @@ s.task(async () => {
   try {
     while (true) {
       // Check shutdown before starting new work
-      if (isShutdownRequested(s)) {
+      if (s.isShutdownRequested) {
         console.log('Stopping after current batch')
         break
       }
@@ -150,13 +146,25 @@ Graceful shutdown for an HTTP server:
 
 ```typescript
 import { createServer } from 'http'
-import { scope, setupGracefulShutdown, isShutdownRequested } from 'go-go-scope'
+import { scope } from 'go-go-scope'
 
 async function startServer() {
-  await using s = scope()
+  await using s = scope({
+    gracefulShutdown: {
+      timeout: 30000,
+      onShutdown: async () => {
+        console.log('Shutting down HTTP server...')
+        
+        // Stop accepting new connections
+        server.close(() => {
+          console.log('HTTP server closed')
+        })
+      }
+    }
+  })
   
   const server = createServer((req, res) => {
-    if (isShutdownRequested(s)) {
+    if (s.isShutdownRequested) {
       // Reject new requests during shutdown
       res.statusCode = 503
       res.end('Server shutting down')
@@ -165,19 +173,6 @@ async function startServer() {
     
     // Process request
     res.end('Hello World')
-  })
-  
-  // Set up graceful shutdown
-  setupGracefulShutdown(s, {
-    timeout: 30000,
-    onShutdown: async () => {
-      console.log('Shutting down HTTP server...')
-      
-      // Stop accepting new connections
-      server.close(() => {
-        console.log('HTTP server closed')
-      })
-    }
   })
   
   server.listen(3000, () => {
@@ -194,12 +189,19 @@ startServer().catch(console.error)
 ### With Express/Fastify
 
 ```typescript
-import { scope, setupGracefulShutdown } from 'go-go-scope'
+import { scope } from 'go-go-scope'
 import { fastifyGoGoScope } from '@go-go-scope/adapter-fastify'
 import Fastify from 'fastify'
 
 async function startApp() {
-  await using s = scope()
+  await using s = scope({
+    gracefulShutdown: {
+      timeout: 30000,
+      onShutdown: async () => {
+        await app.close()
+      }
+    }
+  })
   
   const app = Fastify()
   
@@ -208,14 +210,6 @@ async function startApp() {
   
   // Your routes...
   app.get('/', async () => 'Hello World')
-  
-  // Graceful shutdown
-  setupGracefulShutdown(s, {
-    timeout: 30000,
-    onShutdown: async () => {
-      await app.close()
-    }
-  })
   
   await app.listen({ port: 3000 })
   
@@ -231,16 +225,15 @@ async function startApp() {
 Background worker with graceful shutdown:
 
 ```typescript
-import { scope, setupGracefulShutdown, isShutdownRequested } from 'go-go-scope'
-import { poll } from 'go-go-scope'
+import { scope } from 'go-go-scope'
 
 async function runWorker() {
-  await using s = scope()
-  
-  setupGracefulShutdown(s, {
-    timeout: 60000,  // Give workers more time
-    onShutdown: async (signal) => {
-      console.log(`Worker received ${signal}, finishing current jobs...`)
+  await using s = scope({
+    gracefulShutdown: {
+      timeout: 60000,  // Give workers more time
+      onShutdown: async (signal) => {
+        console.log(`Worker received ${signal}, finishing current jobs...`)
+      }
     }
   })
   
@@ -249,7 +242,7 @@ async function runWorker() {
     async () => fetchNextJob(),
     async (job) => {
       // Check shutdown before processing
-      if (isShutdownRequested(s)) {
+      if (s.isShutdownRequested) {
         console.log('Skipping job, shutdown in progress')
         return
       }
@@ -273,25 +266,23 @@ runWorker().catch(console.error)
 You can also trigger shutdown programmatically:
 
 ```typescript
-import { GracefulShutdownController } from 'go-go-scope'
-
-await using s = scope()
-
-const shutdown = setupGracefulShutdown(s, { exit: false })
+await using s = scope({
+  gracefulShutdown: { exit: false }
+})
 
 // Trigger shutdown manually (e.g., from admin endpoint)
 app.post('/admin/shutdown', async (req, res) => {
   res.json({ message: 'Shutting down...' })
   
   // Trigger graceful shutdown
-  await shutdown.shutdown('SIGTERM')
+  await s._shutdownController?.shutdown('SIGTERM')
 })
 
 // Check status
-console.log('Shutdown requested?', shutdown.isShutdownRequested)
+console.log('Shutdown requested?', s.isShutdownRequested)
 
 // Wait for shutdown to complete
-await shutdown.shutdownComplete
+await s._shutdownController?.shutdownComplete
 console.log('Shutdown finished')
 ```
 

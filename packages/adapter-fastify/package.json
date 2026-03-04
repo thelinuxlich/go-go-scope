@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/adapter-fastify",
-	"version": "2.6.0",
+	"version": "2.6.1",
 	"description": "Fastify adapter for go-go-scope - request-scoped structured concurrency",
 	"type": "module",
 	"main": "./dist/index.mjs",

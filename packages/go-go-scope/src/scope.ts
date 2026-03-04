@@ -17,6 +17,8 @@ import {
 import { CircuitBreaker } from "./circuit-breaker.js";
 import { AbortError, UnknownError } from "./errors.js";
 import { ScopedEventEmitter } from "./event-emitter.js";
+import type { GracefulShutdownOptions } from "./graceful-shutdown.js";
+import { GracefulShutdownController } from "./graceful-shutdown.js";
 import {
 	createCorrelatedLogger,
 	generateSpanId,
@@ -182,12 +184,26 @@ export interface ScopeOptions<
 	 * If not provided, a new trace ID is generated when logCorrelation is enabled.
 	 */
 	traceId?: string;
+	/**
+	 * Graceful shutdown configuration.
+	 * When set, the scope will automatically handle shutdown signals (SIGTERM, SIGINT)
+	 * and coordinate cleanup before exiting.
+	 */
+	gracefulShutdown?: GracefulShutdownOptions;
+	/**
+	 * Enhanced tracing configuration for distributed tracing.
+	 * When set, enables advanced tracing features like channel message flow tracking,
+	 * deadlock detection, and visual trace export.
+	 * @see EnhancedTracingOptions in @riseworks/plugin-opentelemetry
+	 */
+	tracing?: Record<string, unknown>;
 }
 
 /**
  * A Scope for structured concurrency.
  */
 /* #__PURE__ */
+// @ts-ignore TypeScript doesn't recognize Symbol.asyncDispose in all configurations
 export class Scope<
 	Services extends Record<string, unknown> = Record<string, never>,
 > implements AsyncDisposable
@@ -233,6 +249,16 @@ export class Scope<
 	readonly traceId?: string;
 	/** Span ID for log correlation */
 	readonly spanId?: string;
+	/** Graceful shutdown controller */
+	private _shutdownController?: GracefulShutdownController;
+
+	/**
+	 * Check if graceful shutdown has been requested.
+	 * Only available when gracefulShutdown option is set.
+	 */
+	get isShutdownRequested(): boolean {
+		return this._shutdownController?.isShutdownRequested ?? false;
+	}
 
 	constructor(options?: ScopeOptions<Record<string, unknown>>) {
 		this.id = ++scopeIdCounter;
@@ -370,6 +396,14 @@ export class Scope<
 			this as unknown as Scope<Record<string, never>>,
 			options as ScopeOptions<Record<string, never>>,
 		);
+
+		// Set up graceful shutdown if specified
+		if (options?.gracefulShutdown) {
+			this._shutdownController = new GracefulShutdownController(
+				this as unknown as Scope<Record<string, unknown>>,
+				options.gracefulShutdown,
+			);
+		}
 	}
 
 	get signal(): AbortSignal {
@@ -1352,15 +1386,25 @@ export class Scope<
 	provide<K extends string, T>(
 		key: K,
 		value: T | (() => T),
-		dispose?: (value: T) => void | Promise<void>,
+		options?: {
+			/** Dispose function called when scope is disposed */
+			dispose?: (value: T) => void | Promise<void>;
+			/** If true, only create the value once and reuse it for subsequent calls */
+			singleton?: boolean;
+		},
 	): Scope<Services & Record<K, T>> {
+		// Check if singleton already exists
+		if (options?.singleton && key in this.services) {
+			return this as Scope<Services & Record<K, T>>;
+		}
+
 		// If value is a function, call it to get the actual value
 		const resolvedValue =
 			typeof value === "function" ? (value as () => T)() : value;
 		(this.services as Record<string, unknown>)[key] = resolvedValue;
 
 		// Track dispose function if provided
-		if (dispose) {
+		if (options?.dispose) {
 			if (!this._resourceDisposers) {
 				this._resourceDisposers = [];
 			}
@@ -1369,7 +1413,7 @@ export class Scope<
 				key,
 				dispose: async () => {
 					try {
-						await dispose(resolvedValue);
+						await options.dispose!(resolvedValue);
 						this.hooks?.onDispose?.(index, undefined);
 					} catch (error) {
 						this.hooks?.onDispose?.(index, error);
@@ -1394,7 +1438,10 @@ export class Scope<
 	override<K extends keyof Services>(
 		key: K,
 		value: Services[K] | (() => Services[K]),
-		dispose?: (value: Services[K]) => void | Promise<void>,
+		options?: {
+			/** Dispose function called when scope is disposed */
+			dispose?: (value: Services[K]) => void | Promise<void>;
+		},
 	): this {
 		if (this.disposed) {
 			throw new Error("Cannot override service on disposed scope");
@@ -1410,7 +1457,7 @@ export class Scope<
 		this.services[key] = resolvedValue;
 
 		// Track dispose function if provided
-		if (dispose) {
+		if (options?.dispose) {
 			if (!this._resourceDisposers) {
 				this._resourceDisposers = [];
 			}
@@ -1419,7 +1466,7 @@ export class Scope<
 				key: String(key),
 				dispose: async () => {
 					try {
-						await dispose(resolvedValue);
+						await options.dispose!(resolvedValue);
 						this.hooks?.onDispose?.(index, undefined);
 					} catch (error) {
 						this.hooks?.onDispose?.(index, error);

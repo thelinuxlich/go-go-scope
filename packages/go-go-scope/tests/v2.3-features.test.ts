@@ -544,77 +544,72 @@ describe("v2.3.0 Features", () => {
 	});
 
 	describe("Graceful Shutdown Helper", () => {
-		test("setupGracefulShutdown creates controller", async () => {
-			await using s = scope();
-			const { setupGracefulShutdown } = await import("../src/graceful-shutdown.js");
-
-			const controller = setupGracefulShutdown(s, {
-				signals: [], // Don't register actual signals in test
-				exit: false,
-			});
-
-			expect(controller).toBeDefined();
-			expect(controller.isShutdownRequested).toBe(false);
-		});
-
-		test("shutdownRequested returns true after manual shutdown", async () => {
-			await using s = scope();
-			const { setupGracefulShutdown } = await import("../src/graceful-shutdown.js");
-
-			const controller = setupGracefulShutdown(s, {
-				signals: [],
-				exit: false,
-			});
-
-			expect(controller.isShutdownRequested).toBe(false);
-			await controller.shutdown();
-			expect(controller.isShutdownRequested).toBe(true);
-		});
-
-		test("onShutdown callback is called during shutdown", async () => {
-			await using s = scope();
-			const { setupGracefulShutdown } = await import("../src/graceful-shutdown.js");
-
-			let callbackCalled = false;
-			const controller = setupGracefulShutdown(s, {
-				signals: [],
-				exit: false,
-				onShutdown: async () => {
-					callbackCalled = true;
+		test("gracefulShutdown option creates controller", async () => {
+			await using s = scope({
+				gracefulShutdown: {
+					signals: [], // Don't register actual signals in test
+					exit: false,
 				},
 			});
 
-			await controller.shutdown();
+			expect(s._shutdownController).toBeDefined();
+			expect(s.isShutdownRequested).toBe(false);
+		});
+
+		test("isShutdownRequested returns true after manual shutdown", async () => {
+			await using s = scope({
+				gracefulShutdown: {
+					signals: [],
+					exit: false,
+				},
+			});
+
+			expect(s.isShutdownRequested).toBe(false);
+			await s._shutdownController?.shutdown();
+			expect(s.isShutdownRequested).toBe(true);
+		});
+
+		test("onShutdown callback is called during shutdown", async () => {
+			let callbackCalled = false;
+			await using s = scope({
+				gracefulShutdown: {
+					signals: [],
+					exit: false,
+					onShutdown: async () => {
+						callbackCalled = true;
+					},
+				},
+			});
+
+			await s._shutdownController?.shutdown();
 			expect(callbackCalled).toBe(true);
 		});
 
 		test("onComplete callback is called after shutdown", async () => {
-			await using s = scope();
-			const { setupGracefulShutdown } = await import("../src/graceful-shutdown.js");
-
 			let callbackCalled = false;
-			const controller = setupGracefulShutdown(s, {
-				signals: [],
-				exit: false,
-				onComplete: async () => {
-					callbackCalled = true;
+			await using s = scope({
+				gracefulShutdown: {
+					signals: [],
+					exit: false,
+					onComplete: async () => {
+						callbackCalled = true;
+					},
 				},
 			});
 
-			await controller.shutdown();
+			await s._shutdownController?.shutdown();
 			expect(callbackCalled).toBe(true);
 		});
 
-		test("scope has shutdownRequested property after setup", async () => {
-			await using s = scope();
-			const { setupGracefulShutdown } = await import("../src/graceful-shutdown.js");
-
-			setupGracefulShutdown(s, {
-				signals: [],
-				exit: false,
+		test("scope has isShutdownRequested property", async () => {
+			await using s = scope({
+				gracefulShutdown: {
+					signals: [],
+					exit: false,
+				},
 			});
 
-			expect((s as unknown as { shutdownRequested: boolean }).shutdownRequested).toBe(false);
+			expect(s.isShutdownRequested).toBe(false);
 		});
 	});
 });

@@ -218,7 +218,7 @@ describe("hooks", () => {
 		s.provide(
 			"service1",
 			() => ({ value: 1 }),
-			() => {},
+			{ dispose: () => {} },
 		);
 
 		// Dispose scope

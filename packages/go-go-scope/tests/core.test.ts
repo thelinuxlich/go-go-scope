@@ -399,7 +399,7 @@ describe("Scope", () => {
 			await using s = scope().provide(
 				"resource",
 				createResource,
-				cleanupResource,
+				{ dispose: cleanupResource },
 			);
 			const resource = s.use("resource");
 
@@ -420,25 +420,25 @@ describe("Scope", () => {
 			s.provide(
 				"first",
 				() => "first-value",
-				() => {
+				{ dispose: () => {
 					order.push("first-disposed");
-				},
+				} },
 			);
 
 			s.provide(
 				"second",
 				() => "second-value",
-				() => {
+				{ dispose: () => {
 					order.push("second-disposed");
-				},
+				} },
 			);
 
 			s.provide(
 				"third",
 				() => "third-value",
-				() => {
+				{ dispose: () => {
 					order.push("third-disposed");
-				},
+				} },
 			);
 		}
 
@@ -486,12 +486,12 @@ describe("override()", () => {
 				.provide(
 					"db",
 					() => ({ name: "real" }),
-					() => cleanups.push("real-cleanup"),
+					{ dispose: () => cleanups.push("real-cleanup") },
 				)
 				.override(
 					"db",
 					() => ({ name: "mock" }),
-					() => cleanups.push("mock-cleanup"),
+					{ dispose: () => cleanups.push("mock-cleanup") },
 				);
 
 			expect(s.use("db").name).toBe("mock");

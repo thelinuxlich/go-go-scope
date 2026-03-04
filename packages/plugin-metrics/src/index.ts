@@ -592,19 +592,20 @@ export function metricsPlugin(options: MetricsPluginOptions = {}): ScopePlugin {
 				value: <K extends string, T>(
 					key: K,
 					value: T | (() => T),
-					dispose?: (value: T) => void | Promise<void>,
+					options?: { dispose?: (value: T) => void | Promise<void>; singleton?: boolean },
 				) => {
 					collector.recordResourceRegistered();
 					// Wrap dispose callback to track disposal
-					const wrappedDispose = dispose
-						? (val: T) => {
-								dispose(val);
-								collector.recordResourceDisposed();
+					const wrappedOptions = options
+						? {
+								...options,
+								dispose: (val: T) => {
+									options.dispose?.(val);
+									collector.recordResourceDisposed();
+								},
 							}
-						: () => {
-								collector.recordResourceDisposed();
-							};
-					return originalProvide(key, value, wrappedDispose);
+						: { dispose: () => collector.recordResourceDisposed() };
+					return originalProvide(key, value, wrappedOptions);
 				},
 				writable: true,
 				configurable: true,

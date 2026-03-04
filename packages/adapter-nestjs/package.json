@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/adapter-nestjs",
-	"version": "2.6.0",
+	"version": "2.6.1",
 	"description": "NestJS adapter for go-go-scope - DI integration with @Task decorator",
 	"type": "module",
 	"main": "./dist/index.mjs",

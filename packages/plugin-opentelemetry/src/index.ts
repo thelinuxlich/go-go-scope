@@ -4,7 +4,7 @@
 
 import type { Context, Span, Tracer } from "@opentelemetry/api";
 import { context as otelContext, trace } from "@opentelemetry/api";
-import type { Scope, ScopePlugin, TaskOptions } from "go-go-scope";
+import type { Scope, ScopePlugin } from "go-go-scope";
 
 /**
  * OpenTelemetry options for tasks
@@ -34,6 +34,24 @@ interface OpenTelemetryState {
 	span?: Span;
 	context?: Context;
 	taskSpans: Map<number, Span>;
+}
+
+/**
+ * Enhanced tracing options for go-go-scope
+ */
+export interface TracingOptions {
+	/** Enable message flow tracking between channels */
+	trackMessageFlows?: boolean;
+	/** Enable deadlock detection for async operations */
+	enableDeadlockDetection?: boolean;
+	/** Interval in ms for deadlock checks (default: 5000) */
+	deadlockCheckInterval?: number;
+	/** Callback when deadlock is detected */
+	onDeadlock?: (deadlockInfo: unknown) => void;
+	/** Link channel operation spans together */
+	linkChannelSpans?: boolean;
+	/** Enable visual trace data export */
+	enableVisualExport?: boolean;
 }
 
 /**
@@ -92,6 +110,37 @@ export function opentelemetryPlugin(
 				enumerable: true,
 				configurable: true,
 			});
+
+			// Setup enhanced tracing if tracing option is provided
+			const tracingOptions = scopeOptions.tracing as TracingOptions | undefined;
+			if (tracingOptions) {
+				// Import and setup enhanced tracing
+				import("./tracing-enhanced.js").then(({ ChannelTracer, DeadlockDetector }) => {
+					const channelTracer = new ChannelTracer<unknown>(tracer);
+					const deadlockDetector = new DeadlockDetector(tracer);
+
+					// Store enhanced tracing state
+					(scope as unknown as { _enhancedTracing?: {
+						channelTracer: InstanceType<typeof ChannelTracer<unknown>>;
+						deadlockDetector: InstanceType<typeof DeadlockDetector>;
+					} })._enhancedTracing = { channelTracer, deadlockDetector };
+
+					// Start deadlock detection if enabled
+					if (tracingOptions.enableDeadlockDetection) {
+						deadlockDetector.startDetection(
+							tracingOptions.deadlockCheckInterval ?? 5000,
+							tracingOptions.onDeadlock as (graph: unknown) => void,
+						);
+						scope.onDispose(() => deadlockDetector.stopDetection());
+					}
+
+					deadlockDetector.registerNode(
+						(scope as unknown as { name: string }).name,
+						"task",
+						"running",
+					);
+				});
+			}
 
 			// Hook into task lifecycle to create and end spans
 			scope.onBeforeTask?.(
@@ -164,77 +213,6 @@ export function opentelemetryPlugin(
 	};
 }
 
-/**
- * Start a span for a task
- */
-export function startTaskSpan(
-	scope: Scope,
-	options: TaskOptions | undefined,
-	taskIndex: number,
-	taskName: string,
-): Span | undefined {
-	const state = (scope as unknown as { _otelState?: OpenTelemetryState })
-		._otelState;
-	if (!state?.tracer) return undefined;
-
-	// Cast to access optional retry/timeout properties
-	const opts = options as
-		| { otel?: TaskSpanOptions; retry?: unknown; timeout?: number }
-		| undefined;
-
-	const span = state.tracer.startSpan(
-		opts?.otel?.name ?? "scope.task",
-		{
-			attributes: {
-				"task.index": taskIndex,
-				"task.name": taskName,
-				"task.has_retry": !!opts?.retry,
-				"task.has_timeout": !!opts?.timeout,
-				...opts?.otel?.attributes,
-			},
-		},
-		state.context ?? otelContext.active(),
-	);
-
-	state.taskSpans.set(taskIndex, span);
-	return span;
-}
-
-/**
- * End a task span
- */
-export function endTaskSpan(
-	scope: Scope,
-	taskIndex: number,
-	error?: Error,
-): void {
-	const state = (scope as unknown as { _otelState?: OpenTelemetryState })
-		._otelState;
-	if (!state) return;
-
-	const span = state.taskSpans.get(taskIndex);
-	if (span) {
-		if (error) {
-			span.recordException(error);
-			span.setStatus({ code: 2 /* Error */ }); // SpanStatusCode.ERROR
-		}
-		span.end();
-		state.taskSpans.delete(taskIndex);
-	}
-}
-
-/**
- * Set span error status
- */
-export function setSpanError(scope: Scope, error: unknown): void {
-	const state = (scope as unknown as { _otelState?: OpenTelemetryState })
-		._otelState;
-	if (state?.span && error instanceof Error) {
-		state.span.recordException(error);
-		state.span.setStatus({ code: 2 /* Error */ });
-	}
-}
-
 // Augment go-go-scope types
 declare module "go-go-scope" {
 	interface Scope {
@@ -246,35 +224,25 @@ declare module "go-go-scope" {
 		otelContext?: Context;
 		/** OpenTelemetry tracer */
 		tracer?: Tracer;
+		/** @internal Enhanced tracing state */
+		_enhancedTracing?: {
+			channelTracer: import("./tracing-enhanced.js").ChannelTracer<unknown>;
+			deadlockDetector: import("./tracing-enhanced.js").DeadlockDetector;
+		};
 	}
 
 	interface ScopeOptions<ParentServices> {
 		/** OpenTelemetry tracer for automatic tracing */
 		tracer?: Tracer;
+		/** Enhanced tracing configuration for distributed tracing */
+		tracing?: Record<string, unknown>;
 	}
 }
 
 // Re-export OpenTelemetry types
 export type { Context, Span, SpanOptions, Tracer } from "@opentelemetry/api";
 
-// Re-export enhanced tracing features
-export type {
-	DeadlockEdge,
-	DeadlockGraph,
-	DeadlockNode,
-	EnhancedTracingOptions,
-	MessageFlow,
-	SpanLink,
-} from "./tracing-enhanced.js";
-
-export {
-	ChannelTracer,
-	DeadlockDetector,
-	exportTraceData,
-	MessageFlowTracker,
-	ScopeTracer,
-	setupEnhancedTracing,
-	TraceVisualizer,
-} from "./tracing-enhanced.js";
+// Re-export enhanced tracing features (internals removed from public API)
+export { exportTraceData } from "./tracing-enhanced.js";
 
 export type { ScopePlugin };

@@ -1,0 +1,240 @@
+/**
+ * Persistence provider interfaces for go-go-scope
+ *
+ * These interfaces allow features like distributed locks and circuit
+ * breaker state to work across multiple processes/servers.
+ */
+/**
+ * Distributed lock provider interface
+ */
+export interface LockProvider {
+	/**
+	 * Attempt to acquire a lock
+	 * @param key - Unique lock identifier
+	 * @param ttl - Time-to-live in milliseconds (lock expires after this)
+	 * @param owner - Optional owner identifier (for lock extension)
+	 * @returns Lock handle if acquired, null if lock is held by another owner
+	 */
+	acquire(key: string, ttl: number, owner?: string): Promise<LockHandle | null>;
+	/**
+	 * Extend an existing lock's TTL
+	 * @param key - Lock identifier
+	 * @param ttl - New TTL in milliseconds
+	 * @param owner - Owner identifier (must match original owner)
+	 * @returns true if extended, false if lock expired or owner mismatch
+	 */
+	extend(key: string, ttl: number, owner: string): Promise<boolean>;
+	/**
+	 * Force release a lock (use with caution - can release another owner's lock)
+	 * @param key - Lock identifier
+	 */
+	forceRelease(key: string): Promise<void>;
+}
+/**
+ * Handle to an acquired lock
+ */
+export interface LockHandle {
+	/** Release the lock */
+	release(): Promise<void>;
+	/** Extend the lock TTL */
+	extend(ttl: number): Promise<boolean>;
+	/** Check if lock is still valid */
+	isValid(): Promise<boolean>;
+}
+/**
+ * Circuit breaker state provider interface
+ */
+export interface CircuitBreakerStateProvider {
+	/**
+	 * Get current state for a circuit breaker
+	 * @param key - Circuit breaker identifier
+	 */
+	getState(key: string): Promise<CircuitBreakerPersistedState | null>;
+	/**
+	 * Update circuit breaker state
+	 * @param key - Circuit breaker identifier
+	 * @param state - New state
+	 */
+	setState(key: string, state: CircuitBreakerPersistedState): Promise<void>;
+	/**
+	 * Record a failure
+	 * @param key - Circuit breaker identifier
+	 * @param maxFailures - Maximum failures before opening circuit
+	 * @returns New failure count
+	 */
+	recordFailure(key: string, maxFailures: number): Promise<number>;
+	/**
+	 * Record a success (reset failures)
+	 * @param key - Circuit breaker identifier
+	 */
+	recordSuccess(key: string): Promise<void>;
+	/**
+	 * Subscribe to state changes (optional - for distributed notifications)
+	 * @param key - Circuit breaker identifier
+	 * @param callback - Called when state changes
+	 */
+	subscribe?(
+		key: string,
+		callback: (state: CircuitBreakerPersistedState) => void,
+	): () => void;
+}
+/**
+ * Circuit breaker persisted state
+ */
+export interface CircuitBreakerPersistedState {
+	state: "closed" | "open" | "half-open";
+	failureCount: number;
+	lastFailureTime?: number;
+	lastSuccessTime?: number;
+}
+/**
+ * Cache provider interface for distributed caching
+ */
+export interface CacheProvider {
+	/**
+	 * Get a value from the cache
+	 * @param key - Cache key
+	 * @returns The cached value or null if not found/expired
+	 */
+	get<T>(key: string): Promise<T | null>;
+	/**
+	 * Set a value in the cache
+	 * @param key - Cache key
+	 * @param value - Value to cache
+	 * @param ttl - Time-to-live in milliseconds (optional)
+	 */
+	set<T>(key: string, value: T, ttl?: number): Promise<void>;
+	/**
+	 * Delete a value from the cache
+	 * @param key - Cache key
+	 */
+	delete(key: string): Promise<void>;
+	/**
+	 * Check if a key exists in the cache
+	 * @param key - Cache key
+	 * @returns True if the key exists and hasn't expired
+	 */
+	has(key: string): Promise<boolean>;
+	/**
+	 * Clear all values from the cache
+	 */
+	clear(): Promise<void>;
+	/**
+	 * Get all keys matching a pattern (if supported)
+	 * @param pattern - Optional pattern to filter keys
+	 * @returns Array of keys
+	 */
+	keys(pattern?: string): Promise<string[]>;
+}
+/**
+ * Cache statistics for monitoring
+ */
+export interface CacheStats {
+	/** Number of cache hits */
+	hits: number;
+	/** Number of cache misses */
+	misses: number;
+	/** Total number of cached items */
+	size: number;
+	/** Hit ratio (0-1) */
+	hitRatio: number;
+}
+/**
+ * Idempotency provider interface for caching task results
+ */
+export interface IdempotencyProvider {
+	/**
+	 * Get a cached value by key
+	 * @param key - Cache key
+	 * @returns Object with value and optional expiry timestamp, or null if not found/expired
+	 */
+	get<T>(key: string): Promise<{
+		value: T;
+		expiresAt?: number;
+	} | null>;
+	/**
+	 * Store a value with optional TTL
+	 * @param key - Cache key
+	 * @param value - Value to cache
+	 * @param ttl - Time-to-live in milliseconds (optional)
+	 */
+	set<T>(key: string, value: T, ttl?: number): Promise<void>;
+	/**
+	 * Delete a cached value
+	 * @param key - Cache key
+	 */
+	delete(key: string): Promise<void>;
+}
+/**
+ * Checkpoint data structure
+ */
+export interface Checkpoint<T = unknown> {
+	/** Unique checkpoint ID */
+	id: string;
+	/** Task identifier */
+	taskId: string;
+	/** Sequence number (monotonically increasing) */
+	sequence: number;
+	/** Timestamp when checkpoint was created */
+	timestamp: number;
+	/** Progress percentage (0-100) */
+	progress: number;
+	/** Checkpoint data (opaque to the framework) */
+	data: T;
+	/** Estimated time remaining in ms */
+	estimatedTimeRemaining?: number;
+}
+/**
+ * Checkpoint provider interface for persisting task progress
+ */
+export interface CheckpointProvider {
+	/** Save a checkpoint */
+	save<T>(checkpoint: Checkpoint<T>): Promise<void>;
+	/** Load the latest checkpoint for a task */
+	loadLatest<T>(taskId: string): Promise<Checkpoint<T> | undefined>;
+	/** Load a specific checkpoint by ID */
+	load<T>(checkpointId: string): Promise<Checkpoint<T> | undefined>;
+	/** List all checkpoints for a task */
+	list(taskId: string): Promise<Checkpoint<unknown>[]>;
+	/** Delete old checkpoints, keeping N most recent */
+	cleanup(taskId: string, keepCount: number): Promise<void>;
+	/** Delete all checkpoints for a task */
+	deleteAll(taskId: string): Promise<void>;
+}
+/**
+ * Combined persistence providers
+ */
+export interface PersistenceProviders {
+	/** Distributed lock provider */
+	lock?: LockProvider;
+	/** Circuit breaker state provider */
+	circuitBreaker?: CircuitBreakerStateProvider;
+	/** Cache provider */
+	cache?: CacheProvider;
+	/** Idempotency provider for caching task results */
+	idempotency?: IdempotencyProvider;
+	/** Checkpoint provider for long-running tasks */
+	checkpoint?: CheckpointProvider;
+}
+/**
+ * Options for persistence adapter
+ */
+export interface PersistenceAdapterOptions {
+	/** Key prefix for all operations (for namespacing) */
+	keyPrefix?: string;
+	/** Default TTL for locks in milliseconds */
+	defaultLockTTL?: number;
+	/** Whether to create tables on connect (MySQL adapter only) */
+	createTables?: boolean;
+}
+/**
+ * Base interface for all persistence adapters
+ */
+export interface PersistenceAdapter {
+	/** Connect to the underlying database */
+	connect?(): Promise<void>;
+	/** Disconnect from the underlying database */
+	disconnect?(): Promise<void>;
+	/** Check if adapter is connected */
+	isConnected?(): boolean;
+}

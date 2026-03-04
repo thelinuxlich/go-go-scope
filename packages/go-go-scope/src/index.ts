@@ -64,23 +64,7 @@ export type {
 	CircuitBreakerEvent,
 	EventHandler,
 } from "./circuit-breaker.js";
-export { CircuitBreaker } from "./circuit-breaker.js";
 // Stream is available via @go-go-scope/stream package
-// Re-export DI utilities
-export {
-	createContainer,
-	createModule,
-	createServiceProvider,
-	createToken,
-	DIContainer,
-	type DIModule,
-	inject,
-	injectable,
-	type ServiceLifetime,
-	type ServiceProvider,
-	type ServiceRegistration,
-	type ServiceToken,
-} from "./di.js";
 export { AbortError, ChannelFullError, UnknownError } from "./errors.js";
 // race is available as scope.race()
 // debounce and throttle are available as scope.debounce() and scope.throttle()
@@ -92,12 +76,7 @@ export {
 // Re-export standalone functions
 export { scope } from "./factory.js";
 export type { GracefulShutdownOptions } from "./graceful-shutdown.js";
-export {
-	GracefulShutdownController,
-	isShutdownRequested,
-	setupGracefulShutdown,
-	waitForShutdown,
-} from "./graceful-shutdown.js";
+export { GracefulShutdownController } from "./graceful-shutdown.js";
 // Re-export enhanced graceful shutdown
 export type {
 	EnhancedGracefulShutdownOptions,
@@ -190,7 +169,6 @@ export type {
 } from "./scope.js";
 // Re-export scope-related
 export { AsyncDisposableResource, Scope } from "./scope.js";
-export { Semaphore } from "./semaphore.js";
 export { Task } from "./task.js";
 export type { TokenBucketOptions } from "./token-bucket.js";
 export { TokenBucket } from "./token-bucket.js";
@@ -225,8 +203,10 @@ export type {
 
 // Testing utilities are available via 'go-go-scope/testing' import
 
-// Internal: WorkerPool is exported for advanced use cases and internal packages.
-// Most users should use `parallel()`, `race()`, `scope.task()`, or `benchmark()` with worker options instead.
+/**
+ * @internal WorkerPool is exported for workspace packages and advanced use cases.
+ * Most users should use `scope.task({ worker: true })`, `parallel()`, `race()`, or `benchmark()` instead.
+ */
 export { WorkerPool } from "./worker-pool.js";
 
 // Scheduler module - available via 'go-go-scope/scheduler' import

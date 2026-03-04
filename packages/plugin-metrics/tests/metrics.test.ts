@@ -38,12 +38,12 @@ describe("metrics plugin", () => {
 		s.provide(
 			"service1",
 			() => ({ value: 1 }),
-			() => {},
+			{ dispose: () => {} },
 		);
 		s.provide(
 			"service2",
 			() => ({ value: 2 }),
-			() => {},
+			{ dispose: () => {} },
 		);
 
 		// Force disposal by ending scope

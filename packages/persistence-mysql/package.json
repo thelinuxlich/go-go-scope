@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/persistence-mysql",
-	"version": "2.6.0",
+	"version": "2.6.1",
 	"description": "MySQL/MariaDB persistence adapter for go-go-scope - distributed locks and circuit breaker state",
 	"type": "module",
 	"main": "./dist/index.mjs",

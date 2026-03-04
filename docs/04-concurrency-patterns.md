@@ -632,12 +632,12 @@ else console.log('Winner:', winner);
 - Brute-force search with different strategies
 - Redundant computation for reliability
 
-### Using WorkerPool Directly (Advanced)
+### Using WorkerPool Directly (Internal)
 
-For advanced use cases, you can use `WorkerPool` directly. This is primarily for internal use and library authors - most applications should use `parallel()`, `race()`, `scope.task()`, or `benchmark()` with worker options instead.
+For workspace packages and internal use, you can use `WorkerPool` directly. This is primarily for library authors - most applications should use `parallel()`, `race()`, `scope.task()`, or `benchmark()` with worker options instead.
 
 ```typescript
-import { WorkerPool } from "go-go-scope";
+import { WorkerPool } from "go-go-scope";  // @internal - workspace packages only
 
 await using pool = new WorkerPool({
   size: 4,                    // Number of workers
