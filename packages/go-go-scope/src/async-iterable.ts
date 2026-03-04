@@ -1,278 +1,28 @@
 /**
  * Async iterator helpers for go-go-scope
  *
- * Provides utilities for working with async iterables, including
- * conversion from EventTarget, ReadableStream, and other sources.
+ * Provides utilities for working with async iterables
  */
 
-// Result type not used directly - IteratorResult<T> is from the iterator protocol
-
 /**
- * Options for asyncIteratorFrom
+ * Options for async iterable operations
  */
 export interface AsyncIteratorFromOptions {
 	/** Signal to abort the iterator */
 	signal?: AbortSignal;
-	/** Buffer size for backpressure (default: 1) */
-	bufferSize?: number;
 }
 
 /**
- * Create an async iterator from an EventTarget
- *
- * @example
- * ```typescript
- * const button = document.getElementById('myButton')
- * for await (const event of asyncIteratorFrom(button, 'click')) {
- *   console.log('Clicked!', event)
- * }
- * ```
- */
-export function asyncIteratorFrom<T extends Event>(
-	target: EventTarget,
-	eventName: string,
-	options: AsyncIteratorFromOptions = {},
-): AsyncIterable<T> {
-	const { signal, bufferSize = 1 } = options;
-
-	if (signal?.aborted) {
-		return (async function* () {})();
-	}
-
-	const buffer: T[] = [];
-	let resolveNext: ((value: IteratorResult<T>) => void) | null = null;
-	let done = false;
-
-	const eventHandler = (event: Event) => {
-		if (done) return;
-
-		const typedEvent = event as T;
-
-		if (resolveNext) {
-			resolveNext({ value: typedEvent, done: false });
-			resolveNext = null;
-		} else if (buffer.length < bufferSize) {
-			buffer.push(typedEvent);
-		}
-	};
-
-	target.addEventListener(eventName, eventHandler);
-
-	if (signal) {
-		signal.addEventListener("abort", () => {
-			done = true;
-			if (resolveNext) {
-				resolveNext({ value: undefined as unknown as T, done: true });
-			}
-		});
-	}
-
-	return {
-		[Symbol.asyncIterator](): AsyncIterator<T> {
-			return {
-				next(): Promise<IteratorResult<T>> {
-					if (done) {
-						return Promise.resolve({
-							value: undefined as unknown as T,
-							done: true,
-						});
-					}
-
-					if (buffer.length > 0) {
-						return Promise.resolve({ value: buffer.shift()!, done: false });
-					}
-
-					return new Promise((resolve) => {
-						resolveNext = resolve;
-					});
-				},
-
-				return(): Promise<IteratorResult<T>> {
-					done = true;
-					target.removeEventListener(eventName, eventHandler);
-					return Promise.resolve({
-						value: undefined as unknown as T,
-						done: true,
-					});
-				},
-			};
-		},
-	};
-}
-
-/**
- * Create an async iterator from a WebSocket
- *
- * @example
- * ```typescript
- * const ws = new WebSocket('wss://example.com')
- * for await (const message of asyncIteratorFromWebSocket(ws)) {
- *   console.log('Received:', message.data)
- * }
- * ```
- */
-export function asyncIteratorFromWebSocket(
-	ws: WebSocket,
-	options: AsyncIteratorFromOptions = {},
-): AsyncIterable<MessageEvent> {
-	const { signal } = options;
-
-	if (signal?.aborted) {
-		return (async function* () {})();
-	}
-
-	const buffer: MessageEvent[] = [];
-	let resolveNext: ((value: IteratorResult<MessageEvent>) => void) | null =
-		null;
-	let done = false;
-
-	const messageHandler = (event: MessageEvent) => {
-		if (done) return;
-
-		if (resolveNext) {
-			resolveNext({ value: event, done: false });
-			resolveNext = null;
-		} else {
-			buffer.push(event);
-		}
-	};
-
-	const closeHandler = () => {
-		done = true;
-		if (resolveNext) {
-			resolveNext({ value: undefined as unknown as MessageEvent, done: true });
-		}
-	};
-
-	ws.addEventListener("message", messageHandler);
-	ws.addEventListener("close", closeHandler);
-	ws.addEventListener("error", closeHandler);
-
-	if (signal) {
-		signal.addEventListener("abort", () => {
-			ws.close();
-		});
-	}
-
-	return {
-		[Symbol.asyncIterator](): AsyncIterator<MessageEvent> {
-			return {
-				next(): Promise<IteratorResult<MessageEvent>> {
-					if (done && buffer.length === 0) {
-						return Promise.resolve({
-							value: undefined as unknown as MessageEvent,
-							done: true,
-						});
-					}
-
-					if (buffer.length > 0) {
-						return Promise.resolve({ value: buffer.shift()!, done: false });
-					}
-
-					return new Promise((resolve) => {
-						resolveNext = resolve;
-					});
-				},
-
-				return(): Promise<IteratorResult<MessageEvent>> {
-					done = true;
-					ws.removeEventListener("message", messageHandler);
-					ws.removeEventListener("close", closeHandler);
-					ws.removeEventListener("error", closeHandler);
-					ws.close();
-					return Promise.resolve({
-						value: undefined as unknown as MessageEvent,
-						done: true,
-					});
-				},
-			};
-		},
-	};
-}
-
-/**
- * Create an async iterator that yields values at a fixed interval
- *
- * @example
- * ```typescript
- * for await (const i of interval(1000)) {
- *   console.log('Tick', i)
- *   if (i >= 5) break
- * }
- * ```
- */
-export function interval(
-	ms: number,
-	options: AsyncIteratorFromOptions = {},
-): AsyncIterable<number> {
-	const { signal } = options;
-
-	if (signal?.aborted) {
-		return (async function* () {})();
-	}
-
-	let count = 0;
-	let done = false;
-
-	return {
-		[Symbol.asyncIterator](): AsyncIterator<number> {
-			return {
-				next(): Promise<IteratorResult<number>> {
-					if (done || signal?.aborted) {
-						return Promise.resolve({
-							value: undefined as unknown as number,
-							done: true,
-						});
-					}
-
-					return new Promise((resolve) => {
-						const timeout = setTimeout(() => {
-							resolve({ value: count++, done: false });
-						}, ms);
-
-						if (signal) {
-							signal.addEventListener(
-								"abort",
-								() => {
-									clearTimeout(timeout);
-									resolve({
-										value: undefined as unknown as number,
-										done: true,
-									});
-								},
-								{ once: true },
-							);
-						}
-					});
-				},
-
-				return(): Promise<IteratorResult<number>> {
-					done = true;
-					return Promise.resolve({
-						value: undefined as unknown as number,
-						done: true,
-					});
-				},
-			};
-		},
-	};
-}
-
-/**
- * Create an async iterator from an array with async delay between items
- *
- * @example
- * ```typescript
- * for await (const item of fromArray([1, 2, 3], { delay: 100 })) {
- *   console.log(item) // 1, 2, 3 with 100ms delay
- * }
- * ```
+ * Options for fromArray
  */
 export interface FromArrayOptions extends AsyncIteratorFromOptions {
 	/** Delay between items in ms */
 	delay?: number;
 }
 
+/**
+ * Create an async iterator from an array with async delay between items
+ */
 export function fromArray<T>(
 	array: T[],
 	options: FromArrayOptions = {},
@@ -507,68 +257,6 @@ export function tap<T>(
 				await fn(item, index++);
 				yield item;
 			}
-		},
-	};
-}
-
-/**
- * Catch errors in an async iterable and continue with fallback
- */
-export function catchError<T>(
-	iterable: AsyncIterable<T>,
-	handler: (error: unknown) => AsyncIterable<T> | Promise<AsyncIterable<T>>,
-): AsyncIterable<T> {
-	return {
-		async *[Symbol.asyncIterator](): AsyncIterator<T> {
-			try {
-				yield* iterable;
-			} catch (error) {
-				yield* await handler(error);
-			}
-		},
-	};
-}
-
-/**
- * Type guard to check if something is async iterable
- */
-export function isAsyncIterable<T>(value: unknown): value is AsyncIterable<T> {
-	return (
-		value !== null &&
-		typeof value === "object" &&
-		typeof (value as AsyncIterable<T>)[Symbol.asyncIterator] === "function"
-	);
-}
-
-/**
- * Convert a promise to an async iterable that yields the result once
- */
-export function fromPromise<T>(promise: Promise<T>): AsyncIterable<T> {
-	return {
-		async *[Symbol.asyncIterator](): AsyncIterator<T> {
-			yield await promise;
-		},
-	};
-}
-
-/**
- * Create an async iterable that yields a single value
- */
-export function of<T>(value: T): AsyncIterable<T> {
-	return {
-		async *[Symbol.asyncIterator](): AsyncIterator<T> {
-			yield value;
-		},
-	};
-}
-
-/**
- * Create an empty async iterable
- */
-export function empty<T>(): AsyncIterable<T> {
-	return {
-		async *[Symbol.asyncIterator](): AsyncIterator<T> {
-			// No values
 		},
 	};
 }

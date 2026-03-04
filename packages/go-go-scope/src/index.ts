@@ -8,24 +8,16 @@
 // Re-export async iterable helpers
 export {
 	type AsyncIteratorFromOptions,
-	asyncIteratorFrom,
-	asyncIteratorFromWebSocket,
 	buffer,
-	catchError,
 	concat,
 	debounce,
 	delay,
-	empty,
 	type FromArrayOptions,
 	filter,
 	first,
 	fromArray,
-	fromPromise,
-	interval,
-	isAsyncIterable,
 	map,
 	merge,
-	of,
 	skip,
 	take,
 	tap,
@@ -37,16 +29,7 @@ export {
 export { BroadcastChannel } from "./broadcast-channel.js";
 // Re-export cache utilities
 export { createCache, InMemoryCache } from "./cache.js";
-// Re-export cache warming
-export type {
-	CacheWarmerConfig,
-	CacheWarmingOptions,
-} from "./cache-warming.js";
-export {
-	CacheWarmer,
-	createWarmedCache,
-	MultiTierCache,
-} from "./cache-warming.js";
+// Cache warming utilities are available via '@go-go-scope/cache' import
 // Re-export cancellation utilities
 export {
 	abortPromise,
@@ -77,19 +60,11 @@ export {
 export { scope } from "./factory.js";
 export type { GracefulShutdownOptions } from "./graceful-shutdown.js";
 export { GracefulShutdownController } from "./graceful-shutdown.js";
-// Re-export enhanced graceful shutdown
+// Enhanced graceful shutdown is available via scope option
 export type {
 	EnhancedGracefulShutdownOptions,
 	ShutdownState,
 	ShutdownStrategy,
-} from "./graceful-shutdown-enhanced.js";
-export {
-	createShutdownCoordinator,
-	EnhancedGracefulShutdownController,
-	ProcessLifecycle,
-	processLifecycle,
-	ShutdownCoordinator,
-	setupEnhancedGracefulShutdown,
 } from "./graceful-shutdown-enhanced.js";
 // Re-export idempotency utilities
 export {
