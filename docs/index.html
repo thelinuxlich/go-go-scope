@@ -833,7 +833,6 @@
                     <a href="#installation" class="nav-link">Installation</a>
                     <a href="#quickstart" class="nav-link">Quick Start</a>
                     <a href="#checkpoint-example" class="nav-link">✨ Checkpoint Example</a>
-                    <a href="#whats-new" class="nav-link" style="color: var(--primary); font-weight: 600;">🎉 What's New in v2.6.0</a>
                 </div>
 
                 <div class="nav-section">
@@ -883,7 +882,7 @@
             <section class="hero" id="introduction">
                 <div class="hero-badge">
                     <span>✨</span>
-                    <span>v2.6.0</span>
+                    <span>v2.6.2</span>
                     <span>•</span>
                     <span>TypeScript 5.2+</span>
                     <span>•</span>
@@ -961,32 +960,32 @@
                 <div class="feature-card">
                     <div class="feature-icon">🌳</div>
                     <h3>Visual Debug Tree</h3>
-                    <p>Generate ASCII or Mermaid diagrams of your scope hierarchy for debugging (v2.6.0+)</p>
+                    <p>Generate ASCII or Mermaid diagrams of your scope hierarchy for debugging</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">🔐</div>
                     <h3>Unified Lock API</h3>
-                    <p>Exclusive, read-write, and distributed locks with a single consistent API (v2.6.0+)</p>
+                    <p>Exclusive, read-write, and distributed locks via scope.acquireLock()</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">🔖</div>
                     <h3>Log Correlation</h3>
-                    <p>Automatic traceId and spanId generation for distributed tracing (v2.6.0+)</p>
+                    <p>Automatic traceId and spanId generation for distributed tracing</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">⏱️</div>
                     <h3>Race Stagger</h3>
-                    <p>Request hedging with staggered task startup for cost-optimized racing (v2.6.0+)</p>
+                    <p>Request hedging with staggered task startup for cost-optimized racing</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">📡</div>
                     <h3>Circuit Breaker Events</h3>
-                    <p>Subscribe to circuit breaker state changes with on/off/once event handlers (v2.6.0+)</p>
+                    <p>Subscribe to circuit breaker state changes with on/off/once event handlers</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">📢</div>
                     <h3>Scoped EventEmitter</h3>
-                    <p>Type-safe EventEmitter with automatic listener cleanup on scope disposal (v2.6.0+)</p>
+                    <p>Type-safe EventEmitter with automatic listener cleanup on scope disposal</p>
                 </div>
             </section>
 
@@ -1051,7 +1050,7 @@
 <span class="keyword">const</span> redisAdapter = <span class="keyword">new</span> <span class="function">RedisAdapter</span>(redisClient)
 <span class="keyword">await</span> redisAdapter.<span class="function">connect</span>()
 
-<span class="comment">// Resume migration from last checkpoint (v2.5.0+)</span>
+<span class="comment">// Resume migration from last checkpoint (v2.6.2+)</span>
 <span class="keyword">await using</span> s = <span class="function">scope</span>({
   persistence: { checkpoint: redisAdapter },
   timeout: <span class="number">3600000</span>  <span class="comment">// 1 hour timeout</span>
@@ -1108,119 +1107,6 @@
                     <div style="background: var(--surface); border: 2px solid var(--border); padding: 16px;">
                         <div style="font-weight: 700; margin-bottom: 8px; color: var(--primary);">📊 Progress Tracking</div>
                         <p style="font-size: 13px; color: var(--text-muted); margin: 0;">Real-time progress updates for monitoring</p>
-                    </div>
-                </div>
-            </section>
-
-            <!-- What's New in v2.6.0 -->
-            <section class="quick-start" id="whats-new" style="background: linear-gradient(135deg, #faf8f5 0%, #f0ebe3 100%);">
-                <h3>🎉 What's New in v2.6.0</h3>
-                <p style="color: var(--text-muted); margin-bottom: 20px;">
-                    The latest release brings powerful new features for debugging, synchronization, and observability.
-                </p>
-                
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 24px;">
-                    <div style="background: var(--surface); border: 2px solid var(--border); padding: 20px;">
-                        <div style="font-weight: 700; margin-bottom: 12px; color: var(--primary); font-size: 16px;">🌳 Visual Debug Tree</div>
-                        <pre style="margin: 0; font-size: 12px;"><code>await using s = scope({ name: 'root' })
-const child = s.createChild({ name: 'child' })
-
-// ASCII format
-console.log(s.debugTree())
-// 📦 root (id: 1)
-//    └─ 📦 child (id: 2)
-
-// Mermaid format for docs
-console.log(s.debugTree({ format: 'mermaid' }))</code></pre>
-                    </div>
-                    
-                    <div style="background: var(--surface); border: 2px solid var(--border); padding: 20px;">
-                        <div style="font-weight: 700; margin-bottom: 12px; color: var(--primary); font-size: 16px;">🔐 Unified Lock API</div>
-                        <pre style="margin: 0; font-size: 12px;"><code>// Exclusive lock (mutex)
-const lock = s.acquireLock()
-await using guard = await lock.acquire()
-
-// Read-write lock
-const rwlock = s.acquireLock({ 
-  allowMultipleReaders: true 
-})
-await using readGuard = await rwlock.read()
-
-// Distributed lock
-await using s = scope({
-  persistence: { lock: redisAdapter }
-})
-const distLock = s.acquireLock({
-  key: 'resource:123',
-  ttl: 30000
-})</code></pre>
-                    </div>
-                    
-                    <div style="background: var(--surface); border: 2px solid var(--border); padding: 20px;">
-                        <div style="font-weight: 700; margin-bottom: 12px; color: var(--primary); font-size: 16px;">🔖 Log Correlation</div>
-                        <pre style="margin: 0; font-size: 12px;"><code>await using s = scope({
-  name: 'api-request',
-  logCorrelation: true  // Auto-generates traceId/spanId
-})
-
-// Access correlation IDs
-console.log(s.traceId)  // 'abc123...'
-console.log(s.spanId)   // 'xyz789...'
-
-// Child scopes inherit traceId
-const child = s.createChild({ name: 'child' })
-console.log(child.traceId === s.traceId) // true</code></pre>
-                    </div>
-                    
-                    <div style="background: var(--surface); border: 2px solid var(--border); padding: 20px;">
-                        <div style="font-weight: 700; margin-bottom: 12px; color: var(--primary); font-size: 16px;">⏱️ Race Stagger (Request Hedging)</div>
-                        <pre style="margin: 0; font-size: 12px;"><code>// Start with 2 tasks, add more if slow
-const [err, result] = await race([
-  () => callExpensiveAPI('primary'),
-  () => callExpensiveAPI('secondary'),
-  () => callExpensiveAPI('tertiary'),
-  () => callExpensiveAPI('quaternary'),
-], {
-  staggerDelay: 100,        // Wait 100ms between starts
-  staggerMaxConcurrent: 2,  // Max 2 concurrent
-  requireSuccess: true
-})</code></pre>
-                    </div>
-                    
-                    <div style="background: var(--surface); border: 2px solid var(--border); padding: 20px;">
-                        <div style="font-weight: 700; margin-bottom: 12px; color: var(--primary); font-size: 16px;">📡 Circuit Breaker Events</div>
-                        <pre style="margin: 0; font-size: 12px;"><code>await using s = scope({
-  circuitBreaker: {
-    failureThreshold: 3,
-    onOpen: (failureCount) => {
-      console.log(`Circuit opened after ${failureCount} failures`)
-      alertOpsTeam('Service degraded')
-    },
-    onStateChange: (from, to, count) => {
-      console.log(`Circuit: ${from} -> ${to}`)
-    }
-  }
-})
-
-// All tasks use circuit breaker automatically
-const [err, data] = await s.task(() => fetchData())</code></pre>
-                    </div>
-                    
-                    <div style="background: var(--surface); border: 2px solid var(--border); padding: 20px;">
-                        <div style="font-weight: 700; margin-bottom: 12px; color: var(--primary); font-size: 16px;">📢 Scoped EventEmitter</div>
-                        <pre style="margin: 0; font-size: 12px;"><code>await using s = scope()
-const emitter = s.eventEmitter<{
-  data: (chunk: string) => void
-  end: () => void
-  error: (err: Error) => void
-}>()
-
-// Auto-cleanup on scope disposal
-emitter.on('data', (chunk) => console.log(chunk))
-emitter.on('end', () => console.log('Done'))
-
-emitter.emit('data', 'Hello')
-emitter.emit('end')</code></pre>
                     </div>
                 </div>
             </section>
@@ -2245,6 +2131,7 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
     singleton?: <span class="type">boolean</span>
   }
 ): <span class="type">Scope</span>&lt;Services & { [P <span class="keyword">in</span> K]: T }&gt;</code></pre>
+    <p><strong>v2.6.2 Update:</strong> The <code>dispose</code> parameter is now part of the options object instead of a positional parameter.</p>
 
     <h5 id="scope-use" class="section-anchor"><code>scope.use(key)</code></h5>
     <p>Retrieve a previously provided service.</p>
@@ -2263,6 +2150,7 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
     dispose?: (value: T) => <span class="type">Promise</span>&lt;<span class="type">void</span>&gt; | <span class="type">void</span>
   }
 ): <span class="type">void</span></code></pre>
+    <p><strong>v2.6.2 Update:</strong> The <code>dispose</code> parameter is now part of the options object instead of a positional parameter.</p>
 
     <h5 id="scope-race" class="section-anchor"><code>scope.race(factories, options?)</code></h5>
     <p>Race multiple tasks - first to settle wins, losers are cancelled.</p>
@@ -2352,6 +2240,27 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
     <h5 id="scope-stream" class="section-anchor"><code>scope.stream(source)</code></h5>
     <p>Create a Stream from an async iterable (requires stream plugin).</p>
     <pre><code><span class="function">stream</span>&lt;T&gt;(source: <span class="type">AsyncIterable</span>&lt;T&gt;): <span class="type">Stream</span>&lt;T&gt;</code></pre>
+
+    <h5 id="scope-acquirelock" class="section-anchor"><code>scope.acquireLock(options?)</code></h5>
+    <p>Create a lock (mutex, read-write, or distributed) for synchronized access. <strong>v2.6.2+</strong></p>
+    <pre><code><span class="comment">// Exclusive lock (mutex)</span>
+<span class="keyword">const</span> lock = s.<span class="function">acquireLock</span>()
+<span class="keyword">await using</span> guard = <span class="keyword">await</span> lock.<span class="function">acquire</span>()
+
+<span class="comment">// Read-write lock</span>
+<span class="keyword">const</span> rwLock = s.<span class="function">acquireLock</span>({ 
+  allowMultipleReaders: <span class="keyword">true</span> 
+})
+<span class="keyword">await using</span> readGuard = <span class="keyword">await</span> rwLock.<span class="function">read</span>()
+
+<span class="comment">// Distributed lock with persistence</span>
+<span class="keyword">await using</span> s = <span class="function">scope</span>({
+  persistence: { lock: redisAdapter }
+})
+<span class="keyword">const</span> distLock = s.<span class="function">acquireLock</span>({
+  key: <span class="string">'resource:123'</span>,
+  ttl: <span class="number">30000</span>
+})</code></pre>
 
     <h3 id="task-class">Task Class</h3>
     <p>Lazy, disposable Promise-like object. Implements <code>PromiseLike&lt;T&gt;</code> and <code>Disposable</code>.</p>
@@ -2564,7 +2473,7 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
     </table>
 
     <h3 id="circuitbreaker-class">CircuitBreaker Class</h3>
-    <p>Fault tolerance via circuit breaker pattern.</p>
+    <p>Fault tolerance via circuit breaker pattern. <strong>v2.6.2:</strong> Access via <code>scope({ circuitBreaker: {...} })</code> - no longer exported directly.</p>
 
     <h4>Properties</h4>
     <table>
@@ -3578,7 +3487,7 @@ app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) =
             { title: 'Job Scheduler', desc: 'Distributed cron jobs', href: '#example-scheduler' },
             { title: 'Distributed Lock', desc: 'Redis-backed distributed locking', href: '#example-distributed-lock' },
             { title: 'Worker Threads', desc: 'CPU-intensive tasks in parallel', href: '#example-worker-threads' },
-            { title: "What's New in v2.6.0", desc: 'Debug tree, Lock API, Log correlation, Race stagger, Circuit events, EventEmitter', href: '#whats-new' },
+            { title: 'scope.acquireLock()', desc: 'Create mutex, read-write, or distributed locks (v2.6.2+)', href: '#scope-acquirelock' },
             // Core Concepts
             { title: 'The Scope', desc: 'Understanding scopes', href: '#scope' },
             { title: 'The Task', desc: 'Working with tasks', href: '#task' },
@@ -3639,7 +3548,7 @@ app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) =
             { title: 'MetricsReporter', desc: 'Metrics reporting', href: '#metricsreporter-class' },
             { title: 'AsyncDisposableResource', desc: 'Resource wrapper', href: '#asyncdisposableresource-class' },
             { title: 'WorkerPool', desc: 'Worker thread pool (advanced)', href: '#workerpool-class' },
-            { title: 'Lock', desc: 'Unified Lock API - mutex, RW, and distributed locks (v2.6.0+)', href: '#lock-class' },
+            { title: 'Lock', desc: 'Unified Lock API - accessed via scope.acquireLock() (v2.6.2+)', href: '#scope-acquirelock' },
             { title: 'LockGuard', desc: 'Lock guard for automatic release (v2.6.0+)', href: '#lockguard-class' },
             { title: 'ScopedEventEmitter', desc: 'Type-safe EventEmitter with auto-cleanup (v2.6.0+)', href: '#scopedeventemitter-class' },
             { title: 'createChild()', desc: 'Create child scope with inheritance (v2.6.0+)', href: '#scope-createchild' },
