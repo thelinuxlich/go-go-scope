@@ -119,7 +119,7 @@ describe("Fastify adapter", () => {
 			const rootScope = scope({ name: "fastify-app" });
 			
 			// Create a lock for protecting shared resource
-			const lock = new Lock(rootScope.signal, { name: "rate-limit-lock" });
+			const lock = rootScope.acquireLock({ name: "rate-limit-lock" });
 
 			// Test sequential acquisitions (not concurrent to avoid timeout)
 			for (let i = 0; i < 3; i++) {

@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/logger",
-	"version": "2.6.1",
+	"version": "2.6.2",
 	"description": "Structured logging adapters for go-go-scope (Pino, Winston)",
 	"type": "module",
 	"main": "./dist/index.mjs",

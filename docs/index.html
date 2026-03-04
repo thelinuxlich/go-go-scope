@@ -1137,18 +1137,20 @@ console.log(s.debugTree({ format: 'mermaid' }))</code></pre>
                     <div style="background: var(--surface); border: 2px solid var(--border); padding: 20px;">
                         <div style="font-weight: 700; margin-bottom: 12px; color: var(--primary); font-size: 16px;">🔐 Unified Lock API</div>
                         <pre style="margin: 0; font-size: 12px;"><code>// Exclusive lock (mutex)
-const lock = new Lock(s.signal)
+const lock = s.acquireLock()
 await using guard = await lock.acquire()
 
 // Read-write lock
-const rwlock = new Lock(s.signal, { 
+const rwlock = s.acquireLock({ 
   allowMultipleReaders: true 
 })
 await using readGuard = await rwlock.read()
 
 // Distributed lock
-const distLock = new Lock(s.signal, {
-  provider: redisAdapter,
+await using s = scope({
+  persistence: { lock: redisAdapter }
+})
+const distLock = s.acquireLock({
   key: 'resource:123',
   ttl: 30000
 })</code></pre>

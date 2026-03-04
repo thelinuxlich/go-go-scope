@@ -96,12 +96,12 @@ export {
 	createIdempotencyProvider,
 	InMemoryIdempotencyProvider,
 } from "./idempotency.js";
-// Re-export unified Lock API
+// Lock API is now accessed via scope.acquireLock()
 export type {
 	LockAcquireOptions,
 	LockOptions,
 } from "./lock.js";
-export { createLock, Lock, LockGuard } from "./lock.js";
+export { LockGuard } from "./lock.js";
 // Re-export log correlation utilities
 export type { CorrelationContext } from "./log-correlation.js";
 export {

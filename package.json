@@ -1,6 +1,6 @@
 {
 	"name": "go-go-scope-monorepo",
-	"version": "2.6.1",
+	"version": "2.6.2",
 	"description": "Structured concurrency for TypeScript using Explicit Resource Management",
 	"type": "module",
 	"private": true,

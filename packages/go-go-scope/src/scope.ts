@@ -19,6 +19,7 @@ import { AbortError, UnknownError } from "./errors.js";
 import { ScopedEventEmitter } from "./event-emitter.js";
 import type { GracefulShutdownOptions } from "./graceful-shutdown.js";
 import { GracefulShutdownController } from "./graceful-shutdown.js";
+import { Lock, type LockOptions } from "./lock.js";
 import {
 	createCorrelatedLogger,
 	generateSpanId,
@@ -1527,6 +1528,48 @@ export class Scope<
 		const sem = new Semaphore(initialPermits, this.abortController.signal);
 		this.registerDisposable(sem);
 		return sem;
+	}
+
+	/**
+	 * Acquire a lock for exclusive or shared access.
+	 * Automatically integrates with scope for cancellation and cleanup.
+	 *
+	 * @example
+	 * ```typescript
+	 * // Exclusive lock (mutex)
+	 * await using s = scope()
+	 * const lock = s.acquireLock()
+	 * await using guard = await lock.acquire()
+	 * // Critical section
+	 * ```
+	 *
+	 * @example
+	 * ```typescript
+	 * // Read-Write lock
+	 * await using s = scope()
+	 * const lock = s.acquireLock({ allowMultipleReaders: true })
+	 * // Multiple concurrent reads
+	 * await using readGuard = await lock.read()
+	 * // Or exclusive write
+	 * await using writeGuard = await lock.write()
+	 * ```
+	 *
+	 * @example
+	 * ```typescript
+	 * // Distributed lock with Redis
+	 * await using s = scope({
+	 *   persistence: { lock: redisAdapter }
+	 * })
+	 * const lock = s.acquireLock({
+	 *   key: 'resource-lock',
+	 *   ttl: 30000
+	 * })
+	 * ```
+	 */
+	acquireLock(options?: LockOptions): Lock {
+		const lock = new Lock(this.abortController.signal, options);
+		this.registerDisposable(lock);
+		return lock;
 	}
 
 	pool<T>(

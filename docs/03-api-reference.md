@@ -34,7 +34,7 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.tokenBucket(options)`](#scopetokenbucketoptions)
 - [Additional Classes](#additional-classes)
   - [`Lock`](#lock)
-  - [`createLock()`](#createlocksignal-options)
+  - [`scope.acquireLock()`](#scopeacquirelockoptions)
   - [`scope({ circuitBreaker })`](#scope-circuitbreaker-options)
   - [`WorkerPool`](#workerpool) (@internal - workspace use)
   - [`AsyncDisposableResource`](#asyncdisposableresource)
@@ -2722,48 +2722,41 @@ await s.task(() => fetchData(), {
 
 ## Additional Classes
 
-### `Lock`
+### `scope.acquireLock(options?)`
 
-A unified lock implementation supporting exclusive (mutex), read-write, and distributed locking modes.
+A unified lock implementation supporting exclusive (mutex), read-write, and distributed locking modes. The lock is automatically cleaned up when the scope is disposed.
 
 ```typescript
-import { Lock, createLock } from 'go-go-scope'
-
 // Exclusive lock (mutex)
-const mutex = new Lock(s.signal)
-await using guard = await mutex.acquire()
+const lock = s.acquireLock()
+await using guard = await lock.acquire()
 
 // Read-write lock
-const rwlock = new Lock(s.signal, { allowMultipleReaders: true })
+const rwlock = s.acquireLock({ allowMultipleReaders: true })
 await using readGuard = await rwlock.read()
 
 // Distributed lock (with persistence provider)
-const distLock = new Lock(s.signal, {
-  provider: redisAdapter,
+await using s = scope({
+  persistence: { lock: redisAdapter }
+})
+const distLock = s.acquireLock({
   key: 'resource:123',
   ttl: 30000
 })
 await using guard = await distLock.acquire()
 ```
 
-**Constructor:**
-
-```typescript
-new Lock(signal?: AbortSignal, options?: LockOptions)
-```
-
-**LockOptions:**
+**Options:**
 
 | Name | Type | Description |
 |------|------|-------------|
-| `provider` | `LockProvider` | Persistence provider for distributed locks |
 | `key` | `string` | Unique key for distributed locks (required with provider) |
 | `ttl` | `number` | Lock TTL in milliseconds (default: 30000) |
 | `owner` | `string` | Owner identifier for distributed locks |
 | `allowMultipleReaders` | `boolean` | Enable read-write mode (default: false) |
 | `name` | `string` | Name for debugging |
 
-**Methods:**
+**Lock Methods:**
 
 | Method | Description |
 |--------|-------------|
@@ -2773,14 +2766,6 @@ new Lock(signal?: AbortSignal, options?: LockOptions)
 | `tryAcquire()` | Try to acquire exclusive lock immediately (returns null if unavailable) |
 | `tryRead()` | Try to acquire read lock immediately |
 | `tryWrite()` | Try to acquire write lock immediately |
-| `[Symbol.asyncDispose]()` | Dispose the lock and reject pending requests |
-
-**Properties:**
-
-| Name | Type | Description |
-|------|------|-------------|
-| `isLocked` | `boolean` | Whether the lock is currently held (in-memory only) |
-| `stats` | `object` | Lock statistics (readerCount, writerActive, etc.) |
 
 **LockGuard:**
 
@@ -2800,7 +2785,7 @@ await guard.release()
 **Read-Write Lock Example:**
 
 ```typescript
-const lock = new Lock(s.signal, { allowMultipleReaders: true })
+const lock = s.acquireLock({ allowMultipleReaders: true })
 
 // Multiple concurrent readers
 await using guard1 = await lock.read()
@@ -2808,21 +2793,6 @@ await using guard2 = await lock.read() // OK, concurrent reads allowed
 
 // Exclusive writer
 await using writeGuard = await lock.write() // Waits for all readers
-```
-
----
-
-### `createLock(signal?, options?)`
-
-Factory function for creating a Lock instance.
-
-```typescript
-import { createLock } from 'go-go-scope'
-
-const lock = createLock(s.signal, { 
-  allowMultipleReaders: true,
-  name: 'my-lock'
-})
 ```
 
 ---

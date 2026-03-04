@@ -2,13 +2,14 @@
  * Lock Tests - Unified Lock API
  */
 import { describe, expect, test } from "vitest";
-import { scope, Lock, createLock } from "../src/index.js";
+import { scope } from "../src/index.js";
+import { Lock } from "../src/lock.js";
 
 describe("Lock", () => {
 	describe("exclusive lock (mutex)", () => {
 		test("acquire and release", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal);
+			const lock = s.acquireLock();
 
 			const guard = await lock.acquire();
 			expect(lock.isLocked).toBe(true);
@@ -19,7 +20,7 @@ describe("Lock", () => {
 
 		test("auto-release with await using", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal);
+			const lock = s.acquireLock();
 
 			{
 				await using guard = await lock.acquire();
@@ -31,7 +32,7 @@ describe("Lock", () => {
 
 		test("sequential acquisitions", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal);
+			const lock = s.acquireLock();
 
 			const guard1 = await lock.acquire();
 			await guard1.release();
@@ -46,7 +47,7 @@ describe("Lock", () => {
 
 		test("tryAcquire returns null when locked", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal);
+			const lock = s.acquireLock();
 
 			const guard = await lock.acquire();
 			
@@ -58,7 +59,7 @@ describe("Lock", () => {
 
 		test("tryAcquire returns guard when available", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal);
+			const lock = s.acquireLock();
 
 			const guard = lock.tryAcquire();
 			expect(guard).not.toBeNull();
@@ -69,7 +70,7 @@ describe("Lock", () => {
 
 		test("acquire waits for release", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal);
+			const lock = s.acquireLock();
 
 			const guard1 = await lock.acquire();
 			
@@ -88,7 +89,7 @@ describe("Lock", () => {
 	describe("read-write lock", () => {
 		test("multiple concurrent readers", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal, { allowMultipleReaders: true });
+			const lock = s.acquireLock({ allowMultipleReaders: true });
 
 			const readGuard1 = await lock.read();
 			const readGuard2 = await lock.read();
@@ -103,7 +104,7 @@ describe("Lock", () => {
 
 		test("writer blocks readers", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal, { allowMultipleReaders: true });
+			const lock = s.acquireLock({ allowMultipleReaders: true });
 
 			// First, get a write lock
 			const writeGuard = await lock.write();
@@ -122,7 +123,7 @@ describe("Lock", () => {
 
 		test("reader blocks writer", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal, { allowMultipleReaders: true });
+			const lock = s.acquireLock({ allowMultipleReaders: true });
 
 			// Get a read lock
 			const readGuard = await lock.read();
@@ -140,7 +141,7 @@ describe("Lock", () => {
 
 		test("tryRead returns null when writer active", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal, { allowMultipleReaders: true });
+			const lock = s.acquireLock({ allowMultipleReaders: true });
 
 			const writeGuard = await lock.write();
 			
@@ -152,7 +153,7 @@ describe("Lock", () => {
 
 		test("tryWrite returns null when reader active", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal, { allowMultipleReaders: true });
+			const lock = s.acquireLock({ allowMultipleReaders: true });
 
 			const readGuard = await lock.read();
 			
@@ -164,14 +165,14 @@ describe("Lock", () => {
 
 		test("acquire throws in read-write mode", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal, { allowMultipleReaders: true });
+			const lock = s.acquireLock({ allowMultipleReaders: true });
 
 			await expect(lock.acquire()).rejects.toThrow("read-write mode");
 		});
 
 		test("read/write throw in mutex mode", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal); // allowMultipleReaders defaults to false
+			const lock = s.acquireLock(); // allowMultipleReaders defaults to false
 
 			await expect(lock.read()).rejects.toThrow("not configured for read-write mode");
 			await expect(lock.write()).rejects.toThrow("not configured for read-write mode");
@@ -181,7 +182,7 @@ describe("Lock", () => {
 	describe("lock options", () => {
 		test("custom name", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal, { name: "my-custom-lock" });
+			const lock = s.acquireLock({ name: "my-custom-lock" });
 			
 			// Lock should work normally with custom name
 			const guard = await lock.acquire();
@@ -190,7 +191,7 @@ describe("Lock", () => {
 
 		test("stats reflect lock state", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal, { allowMultipleReaders: true });
+			const lock = s.acquireLock({ allowMultipleReaders: true });
 
 			expect(lock.stats.pendingRequests).toBe(0);
 
@@ -202,10 +203,10 @@ describe("Lock", () => {
 		});
 	});
 
-	describe("createLock factory", () => {
+	describe("acquireLock via scope", () => {
 		test("creates Lock instance", async () => {
 			await using s = scope();
-			const lock = createLock(s.signal);
+			const lock = s.acquireLock();
 			
 			expect(lock).toBeInstanceOf(Lock);
 			
@@ -215,7 +216,7 @@ describe("Lock", () => {
 
 		test("passes options to Lock", async () => {
 			await using s = scope();
-			const lock = createLock(s.signal, { 
+			const lock = s.acquireLock({ 
 				allowMultipleReaders: true,
 				name: "factory-lock"
 			});
@@ -228,7 +229,7 @@ describe("Lock", () => {
 	describe("dispose", () => {
 		test("disposes lock and rejects pending", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal);
+			const lock = s.acquireLock();
 
 			// Acquire first
 			const guard = await lock.acquire();
@@ -250,7 +251,7 @@ describe("Lock", () => {
 	describe("timeout", () => {
 		test("acquire with timeout returns error on timeout", async () => {
 			await using s = scope();
-			const lock = new Lock(s.signal);
+			const lock = s.acquireLock();
 
 			// First acquire
 			const guard = await lock.acquire();
