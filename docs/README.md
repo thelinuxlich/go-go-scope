@@ -29,7 +29,7 @@ Complete guide to structured concurrency in TypeScript.
 ### Observability & Testing
 | Doc | What You'll Learn |
 |-----|-------------------|
-| [📊 Observability](./06-observability.md) | Metrics, logging, profiling, tracing |
+| [📊 Observability](./06-observability.md) | Metrics, logging, profiling, tracing, real-time visualizer |
 | [🧪 Testing](./08-testing.md) | Mock scopes, spies, time travel testing |
 | [🔌 Integrations](./11-integrations.md) | OpenTelemetry, Prometheus, Grafana, Persistence, Framework Adapters |
 | [⚡ Performance](./18-performance-optimizations.md) | Ring buffer, lazy initialization, profiling |
@@ -74,6 +74,9 @@ Complete guide to structured concurrency in TypeScript.
 - ✅ **Elysia** - Bun-first performance optimized
 - ✅ **Koa** - Modern async middleware support
 - ✅ **Hapi** - Enterprise-grade plugin system
+- ✅ **React** - Hooks for scoped tasks and state (`useScope`, `useTask`, `useChannel`)
+- ✅ **Vue** - Composables for reactive integration (`useScope`, `useTask`, `useChannel`)
+- ✅ **Svelte** - Store-based integration (`createScope`, `createTask`, `createChannel`)
 
 ### Concurrency & Streams
 - ✅ **Streams** - Lazy async pipelines with 50+ operations
@@ -91,7 +94,7 @@ Complete guide to structured concurrency in TypeScript.
 - ✅ **Structured Logging** - Pino/Winston adapters with redaction
 - ✅ **Graceful Shutdown** - Signal handling with cleanup coordination
 - ✅ **Request Context** - Automatic context propagation
-- ✅ **Distributed Locks** - Redis, PostgreSQL, MySQL, SQLite, MongoDB, DynamoDB adapters
+- ✅ **Distributed Locks** - Redis, PostgreSQL, MySQL, SQLite, MongoDB, DynamoDB, Cloudflare Durable Objects adapters
 - ✅ **Circuit Breaker State** - Shared state across multiple instances
 - ✅ **Framework Adapters** - Fastify, Express, NestJS, Hono, Elysia, Koa, Hapi
 - ✅ **Caching** - In-memory and distributed caching with memoization

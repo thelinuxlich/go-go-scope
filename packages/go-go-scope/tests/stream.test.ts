@@ -54,10 +54,10 @@ describe("Stream - Core Operations", () => {
 		expect(results).toEqual([1, 2, 3, 4]);
 	});
 
-	test("flatten flattens one level", async () => {
+	test("flat flattens one level", async () => {
 		await using s = scope();
 		const [err, results] = await new Stream(fromArray([[1, 2], [3, 4]]), s)
-			.flatten()
+			.flat()
 			.toArray();
 
 		expect(err).toBeUndefined();

@@ -1,0 +1,35 @@
+{
+	"name": "@go-go-scope/go-go-scope",
+	"version": "2.6.2",
+	"nodeModulesDir": "auto",
+	"exports": {
+		".": "./packages/go-go-scope/src/index.ts",
+		"./scheduler": "./packages/scheduler/src/index.ts",
+		"./stream": "./packages/stream/src/index.ts",
+		"./testing": "./packages/testing/src/index.ts",
+		"./logger": "./packages/logger/src/index.ts",
+		"./web-streams": "./packages/web-streams/src/index.ts"
+	},
+	"tasks": {
+		"test": "deno test --allow-all",
+		"check": "deno check **/*.ts"
+	},
+	"compilerOptions": {
+		"lib": ["deno.window", "deno.worker"],
+		"strict": true,
+		"noImplicitReturns": true,
+		"noUncheckedIndexedAccess": true
+	},
+	"imports": {
+		"go-go-scope": "./packages/go-go-scope/src/index.ts",
+		"@go-go-scope/scheduler": "./packages/scheduler/src/index.ts",
+		"@go-go-scope/stream": "./packages/stream/src/index.ts",
+		"@go-go-scope/testing": "./packages/testing/src/index.ts",
+		"@go-go-scope/logger": "./packages/logger/src/index.ts",
+		"@go-go-scope/web-streams": "./packages/web-streams/src/index.ts"
+	},
+	"exclude": [
+		"node_modules",
+		"dist"
+	]
+}

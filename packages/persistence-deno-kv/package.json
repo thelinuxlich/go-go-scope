@@ -1,0 +1,40 @@
+{
+	"name": "@go-go-scope/persistence-deno-kv",
+	"version": "2.7.0",
+	"description": "Deno KV persistence adapter for go-go-scope",
+	"type": "module",
+	"main": "./dist/index.mjs",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.mts",
+			"default": "./dist/index.mjs"
+		}
+	},
+	"scripts": {
+		"build": "pkgroll --clean-dist",
+		"lint": "biome check --write src/",
+		"test": "echo 'Deno KV tests - run manually with deno test --allow-all --unstable-kv tests/'",
+		"clean": "rm -rf dist",
+		"typecheck": "echo 'Deno-only package, skipping Node.js typecheck'"
+	},
+	"keywords": [
+		"go-go-scope",
+		"deno",
+		"kv",
+		"persistence",
+		"distributed-lock",
+		"circuit-breaker"
+	],
+	"engines": {
+		"deno": ">=1.40.0"
+	},
+	"author": "thelinuxlich",
+	"license": "MIT",
+	"peerDependencies": {
+		"go-go-scope": "workspace:*"
+	},
+	"devDependencies": {
+		"go-go-scope": "workspace:*"
+	}
+}

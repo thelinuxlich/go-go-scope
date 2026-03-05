@@ -16,12 +16,12 @@ go-go-scope is a TypeScript monorepo that provides **structured concurrency** us
 - Retry logic with configurable delays and conditions (exponential backoff, jitter, linear)
 - Stream API with 50+ lazy operations (map, filter, flatMap, buffer, debounce, throttle, pairwise, window, etc.)
 - `parallel()` for processing arrays with progress tracking and error handling
-- Dependency injection via `provide()`/`use()`/`override()`
+- Dependency injection via context services
 - Polling utilities with start/stop control
 - Debounce and throttle rate-limiting utilities
 - Select statement for channel operations (Go-style) with timeout
 - Lifecycle hooks for task and resource events
-- Metrics collection with Prometheus/JSON/OpenTelemetry export
+- Metrics collection with Prometheus/JSON export
 - Resource pools for connection/worker management
 - Task profiling for performance analysis
 - Deadlock detection
@@ -34,7 +34,7 @@ go-go-scope is a TypeScript monorepo that provides **structured concurrency** us
 - Distributed job scheduler with cron support, Web UI, and multiple storage backends
 - Cache utilities with warming and multi-tier support
 - **Property-based testing**: Mathematical properties verified with fast-check
-- **Persistence adapters**: Distributed locks and circuit breaker state across Redis, PostgreSQL, MySQL, SQLite, MongoDB, DynamoDB
+- **Persistence adapters**: Distributed locks and circuit breaker state across Redis, PostgreSQL, MySQL, SQLite, MongoDB, DynamoDB, Deno KV, Cloudflare Durable Objects
 - **Framework adapters**: Fastify, Express, NestJS, Hono, Elysia, Koa, Hapi, Next.js, Remix, SvelteKit
 
 ### Patterns (via composition)
@@ -55,40 +55,26 @@ go-go-scope is a TypeScript monorepo that provides **structured concurrency** us
 - **Package Manager**: pnpm >= 8.0.0 (workspaces enabled)
 - **Versioning**: [changesets](https://github.com/changesets/changesets) for monorepo versioning
 
-### ⚠️ Important Note for AI Agents
+### Runtime Requirements
+- **Node.js**: >= 24.0.0 (for native `fetch`, `AbortSignal` improvements, and `using` syntax)
+- **Bun**: >= 1.2.0 (fully supported)
 
-**This environment has Node.js 24+ as the default version.** All build commands, type checking, and tests should work without Node version issues. Do not assume an older Node version is present.
-
-### ⚠️ MANDATORY Post-Implementation Steps
-
-**ALWAYS run these commands after making code changes:**
-
-1. **Typecheck the entire project:**
-   ```bash
-   pnpm typecheck
-   # or for specific package:
-   pnpm --filter go-go-scope typecheck
-   ```
-
-2. **Run the full test suite:**
-   ```bash
-   pnpm test
-   # or for specific package:
-   pnpm --filter go-go-scope test
-   ```
-
-3. **Fix any type errors or test failures before considering the task complete**
-
+### Development Tools
 - **Linter/Formatter**: [Biome](https://biomejs.dev/) v2.4.4
 - **Testing**: [Vitest](https://vitest.dev/) v4.0.18 with globals enabled
-- **Runtime Dependencies**:
-  - `debug` ^4.4.3 (for debug logging)
-  - `@opentelemetry/api` ^1.9.0 (for tracing, in plugin-opentelemetry)
-- **Dev Dependencies**:
-  - OpenTelemetry SDK and exporters for tracing examples
-  - Type definitions for Node.js and debug
-  - `fast-check` ^4.5.3 for property-based testing
-  - `tsx` ^4.21.0 for TypeScript execution
+- **TypeScript Execution**: [tsx](https://github.com/privatenumber/tsx) v4.21.0
+
+### Runtime Dependencies (Core)
+- `debug` ^4.4.3 (for debug logging)
+
+### Peer Dependencies (Optional)
+- `@opentelemetry/api` ^1.9.0 (for tracing, in plugin-opentelemetry)
+- `ioredis` ^5.9.3 (for Redis persistence)
+- `pg` ^8.18.0 (for PostgreSQL persistence)
+- `mysql2` ^3.18.0 (for MySQL persistence)
+- `sqlite3` ^5.1.7 (for SQLite persistence)
+- `fastify` ^5.7.4 + `fastify-plugin` ^5.1.0 (for Fastify adapter)
+- Various framework-specific packages for other adapters
 
 ---
 
@@ -112,7 +98,6 @@ packages/
 │   │   ├── token-bucket.ts     # Token bucket rate limiting
 │   │   ├── priority-channel.ts # Priority queue channels
 │   │   ├── cache.ts            # Cache utilities
-│   │   ├── cache-warming.ts    # Cache warming strategies
 │   │   ├── checkpoint.ts       # Checkpoint/restart support
 │   │   ├── idempotency.ts      # Idempotency provider
 │   │   ├── graceful-shutdown.ts # Graceful shutdown handling
@@ -124,11 +109,13 @@ packages/
 │   │   ├── retry-strategies.ts # Retry delay strategies
 │   │   ├── cancellation.ts     # AbortSignal utilities
 │   │   ├── async-iterable.ts   # Async iterable helpers
-│   │   ├── di.ts               # Dependency injection
+│   │   ├── event-emitter.ts    # Event emitter with scope integration
+│   │   ├── lock.ts             # Distributed locking
 │   │   ├── logger.ts           # Structured logging
-│   │   ├── errors.ts           # Error classes
+│   │   ├── log-correlation.ts  # Log correlation utilities
 │   │   ├── performance.ts      # Performance monitoring
 │   │   ├── plugin.ts           # Plugin system
+│   │   ├── errors.ts           # Error classes
 │   │   └── persistence/        # Persistence types
 │   │       ├── index.ts
 │   │       └── types.ts
@@ -150,13 +137,12 @@ packages/
 ├── scheduler-tui/              # Interactive TUI and CLI for scheduler
 │   └── src/
 │       ├── cli.ts              # CLI entry point
-│       └── tui.ts              # TUI entry point
+│       ├── tui.ts              # TUI entry point
+│       └── index.ts            # Library exports
 │
 ├── testing/                    # Test utilities
 │   └── src/
-│       ├── index.ts            # Mock scopes, spies
-│       ├── time-controller.ts  # Time control for tests
-│       └── assertions.ts       # Test assertions
+│       └── index.ts            # Mock scopes, spies
 │
 ├── logger/                     # Logger package (advanced logging)
 │
@@ -168,7 +154,8 @@ packages/
 ├── persistence-sqlite/         # SQLite persistence adapter (Node)
 ├── persistence-sqlite-bun/     # SQLite persistence adapter (Bun)
 ├── persistence-mongodb/        # MongoDB persistence adapter
-└── persistence-dynamodb/       # DynamoDB persistence adapter
+├── persistence-dynamodb/       # DynamoDB persistence adapter
+└── persistence-deno-kv/        # Deno KV persistence adapter
 
 ├── adapter-fastify/            # Fastify plugin
 ├── adapter-express/            # Express middleware
@@ -189,7 +176,6 @@ packages/
 docs/                           # Documentation (markdown)
 dist/                           # Compiled output (generated, NOT committed)
 examples/                       # Usage examples
-playground/                     # Interactive playground examples
 ```
 
 ---
@@ -241,6 +227,26 @@ pnpm typecheck   # Type check the package
 pnpm lint        # Lint the package
 pnpm clean       # Remove dist directory
 ```
+
+### MANDATORY Post-Implementation Steps
+
+**ALWAYS run these commands after making code changes:**
+
+1. **Typecheck the entire project:**
+   ```bash
+   pnpm typecheck
+   # or for specific package:
+   pnpm --filter go-go-scope typecheck
+   ```
+
+2. **Run the full test suite:**
+   ```bash
+   pnpm test
+   # or for specific package:
+   pnpm --filter go-go-scope test
+   ```
+
+3. **Fix any type errors or test failures before considering the task complete**
 
 ---
 
@@ -400,7 +406,6 @@ go-go-scope (core - no internal deps)
 - **exponentialBackoff(options?)**: Exponential backoff with optional jitter
 - **jitter(baseDelay, jitterFactor?)**: Fixed delay with jitter
 - **linear(baseDelay, increment)**: Linear increasing delay
-- **fullJitterBackoff**: Full jitter strategy
 - **decorrelatedJitter**: Decorrelated jitter strategy
 
 Shorthand options:
@@ -418,73 +423,6 @@ When a task is spawned, it goes through a pipeline of wrappers (from innermost t
 4. **Timeout** (if `timeout` option specified in TaskOptions)
 5. **Result Wrapping** (always - converts to Result tuple)
 
-### Debug Logging
-
-The library uses the `debug` module for logging:
-
-```typescript
-import createDebug from "debug";
-const debugScope = createDebug("go-go-scope:scope");
-const debugTask = createDebug("go-go-scope:task");
-```
-
-Namespaces:
-- `go-go-scope:scope` - Scope lifecycle events
-- `go-go-scope:task` - Task lifecycle events, retry, concurrency, circuit breaker
-- `go-go-scope:parallel` - Parallel execution events
-- `go-go-scope:race` - Race execution events
-- `go-go-scope:poll` - Polling events
-- `go-go-scope:cancellation` - Cancellation utility events
-
-Enable with: `DEBUG=go-go-scope:* node your-app.js`
-
----
-
-## Package Exports
-
-All packages are **ESM-only** (Node.js 24+):
-
-### Core Package
-
-```typescript
-// Main imports
-import { scope, Task, Scope, Channel, Semaphore, CircuitBreaker } from 'go-go-scope';
-
-// Result tuple type
-import type { Result, Success, Failure } from 'go-go-scope';
-```
-
-### Scoped Packages
-
-```typescript
-// Stream operations
-import { Stream } from '@go-go-scope/stream';
-
-// Testing utilities
-import { createMockScope, createSpy } from '@go-go-scope/testing';
-
-// Persistence adapters
-import { RedisAdapter } from '@go-go-scope/persistence-redis';
-import { PostgresAdapter } from '@go-go-scope/persistence-postgres';
-
-// Framework adapters
-import { fastifyGoGoScope } from '@go-go-scope/adapter-fastify';
-import { expressGoGoScope } from '@go-go-scope/adapter-express';
-
-// Scheduler
-import { Scheduler, CronPresets } from '@go-go-scope/scheduler';
-
-// Plugins
-import { openTelemetryPlugin } from '@go-go-scope/plugin-opentelemetry';
-```
-
-### Requirements
-
-- **Node.js**: 24.0.0 or higher (for native `fetch`, `AbortSignal` improvements, and `using` syntax)
-- **Bun**: 1.2.0 or higher (fully supported)
-- **TypeScript**: 5.2 or higher
-- **Module**: ESM only (`"type": "module"` required)
-
 ---
 
 ## Testing Strategy
@@ -499,9 +437,12 @@ import { openTelemetryPlugin } from '@go-go-scope/plugin-opentelemetry';
 - **tests/testing.test.ts**: Test utilities validation
 - **tests/type-check.test.ts**: TypeScript type-level tests
 - **tests/performance.test.ts**: Performance benchmarks
-- **tests/bun-compatibility.test.ts**: Bun runtime compatibility
 - **tests/fuzz.test.ts**: Fuzz tests for race conditions
 - **tests/memory-leak.test.ts**: Memory leak verification
+- **tests/checkpoint.test.ts**: Checkpoint and restart functionality
+- **tests/idempotency.test.ts**: Idempotency provider tests
+- **tests/lock.test.ts**: Distributed locking tests
+- **tests/persistence-integration.test.ts**: Persistence adapter integration tests
 
 ### Test Patterns
 - Uses Vitest with globals enabled (no need to import `describe`, `test`, `expect`)
@@ -567,6 +508,37 @@ test("cancels when scope disposed", async () => {
 
 ---
 
+## Development Environment
+
+### Docker Compose Services
+
+The project includes a `docker-compose.yml` with services for integration testing:
+
+**Persistence Services:**
+- `redis` (port 6380): For Redis persistence adapter tests
+- `postgres` (port 5433): For PostgreSQL persistence adapter tests
+- `mysql` (port 3307): For MySQL persistence adapter tests
+- `mongodb` (port 27018): For MongoDB persistence adapter tests
+- `dynamodb-local` (port 8001): For DynamoDB persistence adapter tests
+
+**Observability Services:**
+- `jaeger` (port 16687): Distributed tracing UI
+- `prometheus` (port 9091): Metrics collection
+- `pushgateway` (port 9092): Prometheus push gateway
+- `grafana` (port 3001): Metrics visualization
+
+Start services: `docker-compose up -d`
+
+### Dev Container
+
+The project includes a `.devcontainer/devcontainer.json` for VS Code:
+- TypeScript/Node.js 20 base image
+- Pre-configured with Biome, Vitest, and other extensions
+- Docker-in-Docker support
+- Port forwarding for observability services
+
+---
+
 ## Bun Compatibility
 
 The library is fully tested and works with Bun runtime (v1.2.0+).
@@ -586,7 +558,7 @@ The library is fully tested and works with Bun runtime (v1.2.0+).
 ### Running tests under Bun:
 ```bash
 # Run Bun compatibility tests
-bun test packages/go-go-scope/tests/bun-compatibility.test.ts
+bun test packages/go-go-scope/tests/core.test.ts
 
 # Run all tests under Bun
 bun test
@@ -598,12 +570,74 @@ pnpm test:bun:all
 
 ---
 
+## Package Exports
+
+All packages are **ESM-only** (Node.js 24+):
+
+### Core Package
+
+```typescript
+// Main imports
+import { scope, Task, Scope, Channel, Semaphore, CircuitBreaker } from 'go-go-scope';
+
+// Result tuple type
+import type { Result, Success, Failure } from 'go-go-scope';
+```
+
+### Scoped Packages
+
+```typescript
+// Stream operations
+import { Stream } from '@go-go-scope/stream';
+
+// Testing utilities
+import { createMockScope, createSpy } from '@go-go-scope/testing';
+
+// Persistence adapters
+import { RedisAdapter } from '@go-go-scope/persistence-redis';
+import { PostgresAdapter } from '@go-go-scope/persistence-postgres';
+
+// Framework adapters
+import { fastifyGoGoScope } from '@go-go-scope/adapter-fastify';
+import { expressGoGoScope } from '@go-go-scope/adapter-express';
+
+// Scheduler
+import { Scheduler, CronPresets } from '@go-go-scope/scheduler';
+
+// Plugins
+import { openTelemetryPlugin } from '@go-go-scope/plugin-opentelemetry';
+```
+
+---
+
+## Debug Logging
+
+The library uses the `debug` module for logging:
+
+```typescript
+import createDebug from "debug";
+const debugScope = createDebug("go-go-scope:scope");
+const debugTask = createDebug("go-go-scope:task");
+```
+
+Namespaces:
+- `go-go-scope:scope` - Scope lifecycle events
+- `go-go-scope:task` - Task lifecycle events, retry, concurrency, circuit breaker
+- `go-go-scope:parallel` - Parallel execution events
+- `go-go-scope:race` - Race execution events
+- `go-go-scope:poll` - Polling events
+- `go-go-scope:cancellation` - Cancellation utility events
+
+Enable with: `DEBUG=go-go-scope:* node your-app.js`
+
+---
+
 ## Security Considerations
 
 - All async operations respect AbortSignal for cancellation
 - Resources are always cleaned up in LIFO order
 - The library does not execute untrusted code
-- No external runtime dependencies besides `debug`
+- No external runtime dependencies besides `debug` (core)
 - Task functions receive AbortSignal to handle cancellation safely
 - Circuit breaker prevents cascading failures
 - Resource pools have acquisition timeouts to prevent indefinite blocking
@@ -620,6 +654,33 @@ pnpm test:bun:all
 3. Add a `tsconfig.json` extending `../../tsconfig.base.json`
 4. Create a `src/index.ts` as the entry point
 5. Add the package to the root README.md
+
+Example `package.json`:
+```json
+{
+  "name": "@go-go-scope/your-package",
+  "version": "2.6.2",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "scripts": {
+    "build": "pkgroll --clean-dist",
+    "test": "vitest run --passWithNoTests",
+    "lint": "biome check --write src/",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "go-go-scope": "workspace:*"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.4",
+    "pkgroll": "^2.26.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
+```
 
 ### Modifying Core Behavior
 

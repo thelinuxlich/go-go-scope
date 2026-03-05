@@ -1,6 +1,6 @@
 {
 	"name": "go-go-scope-monorepo",
-	"version": "2.6.2",
+	"version": "2.7.0",
 	"description": "Structured concurrency for TypeScript using Explicit Resource Management",
 	"type": "module",
 	"private": true,
@@ -13,6 +13,10 @@
 		"build:scheduler": "pnpm --filter @go-go-scope/scheduler build",
 		"build:tui": "pnpm --filter @go-go-scope/scheduler-tui build",
 		"build:adapters": "pnpm --filter @go-go-scope/adapter-* build",
+		"build:new-adapters": "pnpm --filter @go-go-scope/adapter-nuxt build && pnpm --filter @go-go-scope/adapter-astro build && pnpm --filter @go-go-scope/adapter-solid-start build && pnpm --filter @go-go-scope/adapter-cloudflare-workers build && pnpm --filter @go-go-scope/adapter-vercel-edge build && pnpm --filter @go-go-scope/adapter-aws-lambda-edge build && pnpm --filter @go-go-scope/adapter-fresh build",
+		"test:new-adapters": "pnpm --filter @go-go-scope/adapter-nuxt test && pnpm --filter @go-go-scope/adapter-astro test && pnpm --filter @go-go-scope/adapter-solid-start test && pnpm --filter @go-go-scope/adapter-cloudflare-workers test && pnpm --filter @go-go-scope/adapter-vercel-edge test && pnpm --filter @go-go-scope/adapter-aws-lambda-edge test && pnpm --filter @go-go-scope/adapter-fresh test",
+		"build:edge-adapters": "pnpm --filter @go-go-scope/adapter-cloudflare-workers build && pnpm --filter @go-go-scope/adapter-vercel-edge build && pnpm --filter @go-go-scope/adapter-aws-lambda-edge build && pnpm --filter @go-go-scope/adapter-fresh build",
+		"test:edge-adapters": "pnpm --filter @go-go-scope/adapter-cloudflare-workers test && pnpm --filter @go-go-scope/adapter-vercel-edge test && pnpm --filter @go-go-scope/adapter-aws-lambda-edge test && pnpm --filter @go-go-scope/adapter-fresh test",
 		"build:persistence": "pnpm --filter @go-go-scope/persistence-* build",
 		"typecheck": "pnpm -r typecheck",
 		"typecheck:core": "pnpm --filter go-go-scope typecheck",

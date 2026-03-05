@@ -1,0 +1,49 @@
+{
+	"name": "@go-go-scope/benchmark",
+	"version": "2.7.0",
+	"description": "Performance benchmarks for go-go-scope across runtimes",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.mjs"
+		},
+		"./runner": {
+			"types": "./dist/runner.d.ts",
+			"import": "./dist/runner.mjs"
+		},
+		"./compare": {
+			"types": "./dist/compare.d.ts",
+			"import": "./dist/compare.mjs"
+		}
+	},
+	"main": "./dist/index.mjs",
+	"types": "./dist/index.d.ts",
+	"bin": {
+		"go-go-benchmark": "./dist/runner.mjs"
+	},
+	"files": ["dist", "bin"],
+	"scripts": {
+		"build": "pkgroll --clean-dist",
+		"test": "vitest run --passWithNoTests",
+		"typecheck": "tsc --noEmit",
+		"benchmark": "node dist/runner.mjs",
+		"benchmark:node": "node dist/runner.mjs",
+		"benchmark:bun": "bun run dist/runner.mjs",
+		"benchmark:deno": "deno run --allow-all dist/runner.mjs",
+		"compare": "node dist/compare.mjs"
+	},
+	"dependencies": {
+		"go-go-scope": "workspace:*",
+		"@go-go-scope/stream": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.17",
+		"typescript": "^5.9.3",
+		"vitest": "^4.0.18",
+		"pkgroll": "^2.26.3"
+	},
+	"engines": {
+		"node": ">=24.0.0"
+	}
+}

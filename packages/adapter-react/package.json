@@ -1,0 +1,50 @@
+{
+	"name": "@go-go-scope/adapter-react",
+	"version": "2.7.0",
+	"description": "React hooks for go-go-scope",
+	"type": "module",
+	"main": "./dist/index.mjs",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.mts",
+			"default": "./dist/index.mjs"
+		}
+	},
+	"scripts": {
+		"build": "pkgroll --clean-dist",
+		"lint": "biome check --write src/",
+		"test": "vitest run",
+		"clean": "rm -rf dist",
+		"typecheck": "tsc --noEmit"
+	},
+	"keywords": [
+		"go-go-scope",
+		"react",
+		"hooks",
+		"react-hooks",
+		"concurrency"
+	],
+	"engines": {
+		"node": ">=24.0.0"
+	},
+	"author": "thelinuxlich",
+	"license": "MIT",
+	"peerDependencies": {
+		"go-go-scope": "workspace:*",
+		"react": "^18.0.0 || ^19.0.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.4",
+		"@testing-library/react": "^16.0.0",
+		"@types/node": "^24",
+		"@types/react": "^18.3.0",
+		"go-go-scope": "workspace:*",
+		"jsdom": "^24.0.0",
+		"pkgroll": "^2.26.3",
+		"react": "^18.3.0",
+		"react-dom": "^18.3.0",
+		"typescript": "^5.9.3",
+		"vitest": "^4.0.18"
+	}
+}

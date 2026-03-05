@@ -173,13 +173,7 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 		);
 	}
 
-	/**
-	 * Alias for flat().
-	 * @deprecated Use flat() instead
-	 */
-	flatten<R>(this: Stream<Iterable<R> | AsyncIterable<R>>): Stream<R> {
-		return this.flat();
-	}
+
 
 	/**
 	 * Tap into the stream to perform side effects without modifying values.

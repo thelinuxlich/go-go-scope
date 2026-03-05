@@ -1,0 +1,64 @@
+{
+	"name": "@go-go-scope/adapter-nuxt",
+	"version": "2.7.0",
+	"description": "Nuxt adapter for go-go-scope - Request-scoped structured concurrency for Nuxt applications",
+	"type": "module",
+	"main": "./dist/index.mjs",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.mts",
+			"default": "./dist/index.mjs"
+		}
+	},
+	"scripts": {
+		"build": "pkgroll --clean-dist",
+		"test": "vitest run --passWithNoTests",
+		"lint": "biome check --write src/",
+		"typecheck": "tsc --noEmit",
+		"clean": "rm -rf dist"
+	},
+	"keywords": [
+		"go-go-scope",
+		"nuxt",
+		"nuxt3",
+		"nitro",
+		"structured-concurrency",
+		"vue"
+	],
+	"engines": {
+		"node": ">=24.0.0"
+	},
+	"author": "thelinuxlich",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/thelinuxlich/go-go-scope.git",
+		"directory": "packages/adapter-nuxt"
+	},
+	"files": [
+		"dist/",
+		"README.md",
+		"LICENSE"
+	],
+	"dependencies": {
+		"go-go-scope": "workspace:*"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.4",
+		"@types/node": "^24",
+		"h3": "^1.11.1",
+		"nitropack": "^2.9.0",
+		"pkgroll": "^2.26.3",
+		"typescript": "^5.9.3",
+		"vitest": "^4.0.18"
+	},
+	"peerDependencies": {
+		"nitropack": "^2.0.0"
+	},
+	"peerDependenciesMeta": {
+		"nitropack": {
+			"optional": true
+		}
+	}
+}

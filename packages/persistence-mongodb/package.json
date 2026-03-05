@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/persistence-mongodb",
-	"version": "2.6.2",
+	"version": "2.7.0",
 	"description": "MongoDB persistence adapter for go-go-scope",
 	"type": "module",
 	"main": "./dist/index.mjs",

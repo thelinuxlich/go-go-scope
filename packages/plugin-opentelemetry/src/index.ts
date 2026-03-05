@@ -242,7 +242,4 @@ declare module "go-go-scope" {
 // Re-export OpenTelemetry types
 export type { Context, Span, SpanOptions, Tracer } from "@opentelemetry/api";
 
-// Re-export enhanced tracing features (internals removed from public API)
-export { exportTraceData } from "./tracing-enhanced.js";
-
 export type { ScopePlugin };

@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/web-streams",
-	"version": "2.6.2",
+	"version": "2.7.0",
 	"description": "Web Streams API integration for go-go-scope",
 	"type": "module",
 	"main": "./dist/index.mjs",

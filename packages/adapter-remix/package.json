@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/adapter-remix",
-	"version": "2.6.2",
+	"version": "2.7.0",
 	"description": "Remix adapter for go-go-scope",
 	"type": "module",
 	"main": "./dist/index.mjs",

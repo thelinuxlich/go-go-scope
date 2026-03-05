@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/adapter-express",
-	"version": "2.6.2",
+	"version": "2.7.0",
 	"description": "Express adapter for go-go-scope - request-scoped structured concurrency",
 	"type": "module",
 	"main": "./dist/index.mjs",

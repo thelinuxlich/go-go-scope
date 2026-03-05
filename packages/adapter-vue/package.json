@@ -1,0 +1,48 @@
+{
+	"name": "@go-go-scope/adapter-vue",
+	"version": "2.7.0",
+	"description": "Vue.js composables for go-go-scope",
+	"type": "module",
+	"main": "./dist/index.mjs",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.mts",
+			"default": "./dist/index.mjs"
+		}
+	},
+	"scripts": {
+		"build": "pkgroll --clean-dist",
+		"lint": "biome check --write src/",
+		"test": "vitest run",
+		"clean": "rm -rf dist",
+		"typecheck": "tsc --noEmit"
+	},
+	"keywords": [
+		"go-go-scope",
+		"vue",
+		"vue3",
+		"composables",
+		"reactivity"
+	],
+	"engines": {
+		"node": ">=24.0.0"
+	},
+	"author": "thelinuxlich",
+	"license": "MIT",
+	"peerDependencies": {
+		"go-go-scope": "workspace:*",
+		"vue": "^3.3.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.4",
+		"@types/node": "^24",
+		"@vue/test-utils": "^2.4.0",
+		"go-go-scope": "workspace:*",
+		"jsdom": "^24.0.0",
+		"pkgroll": "^2.26.3",
+		"typescript": "^5.9.3",
+		"vitest": "^4.0.18",
+		"vue": "^3.4.0"
+	}
+}

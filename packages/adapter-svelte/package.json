@@ -1,0 +1,49 @@
+{
+	"name": "@go-go-scope/adapter-svelte",
+	"version": "2.7.0",
+	"description": "Svelte 5 runes integration for go-go-scope",
+	"type": "module",
+	"main": "./dist/index.mjs",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.mts",
+			"default": "./dist/index.mjs"
+		}
+	},
+	"scripts": {
+		"build": "pkgroll --clean-dist",
+		"lint": "biome check --write src/",
+		"test": "vitest run",
+		"clean": "rm -rf dist",
+		"typecheck": "tsc --noEmit"
+	},
+	"keywords": [
+		"go-go-scope",
+		"svelte",
+		"svelte5",
+		"runes",
+		"reactivity"
+	],
+	"engines": {
+		"node": ">=24.0.0"
+	},
+	"author": "thelinuxlich",
+	"license": "MIT",
+	"peerDependencies": {
+		"go-go-scope": "workspace:*",
+		"svelte": "^5.0.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.4",
+		"@sveltejs/vite-plugin-svelte": "^4.0.0",
+		"@testing-library/svelte": "^5.2.0",
+		"@types/node": "^24",
+		"go-go-scope": "workspace:*",
+		"jsdom": "^24.0.0",
+		"pkgroll": "^2.26.3",
+		"svelte": "^5.0.0",
+		"typescript": "^5.9.3",
+		"vitest": "^4.0.18"
+	}
+}

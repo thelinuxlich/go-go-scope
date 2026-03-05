@@ -666,7 +666,6 @@ describe("Scheduler Integration Tests - PostgreSQL", () => {
 
 	beforeAll(async () => {
 		try {
-			// @ts-expect-error - pg type issues in test environment
 			const { Client } = await import("pg");
 			pgClient = new Client({
 				host: process.env.POSTGRES_HOST || "localhost",

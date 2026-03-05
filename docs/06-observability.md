@@ -520,6 +520,67 @@ npm install @go-go-scope/plugin-metrics
 
 ---
 
+## Real-Time Visualizer
+
+Monitor your concurrent operations in real-time with a WebSocket-based dashboard.
+
+### Basic Usage
+
+```typescript
+import { scope } from 'go-go-scope'
+import { visualizerPlugin, VisualizerDashboard } from '@go-go-scope/plugin-visualizer'
+
+// Option 1: Use as a scope plugin
+await using s = scope({
+  plugins: [visualizerPlugin()]
+})
+
+// Option 2: Run standalone dashboard
+const dashboard = new VisualizerDashboard({
+  port: 3333,
+  updateInterval: 100,
+  maxHistory: 1000
+})
+
+await dashboard.start()
+console.log('Visualizer running at http://localhost:3333')
+```
+
+### Features
+
+- **Real-time updates** via WebSocket (100ms default)
+- **Scope hierarchy visualization** - See parent-child relationships
+- **Task monitoring** - Track active, completed, and failed tasks
+- **Channel metrics** - Buffer size, throughput, backpressure
+- **Event history** - Last 1000 events with filtering
+
+### Configuration
+
+```typescript
+interface VisualizerOptions {
+  port?: number        // Default: 3333
+  host?: string        // Default: localhost
+  updateInterval?: number  // Default: 100ms
+  maxHistory?: number  // Default: 1000 events
+}
+```
+
+### Screenshot
+
+The dashboard displays:
+- Active scopes tree view
+- Task execution timeline
+- Channel buffer status
+- Performance metrics
+- Event log with filtering
+
+**Install:**
+```bash
+npm install @go-go-scope/plugin-visualizer
+```
+
+---
+
 ## Next Steps
 
 - **[Rate Limiting](./07-rate-limiting.md)** - Debounce, throttle, and concurrency limits

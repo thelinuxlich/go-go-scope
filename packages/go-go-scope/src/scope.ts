@@ -203,8 +203,7 @@ export interface ScopeOptions<
 /**
  * A Scope for structured concurrency.
  */
-/* #__PURE__ */
-// @ts-expect-error TypeScript doesn't recognize Symbol.asyncDispose in all configurations
+// @ts-ignore TypeScript may not recognize Symbol.asyncDispose in all configurations
 export class Scope<
 	Services extends Record<string, unknown> = Record<string, never>,
 > implements AsyncDisposable

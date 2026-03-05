@@ -42,8 +42,9 @@ else console.log("User:", data);
 | 🛡️ **Resilience Built-in** | Circuit breakers, retries, timeouts, idempotency |
 | 🧵 **Worker Thread Support** | Offload CPU-intensive tasks to worker threads (v2.4.0+) |
 | 📊 **Observable** | OpenTelemetry, Prometheus metrics, built-in profiling |
-| 🔌 **Framework Agnostic** | Adapters for Fastify, Express, NestJS, Hono, Koa, Hapi, Elysia |
-| 💾 **Persistence Ready** | Redis, PostgreSQL, MySQL, MongoDB, DynamoDB, SQLite adapters |
+| 🔌 **Framework Agnostic** | Adapters for Fastify, Express, NestJS, Hono, Koa, Hapi, Elysia, Vue, Svelte |
+| 💾 **Persistence Ready** | Redis, PostgreSQL, MySQL, MongoDB, DynamoDB, SQLite, Cloudflare DO adapters |
+| 📊 **Real-time Visualization** | WebSocket dashboard for monitoring operations |
 
 ---
 
@@ -118,6 +119,7 @@ Distributed locks, circuit breaker state, and caching for your database of choic
 | **[@go-go-scope/persistence-dynamodb](./packages/persistence-dynamodb)** | DynamoDB | Conditional writes, single-table design |
 | **[@go-go-scope/persistence-sqlite](./packages/persistence-sqlite)** | SQLite | Single-node deployments |
 | **[@go-go-scope/persistence-sqlite-bun](./packages/persistence-sqlite-bun)** | SQLite (Bun) | Bun-native SQLite |
+| **[@go-go-scope/persistence-cloudflare-do](./packages/persistence-cloudflare-do)** | Cloudflare Durable Objects | Edge-native distributed locks |
 
 ### 🔌 Framework Adapters
 
@@ -132,6 +134,15 @@ Request-scoped structured concurrency for your favorite framework:
 | **[@go-go-scope/adapter-elysia](./packages/adapter-elysia)** | Elysia | `npm i @go-go-scope/adapter-elysia` |
 | **[@go-go-scope/adapter-koa](./packages/adapter-koa)** | Koa | `npm i @go-go-scope/adapter-koa` |
 | **[@go-go-scope/adapter-hapi](./packages/adapter-hapi)** | Hapi | `npm i @go-go-scope/adapter-hapi` |
+| **[@go-go-scope/adapter-react](./packages/adapter-react)** | React 18+ | `npm i @go-go-scope/adapter-react` |
+| **[@go-go-scope/adapter-vue](./packages/adapter-vue)** | Vue 3 | `npm i @go-go-scope/adapter-vue` |
+| **[@go-go-scope/adapter-svelte](./packages/adapter-svelte)** | Svelte 5 | `npm i @go-go-scope/adapter-svelte` |
+
+### 🔌 Plugins
+
+| Package | Description | Install |
+|---------|-------------|---------|
+| **[@go-go-scope/plugin-visualizer](./packages/plugin-visualizer)** | Real-time WebSocket dashboard | `npm i @go-go-scope/plugin-visualizer` |
 
 ---
 

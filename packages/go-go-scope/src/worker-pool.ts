@@ -1,13 +1,48 @@
 /**
  * Worker Pool for go-go-scope
  * Provides structured concurrency for CPU-intensive operations using Worker Threads
+ * Supports Node.js worker_threads and Bun.spawn
  */
 
-import { Worker } from "node:worker_threads";
+import type { Worker } from "node:worker_threads";
 import createDebug from "debug";
 import type { Result } from "./types.js";
 
 const debugWorker = createDebug("go-go-scope:worker");
+
+// Bun type declarations
+declare global {
+	var Bun:
+		| {
+				spawn<T extends "pipe" | "inherit" | null>(
+					command: string[],
+					options: {
+						stdin?: T;
+						stdout?: T;
+						stderr?: T;
+						ipc?: (message: unknown) => void;
+					},
+				): {
+					kill(): void;
+					readonly exited: Promise<{ exitCode: number; signal?: string }>;
+				};
+		  }
+		| undefined;
+}
+
+// Detect runtime
+const isBun = typeof Bun !== "undefined";
+
+// Runtime-specific Worker type
+type WorkerType = Worker | BunWorker;
+
+// Bun worker wrapper interface
+interface BunWorker {
+	terminate(): Promise<void> | void;
+	postMessage(message: unknown): void;
+	onmessage: ((event: { data: unknown }) => void) | null;
+	onerror: ((error: Error) => void) | null;
+}
 
 /**
  * Options for creating a WorkerPool
@@ -43,7 +78,7 @@ interface WorkerMessage<T = unknown> {
  * Internal worker state
  */
 interface PooledWorker {
-	worker: Worker;
+	worker: WorkerType;
 	busy: boolean;
 	idleSince: number;
 	taskId: number | null;
@@ -267,6 +302,16 @@ export class WorkerPool implements AsyncDisposable {
 	}
 
 	private createWorker(): PooledWorker {
+		if (isBun) {
+			return this.createBunWorker();
+		}
+		return this.createNodeWorker();
+	}
+
+	private createNodeWorker(): PooledWorker {
+		// Dynamic import to avoid issues in Bun
+		const { Worker } = require("node:worker_threads");
+
 		const workerCode = `
       const { parentPort } = require('worker_threads');
       
@@ -300,7 +345,7 @@ export class WorkerPool implements AsyncDisposable {
 		});
 
 		const pooledWorker: PooledWorker = {
-			worker,
+			worker: worker as WorkerType,
 			busy: false,
 			idleSince: Date.now(),
 			taskId: null,
@@ -310,12 +355,12 @@ export class WorkerPool implements AsyncDisposable {
 			this.handleWorkerMessage(pooledWorker, message);
 		});
 
-		worker.on("error", (err) => {
+		worker.on("error", (err: Error) => {
 			debugWorker("Worker error: %O", err);
 			this.handleWorkerError(pooledWorker, err);
 		});
 
-		worker.on("exit", (code) => {
+		worker.on("exit", (code: number) => {
 			if (code !== 0) {
 				debugWorker("Worker exited with code %d", code);
 			}
@@ -323,9 +368,93 @@ export class WorkerPool implements AsyncDisposable {
 		});
 
 		this.workers.push(pooledWorker);
-		debugWorker("Created new worker, total: %d", this.workers.length);
+		debugWorker("Created new Node.js worker, total: %d", this.workers.length);
 
 		return pooledWorker;
+	}
+
+	private createBunWorker(): PooledWorker {
+		// Bun worker code - uses Bun's spawn API
+		const workerCode = `
+      // Bun worker using spawn
+      const worker = {
+        postMessage: (msg) => {
+          process.send(msg);
+        },
+        onmessage: null,
+        onerror: null,
+        terminate: () => {
+          process.exit(0);
+        }
+      };
+      
+      process.on('message', async (message) => {
+        if (message.type === 'execute') {
+          try {
+            const fn = eval('(' + message.fn + ')');
+            const result = await fn(message.data);
+            process.send({
+              type: 'result',
+              id: message.id,
+              data: result
+            });
+          } catch (error) {
+            process.send({
+              type: 'error',
+              id: message.id,
+              error: {
+                message: error.message,
+                stack: error.stack
+              }
+            });
+          }
+        }
+      });
+    `;
+
+		// Create worker using Bun.spawn
+		const subprocess = globalThis.Bun!.spawn(["bun", "eval", workerCode], {
+			ipc: (message: unknown) => {
+				this.handleBunMessage(pooledWorker, message as WorkerMessage);
+			},
+		} as any);
+
+		// Wrap Bun subprocess in BunWorker interface
+		const worker: BunWorker = {
+			terminate: async () => {
+				subprocess.kill();
+				await subprocess.exited;
+			},
+			postMessage: (message: unknown) => {
+				(subprocess as any).send(message);
+			},
+			onmessage: null,
+			onerror: null,
+		};
+
+		const pooledWorker: PooledWorker = {
+			worker,
+			busy: false,
+			idleSince: Date.now(),
+			taskId: null,
+		};
+
+		// Handle exit
+		subprocess.exited.then(({ exitCode }) => {
+			if (exitCode !== 0) {
+				debugWorker("Bun worker exited with code %d", exitCode);
+			}
+			this.removeWorker(pooledWorker);
+		});
+
+		this.workers.push(pooledWorker);
+		debugWorker("Created new Bun worker, total: %d", this.workers.length);
+
+		return pooledWorker;
+	}
+
+	private handleBunMessage(worker: PooledWorker, message: WorkerMessage): void {
+		this.handleWorkerMessage(worker, message);
 	}
 
 	private findIdleWorker(): PooledWorker | undefined {
@@ -467,6 +596,15 @@ export class WorkerPool implements AsyncDisposable {
  * Get default worker count based on CPU cores
  */
 function getDefaultWorkerCount(): number {
+	if (isBun && typeof Bun !== "undefined") {
+		// Bun provides os.cpus() via node:os compatibility
+		try {
+			const os = require("node:os");
+			return Math.max(1, os.cpus().length - 1);
+		} catch {
+			return 4; // Fallback for Bun
+		}
+	}
 	// biome-ignore lint/suspicious/noExplicitAny: Using Node.js built-in
 	const os: { cpus(): unknown[] } = require("node:os");
 	return Math.max(1, os.cpus().length - 1);
