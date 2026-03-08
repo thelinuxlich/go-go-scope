@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/adapter-hono",
-	"version": "2.7.0",
+	"version": "2.7.1",
 	"description": "Hono adapter for go-go-scope - lightweight middleware for edge runtimes",
 	"type": "module",
 	"main": "./dist/index.mjs",

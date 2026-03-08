@@ -10,8 +10,6 @@ import type { Scope, ScopePlugin } from "go-go-scope";
  * OpenTelemetry options for tasks
  */
 export interface TaskSpanOptions {
-	/** Span name (defaults to "scope.task") */
-	name?: string;
 	/** Additional span attributes */
 	attributes?: Record<string, string | number | boolean>;
 }
@@ -149,7 +147,7 @@ export function opentelemetryPlugin(
 						| { otel?: TaskSpanOptions; retry?: unknown; timeout?: number }
 						| undefined;
 					const span = state.tracer?.startSpan(
-						taskOptions?.otel?.name ?? _taskName ?? "scope.task",
+						_taskName ?? "scope.task",
 						{
 							attributes: {
 								"task.index": index,

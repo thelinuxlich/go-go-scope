@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/plugin-visualizer",
-	"version": "2.7.0",
+	"version": "2.7.1",
 	"description": "Real-time scope visualization dashboard for go-go-scope",
 	"type": "module",
 	"main": "./dist/index.mjs",

@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/adapter-nuxt",
-	"version": "2.7.0",
+	"version": "2.7.1",
 	"description": "Nuxt adapter for go-go-scope - Request-scoped structured concurrency for Nuxt applications",
 	"type": "module",
 	"main": "./dist/index.mjs",

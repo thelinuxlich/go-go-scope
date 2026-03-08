@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/adapter-vercel-edge",
-	"version": "2.7.0",
+	"version": "2.7.1",
 	"description": "Vercel Edge Functions adapter for go-go-scope",
 	"type": "module",
 	"exports": {

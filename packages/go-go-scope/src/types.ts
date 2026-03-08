@@ -126,10 +126,6 @@ interface TaskOptionsBase {
 	 */
 	otel?: {
 		/**
-		 * Optional name for the task span. Defaults to "scope.task".
-		 */
-		name?: string;
-		/**
 		 * Optional additional attributes to add to the task span.
 		 */
 		attributes?: Record<string, unknown>;

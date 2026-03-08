@@ -553,7 +553,7 @@ export class Scope<
 		this.taskCount++;
 		const taskIndex = this.taskCount;
 		const hasDebug = debugScope.enabled;
-		const taskName = options?.otel?.name ?? `task-${taskIndex}`;
+		const taskName = options?.id ?? `task-${taskIndex}`;
 
 		if (hasDebug) {
 			this.logger.debug('Spawning task #%d "%s"', taskIndex, taskName);
