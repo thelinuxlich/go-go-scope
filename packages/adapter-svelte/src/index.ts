@@ -107,7 +107,7 @@ export interface CreateTaskOptions<T> {
 	/** Timeout in milliseconds */
 	timeout?: number;
 	/** Retry options */
-	retry?: { maxRetries?: number; delay?: number };
+	retry?: { max?: number; delay?: number };
 	/** Initial data value */
 	initialData?: T;
 }

@@ -51,21 +51,21 @@ async function main() {
     await admin.createSchedule("daily-report", {
       cron: CronPresets.DAILY,
       timezone: "America/New_York",
-      maxRetries: 3,
+      max: 3,
       timeout: 30000,
     });
     console.log("[Admin] ✓ Created: daily-report (9:00 AM ET)");
     
     await admin.createSchedule("hourly-cleanup", {
       cron: CronPresets.EVERY_HOUR,
-      maxRetries: 2,
+      max: 2,
     });
     console.log("[Admin] ✓ Created: hourly-cleanup (every hour)");
     
     await admin.createSchedule("weekly-aggregate", {
       cron: "0 2 * * 0",  // Sunday 2 AM UTC
       timezone: "UTC",
-      maxRetries: 5,
+      max: 5,
       timeout: 60000,
     });
     console.log("[Admin] ✓ Created: weekly-aggregate (Sunday 2 AM UTC)");

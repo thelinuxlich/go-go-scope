@@ -142,7 +142,7 @@ interface TaskOptionsBase {
 				/**
 				 * Maximum number of retry attempts. Default: 3
 				 */
-				maxRetries?: number;
+				max?: number;
 				/**
 				 * Delay between retries in milliseconds.
 				 * Can be a fixed number, a function, or use built-in strategies:
@@ -157,7 +157,7 @@ interface TaskOptionsBase {
 				 * Return true to retry, false to throw immediately.
 				 * Default: retry all errors
 				 */
-				retryCondition?: (error: unknown) => boolean;
+				if?: (error: unknown) => boolean;
 				/**
 				 * Callback invoked when a retry is about to happen.
 				 * Receives the error and the attempt number (1-based).
@@ -172,6 +172,18 @@ interface TaskOptionsBase {
 	 * If set, the task will be aborted after this duration.
 	 */
 	timeout?: number;
+	/**
+	 * Circuit breaker configuration for this specific task.
+	 * When set, the task will execute through a circuit breaker with these options.
+	 * Takes precedence over any scope-level circuit breaker.
+	 */
+	circuitBreaker?: CircuitBreakerOptions;
+	/**
+	 * Task priority when scope has concurrency limits.
+	 * Higher priority tasks are executed before lower priority ones.
+	 * Default: 0
+	 */
+	priority?: number;
 	/**
 	 * Optional cleanup function to run when the task completes or is cancelled.
 	 * Runs alongside the default scope cleanup.

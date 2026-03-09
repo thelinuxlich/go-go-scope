@@ -107,7 +107,7 @@ async function benchTaskCreation(): Promise<BenchmarkSuite> {
 					if (attempts < 2) throw new Error("fail");
 					return Promise.resolve(42);
 				},
-				{ retry: { maxRetries: 3, delay: 0 } },
+				{ retry: { max: 3, delay: 0 } },
 			);
 			await task;
 		}),

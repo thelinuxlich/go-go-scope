@@ -352,7 +352,7 @@ export class RedisJobStorage implements JobStorage {
 			createdAt: new Date(),
 			runAt: nextRun,
 			retryCount: 0,
-			maxRetries: schedule.options?.maxRetries ?? 3,
+			max: schedule.options?.max ?? 3,
 		};
 
 		// Use Lua script for atomic check-and-schedule if available
@@ -741,7 +741,7 @@ export class SQLJobStorage implements JobStorage {
 			createdAt: new Date(),
 			runAt: nextRun,
 			retryCount: 0,
-			maxRetries: schedule.options?.maxRetries ?? 3,
+			max: schedule.options?.max ?? 3,
 		};
 
 		const table = `${this.keyPrefix}jobs`;

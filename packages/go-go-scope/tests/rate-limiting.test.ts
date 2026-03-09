@@ -153,6 +153,40 @@ describe("throttle", () => {
 	});
 });
 
+describe("scope.delay()", () => {
+	test("delays for specified milliseconds", async () => {
+		await using s = scope();
+
+		const start = Date.now();
+		await s.delay(50);
+		const elapsed = Date.now() - start;
+
+		expect(elapsed).toBeGreaterThanOrEqual(45);
+	});
+
+	test("delay respects cancellation", async () => {
+		await using s = scope();
+
+		// Start a delay
+		const delayPromise = s.delay(1000);
+
+		// Cancel the scope
+		setTimeout(() => s[Symbol.asyncDispose](), 50);
+
+		await expect(delayPromise).rejects.toThrow();
+	});
+
+	test("delay throws immediately if already aborted", async () => {
+		await using s = scope();
+
+		// Dispose the scope first
+		await s[Symbol.asyncDispose]();
+
+		// Now try to delay
+		await expect(s.delay(100)).rejects.toThrow();
+	});
+});
+
 describe("metrics", () => {
 	test("returns undefined when metrics not enabled", async () => {
 		await using s = scope();
@@ -173,12 +207,12 @@ describe("hooks", () => {
 			},
 		});
 
-		await s.task(async () => "success", { otel: { name: "task1" } });
+		await s.task(async () => "success", { id: "task1" });
 		await s.task(
 			async () => {
 				throw new Error("fail");
 			},
-			{ otel: { name: "task2" } },
+			{ id: "task2" },
 		);
 
 		expect(beforeCalls).toContain("task1");

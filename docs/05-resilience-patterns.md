@@ -71,7 +71,7 @@ await using s = scope()
 
 const [err, user] = await s.task(
   () => fetchUser(id),
-  { retry: { maxRetries: 3 } }
+  { retry: { max: 3 } }
 )
 ```
 
@@ -82,7 +82,7 @@ const [err, result] = await s.task(
   () => fetchData(),
   {
     retry: {
-      maxRetries: 5,
+      max: 5,
       delay: 1000  // 1 second between retries
     }
   }
@@ -100,7 +100,7 @@ const [err, result] = await s.task(
   () => fetchData(),
   {
     retry: {
-      maxRetries: 5,
+      max: 5,
       delay: exponentialBackoff({ initial: 1000, max: 30000, jitter: 0.3 })
       // Attempt 1: ~1000ms (±30% jitter)
       // Attempt 2: ~2000ms (±30% jitter)
@@ -118,7 +118,7 @@ const [err, result] = await s.task(
   () => fetchData(),
   {
     retry: {
-      maxRetries: 5,
+      max: 5,
       delay: (attempt) => Math.min(1000 * 2 ** attempt, 30000)
     }
   }
@@ -171,7 +171,7 @@ const [err, result] = await s.task(
   () => fetchData(),
   {
     retry: {
-      maxRetries: 3,
+      max: 3,
       retryCondition: (error) => {
         // Only retry network errors
         return error instanceof NetworkError
@@ -192,7 +192,7 @@ const [err, result] = await s.task(
   {
     timeout: 5000,  // Each attempt has 5 seconds
     retry: {
-      maxRetries: 3,
+      max: 3,
       delay: 1000
     }
   }
@@ -351,29 +351,29 @@ if (err) {
 }
 ```
 
-### Alternative: Using goTryRaw with Raw Operations
+### Alternative: Using go with Raw Operations
 
-If you don't need all scope features (like automatic cancellation signal propagation), use `goTryRaw` directly on raw operations:
+If you don't need all scope features (like automatic cancellation signal propagation), use `go` directly on raw operations:
 
 ```typescript
 import { scope } from 'go-go-scope'
-import { taggedError, success, failure, goTryRaw } from 'go-go-try'
+import { taggedError, success, failure, go } from 'go-go-try'
 
 const DatabaseError = taggedError('DatabaseError')
 const NetworkError = taggedError('NetworkError')
 
-// Use goTryRaw directly on raw operations (not wrapped in s.task)
+// Use go directly on raw operations (not wrapped in s.task)
 async function fetchUser(id: string) {
   await using s = scope({ timeout: 5000 })
   
-  // goTryRaw wraps the operation and converts errors
-  const [dbErr, user] = await goTryRaw(
+  // go wraps the operation and converts errors
+  const [dbErr, user] = await go(
     () => queryDatabase(id),  // Raw operation
     DatabaseError
   )
   if (dbErr) return failure(dbErr)
   
-  const [netErr, enriched] = await goTryRaw(
+  const [netErr, enriched] = await go(
     () => enrichUserData(user!),  // Raw operation
     NetworkError
   )
@@ -383,9 +383,9 @@ async function fetchUser(id: string) {
 }
 ```
 
-> **Note:** When using `goTryRaw` with raw operations, you lose automatic `AbortSignal` propagation. For cancellation support, pass the signal manually:
+> **Note:** When using `go` with raw operations, you lose automatic `AbortSignal` propagation. For cancellation support, pass the signal manually:
 > ```typescript
-> const [err, data] = await goTryRaw(
+> const [err, data] = await go(
 >   () => fetch(`/api/data?id=${id}`, { signal: s.signal }),
 >   NetworkError
 > )
@@ -406,7 +406,7 @@ async function resilientFetch(id: string) {
   await using s = scope({
     timeout: 10000,
     circuitBreaker: { failureThreshold: 3 },
-    retry: { maxRetries: 2 }
+    retry: { max: 2 }
   })
   
   // All scope features work with typed errors
@@ -431,7 +431,7 @@ async function resilientFetch(id: string) {
 The `go-go-try` package provides:
 
 - **`taggedError(tag)`** - Creates a tagged error class for discriminated unions
-- **`goTryRaw(fn, ErrorClass)`** - Wraps a function/promise and converts errors to your typed error class
+- **`go(fn, ErrorClass)`** - Wraps a function/promise and converts errors to your typed error class
 - **`success(value)`** - Returns `Success<T>` for consistent return types
 - **`failure(error)`** - Returns `Failure<E>` for consistent return types
 - **`TaggedUnion<[...]>`** - Helper type to create union types from tagged error classes
@@ -668,7 +668,7 @@ const [err, data] = await s.task(
   },
   {
     retry: {
-      maxRetries: 3,
+      max: 3,
       delay: exponentialBackoff(),
       retryCondition: (error) => {
         // Don't retry business errors - they'll fail the same way
@@ -699,7 +699,7 @@ const [err, data] = await s.task(
   {
     systemErrorClass: DatabaseError,  // Use instead of UnknownError
     retry: {
-      maxRetries: 3,
+      max: 3,
       delay: exponentialBackoff(),
       retryCondition: (error) => error instanceof DatabaseError
     }

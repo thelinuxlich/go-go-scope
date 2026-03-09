@@ -217,7 +217,7 @@ async function fetchUsers() {
       () => fetch(`/api/users/${id}`).then(r => r.json()),
       {
         retry: {
-          maxRetries: 3,
+          max: 3,
           delay: exponentialBackoff({ initial: 100 })
         }
       }
@@ -308,7 +308,7 @@ async function processUsers(ids: string[]) {
   const tasks = ids.map(id => 
     s.task(
       () => fetchUser(id),
-      { timeout: 5000, retry: { maxRetries: 3 } }
+      { timeout: 5000, retry: { max: 3 } }
     )
   )
   
@@ -382,7 +382,7 @@ async function fetchUsersWithRetry() {
   const tasks = [1, 2, 3].map(id => 
     s.task(() => fetchUser(id), {
       timeout: 5000,
-      retry: { maxRetries: 3, delay: 100 }
+      retry: { max: 3, delay: 100 }
     })
   )
   

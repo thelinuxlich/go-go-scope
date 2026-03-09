@@ -66,7 +66,7 @@ using scheduler = new Scheduler({
 await scheduler.createSchedule("daily-report", {
   cron: CronPresets.DAILY,
   timezone: "America/New_York",
-  maxRetries: 3,
+  max: 3,
   timeout: 30000,
 });
 
@@ -272,7 +272,7 @@ const schedule = await scheduler.getSchedule("daily-report");
 await scheduler.updateSchedule("daily-report", {
   cron: "0 10 * * *",        // Change to 10 AM
   timezone: "Europe/London", // Change timezone
-  maxRetries: 5,             // More retries
+  max: 5,             // More retries
   timeout: 60000,            // Longer timeout
 });
 ```
@@ -509,7 +509,7 @@ npx go-go-scheduler jobs daily-report
 | `--cron` | Cron expression |
 | `--interval` | Interval in milliseconds |
 | `-tz, --timezone` | IANA timezone |
-| `--maxRetries` | Maximum retry attempts |
+| `--max` | Maximum retry attempts |
 | `--timeout` | Job timeout in ms |
 | `--concurrent` | Allow concurrent execution |
 
@@ -644,7 +644,7 @@ await scheduler.createSchedule("my-schedule", {
   cron: "0 9 * * *",           // Cron expression
   interval: undefined,         // Or use interval (ms)
   timezone: "America/New_York", // IANA timezone
-  maxRetries: 3,               // Retry attempts
+  max: 3,               // Retry attempts
   retryDelay: 1000,            // Delay between retries
   timeout: 30000,              // Job timeout
   concurrent: false,           // Allow concurrent job execution
@@ -685,7 +685,7 @@ Update an existing schedule.
 await scheduler.updateSchedule("my-schedule", {
   cron: "0 10 * * *",        // New time
   timezone: "Europe/London",  // New timezone
-  maxRetries: 5,
+  max: 5,
 });
 ```
 
@@ -745,7 +745,7 @@ When a job handler throws an error, the scheduler automatically handles retries 
 
 ```typescript
 await scheduler.createSchedule("risky-job", {
-  maxRetries: 3,      // Retry up to 3 times (default)
+  max: 3,      // Retry up to 3 times (default)
   retryDelay: 1000,   // Base delay: 1 second (default)
   jitter: 100,        // Random jitter 0-100ms (default: 0)
 });
@@ -766,9 +766,9 @@ Handler throws
     ↓
 Status: running → pending
     ↓
-Retry scheduled (if under maxRetries)
+Retry scheduled (if under max)
     ↓
-After maxRetries: Status → failed
+After max: Status → failed
     ↓
 Next occurrence scheduled (for recurring jobs)
 ```
@@ -928,7 +928,7 @@ await scheduler.replayFromDLQ(emailFailures.map(e => e.id));
 
 // Replay with custom options
 await scheduler.replayFromDLQ("dlq-entry-id", {
-  maxRetries: 5,        // Override original retry count
+  max: 5,        // Override original retry count
   retryDelay: 2000,     // Longer delay between retries
   timeout: 60000,       // Longer timeout
 });
@@ -1015,7 +1015,7 @@ const scheduler = new Scheduler({
 // Schedule with retry configuration
 await scheduler.createSchedule("process-payment", {
   cron: "*/5 * * * *",
-  maxRetries: 3,
+  max: 3,
   retryDelay: 2000,
 });
 
@@ -1059,7 +1059,7 @@ Prevent stuck jobs with timeouts:
 ```typescript
 await scheduler.createSchedule("slow-job", {
   timeout: 30000,  // 30 second timeout
-  maxRetries: 2,
+  max: 2,
 });
 ```
 
@@ -1592,7 +1592,7 @@ Errors in handlers trigger retry logic:
 
 ```typescript
 scheduler.onSchedule("risky-task", async (job) => {
-  // If this throws, job will be retried (up to maxRetries)
+  // If this throws, job will be retried (up to max)
   await flakyOperation();
 });
 ```

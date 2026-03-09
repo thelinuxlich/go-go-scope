@@ -120,7 +120,7 @@ async function simulateWorkload() {
 		() => fetchUser(999),
 		{
 			retry: {
-				maxRetries: 3,
+				max: 3,
 				delay: 100,
 				onRetry: (err, attempt) => {
 					console.log(

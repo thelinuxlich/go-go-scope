@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/persistence-dynamodb",
-	"version": "2.7.1",
+	"version": "2.8.0",
 	"description": "DynamoDB persistence adapter for go-go-scope - distributed locks, circuit breaker state, and caching",
 	"type": "module",
 	"main": "./dist/index.mjs",

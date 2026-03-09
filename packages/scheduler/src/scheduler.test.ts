@@ -467,7 +467,7 @@ describe("Scheduler", () => {
 
 			await admin.createSchedule("retry-test", {
 				cron: "* * * * *",
-				maxRetries: 2,
+				max: 2,
 				retryDelay: 50,
 			});
 

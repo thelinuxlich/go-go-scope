@@ -37,7 +37,7 @@ async function main() {
 			await new Promise((r) => setTimeout(r, 25));
 			return "task-3";
 		},
-		{ retry: { maxRetries: 2 } },
+		{ retry: { max: 2 } },
 	);
 
 	// Parallel tasks

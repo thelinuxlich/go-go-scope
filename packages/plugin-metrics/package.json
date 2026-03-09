@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/plugin-metrics",
-	"version": "2.7.1",
+	"version": "2.8.0",
 	"description": "Metrics collection plugin for go-go-scope",
 	"type": "module",
 	"main": "./dist/index.mjs",

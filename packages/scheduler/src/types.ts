@@ -59,7 +59,7 @@ export interface Job {
 	/** Current retry count */
 	retryCount: number;
 	/** Maximum retry attempts */
-	maxRetries: number;
+	max: number;
 	/** Error message if failed */
 	error?: string;
 }
@@ -124,7 +124,7 @@ export interface Schedule {
 		/** Maximum concurrent executions (default: 1) */
 		concurrent?: boolean;
 		/** Maximum retry attempts (default: 3) */
-		maxRetries?: number;
+		max?: number;
 		/** Delay between retries in ms (default: 1000) */
 		retryDelay?: number;
 		/** Job timeout in ms (default: 30000) */
@@ -165,7 +165,7 @@ export interface UpdateScheduleOptions {
 	interval?: number;
 	timezone?: string;
 	defaultPayload?: JobPayload;
-	maxRetries?: number;
+	max?: number;
 	retryDelay?: number;
 	timeout?: number;
 	concurrent?: boolean;
@@ -232,7 +232,7 @@ export interface CreateScheduleOptions {
 	/** Default payload for jobs */
 	defaultPayload?: JobPayload;
 	/** Maximum retry attempts (default: 3) */
-	maxRetries?: number;
+	max?: number;
 	/** Delay between retries in ms (default: 1000) */
 	retryDelay?: number;
 	/** Job timeout in ms (default: 30000) */
@@ -480,7 +480,7 @@ export class InMemoryJobStorage implements JobStorage {
 			createdAt: new Date(),
 			runAt: nextRun,
 			retryCount: 0,
-			maxRetries: schedule.options?.maxRetries ?? 3,
+			max: schedule.options?.max ?? 3,
 		};
 
 		this.jobs.set(nextJob.id, nextJob);
@@ -662,8 +662,8 @@ export interface DeadLetterJob extends Job {
 export interface DeadLetterQueueOptions {
 	/** Enable the dead letter queue (default: false) */
 	enabled: boolean;
-	/** Maximum retry attempts before moving to DLQ (defaults to schedule's maxRetries) */
-	maxRetries?: number;
+	/** Maximum retry attempts before moving to DLQ (defaults to schedule's max) */
+	max?: number;
 	/** Separate storage for DLQ jobs (defaults to main storage) */
 	storage?: JobStorage;
 	/** Callback invoked when a job is moved to the DLQ */
@@ -762,7 +762,7 @@ export interface SchedulerOptions {
 	autoStart?: boolean;
 	/**
 	 * Dead Letter Queue configuration.
-	 * When enabled, jobs that fail after maxRetries are moved to the DLQ
+	 * When enabled, jobs that fail after max are moved to the DLQ
 	 * instead of just being marked as failed.
 	 */
 	deadLetterQueue?: DeadLetterQueueOptions;

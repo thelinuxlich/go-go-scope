@@ -158,7 +158,7 @@ console.log("4️⃣  Running task with retry (will fail twice then succeed)..."
 		{
 			otel: { name: "retryable-task" },
 			retry: {
-				maxRetries: 3,
+				max: 3,
 				delay: 100,
 				onRetry: (err, attempt) => {
 					console.log(`   Retry ${attempt}: ${err}`);

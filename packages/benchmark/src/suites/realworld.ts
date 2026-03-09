@@ -90,7 +90,7 @@ export async function runRealWorldBenchmarks() {
 						throw new Error("Service temporarily unavailable");
 					}
 					return { success: true };
-				}, { retry: { maxRetries: 3, delay: 10 } });
+				}, { retry: { max: 3, delay: 10 } });
 			},
 		},
 		{

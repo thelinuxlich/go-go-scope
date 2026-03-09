@@ -460,7 +460,7 @@ Automatically retry on failure:
 
 ```typescript
 const [err, results] = await new Stream(unreliableSource, s)
-  .retry({ maxRetries: 3, delay: 100 })
+  .retry({ max: 3, delay: 100 })
   .toArray()
 ```
 

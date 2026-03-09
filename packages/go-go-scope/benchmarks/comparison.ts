@@ -223,16 +223,16 @@ console.log("\n🟨 Vanilla JS:");
 {
 	async function withRetry<T>(
 		fn: () => Promise<T>,
-		maxRetries: number,
+		max: number,
 		delayMs: number,
 	): Promise<T> {
 		let lastError: unknown;
-		for (let i = 0; i <= maxRetries; i++) {
+		for (let i = 0; i <= max; i++) {
 			try {
 				return await fn();
 			} catch (e) {
 				lastError = e;
-				if (i < maxRetries)
+				if (i < max)
 					await new Promise((r) => setTimeout(r, delayMs));
 			}
 		}
@@ -271,7 +271,7 @@ console.log("\n🟩 go-go-scope:");
 
 	const [err, result] = await s.task(() => fetchWithRetry("api/data"), {
 		retry: {
-			maxRetries: 3,
+			max: 3,
 			delay: 10,
 		},
 	});
@@ -450,7 +450,7 @@ await benchmark("go-go-scope (with timeout)", async () => {
 await benchmark("go-go-scope (with retry)", async () => {
 	await using s = scope();
 	await s.task(() => Promise.resolve(42), {
-		retry: { maxRetries: 1, delay: 0 },
+		retry: { max: 1, delay: 0 },
 	});
 });
 

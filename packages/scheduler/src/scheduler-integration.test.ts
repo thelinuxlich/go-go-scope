@@ -513,7 +513,7 @@ async function runErrorRecoveryTest(
 			// Create schedule BEFORE loading into worker
 			await admin.createSchedule("retry-test", {
 				interval: 500,
-				maxRetries: 5,
+				max: 5,
 				retryDelay: 200,
 			});
 
@@ -585,7 +585,7 @@ describe("Scheduler Integration Tests - Redis", () => {
 			redisClient = new Redis.default({
 				host: process.env.REDIS_HOST || "localhost",
 				port: parseInt(process.env.REDIS_PORT || "6380", 10),
-				maxRetriesPerRequest: 1,
+				maxPerRequest: 1,
 				connectTimeout: 1000,
 			});
 			await (redisClient as { ping(): Promise<unknown> }).ping();

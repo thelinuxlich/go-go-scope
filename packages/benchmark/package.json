@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/benchmark",
-	"version": "2.7.1",
+	"version": "2.8.0",
 	"description": "Performance benchmarks for go-go-scope across runtimes",
 	"type": "module",
 	"exports": {

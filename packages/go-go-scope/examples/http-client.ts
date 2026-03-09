@@ -37,7 +37,7 @@ function createHttpClient(baseUrl: string) {
 				},
 				{
 					retry: {
-						maxRetries: 3,
+						max: 3,
 						delay: exponentialBackoff({ initial: 100, max: 5000 }),
 					},
 					timeout: 10000,

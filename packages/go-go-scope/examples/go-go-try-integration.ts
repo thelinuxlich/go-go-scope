@@ -144,13 +144,13 @@ function handleError(err: AppError): string {
 }
 
 // ==========================================
-// Alternative: Using goTryRaw with raw operations (no scope.task)
+// Alternative: Using go with raw operations (no scope.task)
 // ==========================================
 
-import { goTryRaw } from "go-go-try";
+import { go } from "go-go-try";
 
 /**
- * Alternative approach: Use goTryRaw directly with raw operations.
+ * Alternative approach: Use go directly with raw operations.
  * This gives you automatic union inference but loses some scope features
  * like automatic cancellation signal propagation.
  */
@@ -158,14 +158,14 @@ import { goTryRaw } from "go-go-try";
 async function _fetchUserRaw(id: string) {
 	await using _s = scope({ timeout: 5000 });
 
-	// Use goTryRaw directly on raw operations
-	const [dbErr, user] = await goTryRaw(
+	// Use go directly on raw operations
+	const [dbErr, user] = await go(
 		() => queryDatabase(id),
 		DatabaseError,
 	);
 	if (dbErr) return failure(dbErr);
 
-	const [netErr, enriched] = await goTryRaw(
+	const [netErr, enriched] = await go(
 		() => enrichUserData(user!), // Raw operation
 		NetworkError,
 	);

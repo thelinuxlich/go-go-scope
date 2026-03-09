@@ -229,7 +229,7 @@ import { assert } from 'go-go-try'
 async function getUserWithRetry(userId: string, s: Scope) {
   const [err, user] = await s.task(
     ({ services }) => services.api.fetchUser(userId),
-    { retry: { maxRetries: 3 } }
+    { retry: { max: 3 } }
   )
   
   return assert(user, err)
@@ -436,13 +436,13 @@ describe('UserService', () => {
     
     const [err, user] = await s.task(
       () => mockApi.fetchUser(1),
-      { retry: { maxRetries: 3 } }
+      { retry: { max: 3 } }
     )
     
     expect(err).toBeUndefined()
     expect(user).toEqual({ id: 1, name: 'John' })
     expect(mockApi.fetchUser).toHaveBeenCalledTimes(2)
-    expect(s.getTaskCalls()[0].options?.retry?.maxRetries).toBe(3)
+    expect(s.getTaskCalls()[0].options?.retry?.max).toBe(3)
   })
   
   test('should abort on cancellation', async () => {

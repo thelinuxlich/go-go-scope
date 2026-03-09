@@ -63,7 +63,7 @@ describe("Fastify adapter", () => {
 				if (attempts < 3) throw new Error("Temporary failure");
 				return { data: "success" };
 			},
-			{ retry: { maxRetries: 3, delay: 10 } },
+			{ retry: { max: 3, delay: 10 } },
 		);
 
 		expect(err).toBeUndefined();

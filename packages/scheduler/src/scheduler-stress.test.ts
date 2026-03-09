@@ -471,7 +471,7 @@ describe("Stress Tests - Clock Skew Handling", () => {
 			createdAt: new Date(Date.now() - 60000), // 1 minute ago
 			runAt: new Date(Date.now() - 30000), // 30 seconds ago
 			retryCount: 0,
-			maxRetries: 3,
+			max: 3,
 		};
 		await storage.saveJob(pastJob);
 
@@ -661,7 +661,7 @@ describe("Stress Tests - Long-Running Stability", () => {
 		for (let i = 0; i < 5; i++) {
 			await admin.createSchedule(`stability-${i}`, {
 				interval: 100 + i * 50,
-				maxRetries: 3,
+				max: 3,
 				retryDelay: 50,
 			});
 		}

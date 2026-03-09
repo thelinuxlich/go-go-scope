@@ -393,7 +393,7 @@ const [err, data] = await s.task(async ({ context, logger }) => {
 // With retry
 const [err, user] = await s.task(
   () => fetchUser(id),
-  { retry: { maxRetries: 3, delay: 1000 } }
+  { retry: { max: 3, delay: 1000 } }
 )
 
 // With OpenTelemetry tracing
@@ -441,14 +441,14 @@ interface TaskOptions<E extends Error = Error> {
    */
   retry?: {
     /** Max retry attempts (default: 3) */
-    maxRetries?: number
+    max?: number
     /** 
      * Delay between retries in ms.
      * Can be a number or function: (attempt, error) => number
      */
     delay?: number | ((attempt: number, error: unknown) => number)
     /** Which errors to retry (default: all) */
-    retryCondition?: (error: unknown) => boolean
+    if?: (error: unknown) => boolean
     /** Callback on each retry */
     onRetry?: (error: unknown, attempt: number) => void
   }
@@ -457,6 +457,19 @@ interface TaskOptions<E extends Error = Error> {
    * Timeout for this specific task (milliseconds).
    */
   timeout?: number
+
+  /**
+   * Circuit breaker configuration for this specific task.
+   * Takes precedence over scope-level circuit breaker.
+   */
+  circuitBreaker?: CircuitBreakerOptions
+
+  /**
+   * Task priority when scope has concurrency limits.
+   * Higher priority tasks are executed before lower priority ones.
+   * Default: 0
+   */
+  priority?: number
   
   /** 
    * Custom cleanup function - runs when parent scope exits.
@@ -597,7 +610,7 @@ const [err, result] = await s.task(
   () => fetchData(),
   {
     retry: {
-      maxRetries: 5,
+      max: 5,
       delay: (attempt) => Math.min(1000 * 2 ** attempt, 30000)
     }
   }
@@ -608,7 +621,7 @@ const [err, result] = await s.task(
   () => fetchData(),
   {
     retry: {
-      maxRetries: 3,
+      max: 3,
       retryCondition: (err) => err instanceof NetworkError
     }
   }
@@ -692,7 +705,7 @@ const [err, primes] = await s.task(
   { 
     worker: true,
     retry: {
-      maxRetries: 3,
+      max: 3,
       delay: 1000
     }
   }
@@ -1519,6 +1532,48 @@ const save = s.throttle(async (data: string) => {
 // Executes at most once per second
 await save("data1")
 await save("data2") // Throttled, returns cached result
+```
+
+---
+
+### `scope.delay(ms)`
+
+Returns a Promise that resolves after the specified milliseconds. The delay is automatically cancelled if the scope is disposed.
+
+```typescript
+delay(ms: number): Promise<void>
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `ms` | `number` | Milliseconds to delay |
+
+**Returns:** `Promise<void>` - Resolves after the delay, or rejects if cancelled
+
+**Example:**
+
+```typescript
+await using s = scope()
+
+// Simple delay
+await s.delay(1000) // Wait 1 second
+
+// Retry with exponential backoff using delay
+async function fetchWithRetry(url: string, maxAttempts = 3) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const [err, response] = await s.task(async () => {
+      return fetch(url)
+    })
+    if (!err) return response
+    if (attempt < maxAttempts - 1) {
+      const backoffMs = Math.min(1000 * Math.pow(2, attempt), 10000)
+      await s.delay(backoffMs) // Wait before retry
+    }
+  }
+  throw new Error('Max retries exceeded')
+}
 ```
 
 ---
@@ -2665,7 +2720,7 @@ import { exponentialBackoff } from "go-go-scope";
 
 await s.task(() => fetchData(), {
   retry: {
-    maxRetries: 5,
+    max: 5,
     delay: exponentialBackoff({
       initial: 100, // Start with 100ms
       max: 30000, // Cap at 30 seconds

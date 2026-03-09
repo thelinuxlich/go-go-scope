@@ -102,7 +102,7 @@ describe("Scheduler Memory Management", () => {
 
 			await scheduler.createSchedule("failing-job", {
 				cron: "* * * * *",
-				maxRetries: 2,
+				max: 2,
 				retryDelay: 10,
 			});
 			scheduler.onSchedule("failing-job", async () => {
@@ -511,7 +511,7 @@ describe("Scheduler Memory Management", () => {
 					priority: 0,
 					createdAt: new Date(),
 					retryCount: 0,
-					maxRetries: 3,
+					max: 3,
 				};
 				await storage.saveJob(job);
 			}

@@ -18,7 +18,7 @@ import type { RetryDelayFn } from "./types.js";
  * ```typescript
  * await s.task(() => fetchData(), {
  *   retry: {
- *     maxRetries: 5,
+ *     max: 5,
  *     delay: exponentialBackoff({ initial: 100, max: 5000, jitter: 0.3 })
  *   }
  * })
@@ -27,7 +27,7 @@ import type { RetryDelayFn } from "./types.js";
  * // With full jitter (AWS-style)
  * await s.task(() => fetchData(), {
  *   retry: {
- *     maxRetries: 5,
+ *     max: 5,
  *     delay: exponentialBackoff({ initial: 100, max: 5000, fullJitter: true })
  *   }
  * })
@@ -83,7 +83,7 @@ export function exponentialBackoff({
  * ```typescript
  * await s.task(() => fetchData(), {
  *   retry: {
- *     maxRetries: 5,
+ *     max: 5,
  *     delay: jitter(1000, 0.2)  // 1000ms ± 20%
  *   }
  * })
@@ -113,7 +113,7 @@ export function jitter(baseDelay: number, jitterFactor = 0.1): RetryDelayFn {
  * ```typescript
  * await s.task(() => fetchData(), {
  *   retry: {
- *     maxRetries: 5,
+ *     max: 5,
  *     delay: linear(100, 50)  // 100, 150, 200, 250, 300ms
  *   }
  * })
@@ -138,7 +138,7 @@ export function linear(baseDelay: number, increment: number): RetryDelayFn {
  * ```typescript
  * await s.task(() => fetchData(), {
  *   retry: {
- *     maxRetries: 5,
+ *     max: 5,
  *     delay: decorrelatedJitter({ initial: 100, max: 5000 })
  *   }
  * })

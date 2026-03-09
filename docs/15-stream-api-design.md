@@ -248,7 +248,7 @@ const cleaned = new Stream(source, s)
 ```typescript
 // Retry on failure with delay
 const retried = new Stream(unreliableSource, s)
-  .retry({ maxRetries: 3, delay: 100 });
+  .retry({ max: 3, delay: 100 });
 ```
 
 ## Combining Streams

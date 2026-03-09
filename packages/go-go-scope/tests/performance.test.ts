@@ -157,7 +157,7 @@ describe("performance", () => {
 		for (let i = 0; i < iterations; i++) {
 			await using s = scope();
 			await s.task(() => Promise.resolve(42), {
-				retry: { maxRetries: 1, delay: 0 },
+				retry: { max: 1, delay: 0 },
 			});
 		}
 		const scopeDuration = performance.now() - scopeStart;

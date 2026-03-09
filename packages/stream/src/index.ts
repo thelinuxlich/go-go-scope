@@ -2721,10 +2721,10 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 	 * Retry the stream on failure with configurable delay.
 	 * Eager - retries immediately on failure.
 	 */
-	retry(options?: { maxRetries?: number; delay?: number }): Stream<T> {
+	retry(options?: { max?: number; delay?: number }): Stream<T> {
 		const self = this;
 		const scope = this.scope;
-		const maxRetries = options?.maxRetries ?? 3;
+		const max = options?.max ?? 3;
 		const delay = options?.delay ?? 0;
 
 		return new Stream<T>(
@@ -2739,7 +2739,7 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 						return; // Success - we're done
 					} catch (err) {
 						attempt++;
-						if (attempt > maxRetries) {
+						if (attempt > max) {
 							throw err;
 						}
 						if (delay > 0) {

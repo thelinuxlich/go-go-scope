@@ -115,7 +115,7 @@ console.log("\n2️⃣  WebSocket with auto-reconnect:");
 
 	const [err, ws] = await s.task(
 		async () => connectWithRetry(),
-		{ retry: { maxRetries: 2, delay: 500 } },
+		{ retry: { max: 2, delay: 500 } },
 	);
 
 	if (err) {

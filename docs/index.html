@@ -887,7 +887,7 @@
             <section class="hero" id="introduction">
                 <div class="hero-badge">
                     <span>✨</span>
-                    <span>v2.7.0</span>
+                    <span>v2.8.0</span>
                     <span>•</span>
                     <span>TypeScript 5.2+</span>
                     <span>•</span>
@@ -1723,14 +1723,20 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
   
   <span class="comment">/** Retry configuration */</span>
   retry?: {
-    maxRetries?: <span class="type">number</span>      <span class="comment">// Default: 3</span>
+    max?: <span class="type">number</span>              <span class="comment">// Max attempts (default: 3)</span>
     delay?: <span class="type">number</span> | <span class="type">RetryDelayFn</span>  <span class="comment">// Delay between retries</span>
-    retryCondition?: (error: <span class="type">unknown</span>) => <span class="type">boolean</span>
+    <span class="keyword">if</span>?: (error: <span class="type">unknown</span>) => <span class="type">boolean</span>  <span class="comment">// Only retry matching errors</span>
     onRetry?: (error: <span class="type">unknown</span>, attempt: <span class="type">number</span>) => <span class="type">void</span>
   } | <span class="type">"exponential"</span> | <span class="type">"linear"</span> | <span class="type">"fixed"</span>
   
   <span class="comment">/** Task timeout in milliseconds */</span>
   timeout?: <span class="type">number</span>
+  
+  <span class="comment">/** Per-task circuit breaker (overrides scope-level). v2.8.0+ */</span>
+  circuitBreaker?: <span class="type">CircuitBreakerOptions</span>
+  
+  <span class="comment">/** Task priority for concurrency queue (higher = first). v2.8.0+ */</span>
+  priority?: <span class="type">number</span>
   
   <span class="comment">/** Cleanup function after task completes */</span>
   onCleanup?: () => <span class="type">void</span> | <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
@@ -2217,6 +2223,10 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
   fn: (...args: Args) => <span class="type">Promise</span>&lt;T&gt;,
   options?: <span class="type">ThrottleOptions</span>
 ): (...args: Args) => <span class="type">Promise</span>&lt;<span class="type">Result</span>&lt;<span class="type">unknown</span>, T&gt;&gt;</code></pre>
+
+    <h5 id="scope-delay" class="section-anchor"><code>scope.delay(ms)</code> <span style="color: var(--primary);">v2.8.0+</span></h5>
+    <p>Delay for specified milliseconds. Respects cancellation.</p>
+    <pre><code><span class="keyword">await</span> s.<span class="function">delay</span>(<span class="number">1000</span>)  <span class="comment">// Wait 1 second</span></code></pre>
 
     <h5 id="scope-select" class="section-anchor"><code>scope.select(cases, options?)</code></h5>
     <p>Go-style select statement for channel operations.</p>
@@ -3203,7 +3213,7 @@ worker.<span class="function">onSchedule</span>(<span class="string">"regular-jo
   idempotency?: <span class="type">IdempotencyProvider</span>
 }</code></pre>
 
-    <h4 id="cloudflare-do-persistence" class="section-anchor"><code>@go-go-scope/persistence-cloudflare-do</code> <span style="color: var(--primary);">(v2.7.0+)</span></h4>
+    <h4 id="cloudflare-do-persistence" class="section-anchor"><code>@go-go-scope/persistence-cloudflare-do</code> <span style="color: var(--primary);">(v2.8.0+)</span></h4>
     <p>Cloudflare Durable Objects persistence adapter for edge computing.</p>
     <pre><code><span class="keyword">import</span> { DurableObjectAdapter } <span class="keyword">from</span> <span class="string">'@go-go-scope/persistence-cloudflare-do'</span>
 
@@ -3336,7 +3346,7 @@ console.<span class="function">log</span>(report.<span class="function">statisti
   ]
 })</code></pre>
 
-    <h4 id="visualizer-plugin" class="section-anchor"><code>@go-go-scope/plugin-visualizer</code> <span style="color: var(--primary);">(v2.7.0+)</span></h4>
+    <h4 id="visualizer-plugin" class="section-anchor"><code>@go-go-scope/plugin-visualizer</code> <span style="color: var(--primary);">(v2.8.0+)</span></h4>
     <p>Real-time WebSocket dashboard for monitoring concurrent operations.</p>
     <pre><code><span class="keyword">import</span> { visualizerPlugin, VisualizerDashboard } <span class="keyword">from</span> <span class="string">'@go-go-scope/plugin-visualizer'</span>
 
@@ -3490,7 +3500,7 @@ app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) =
   ctx.<span class="function">body</span> = err ? { error: err.<span class="function">message</span> } : user
 })</code></pre>
 
-    <h4 id="adapter-react" class="section-anchor"><code>@go-go-scope/adapter-react</code> <span style="color: var(--primary);">(v2.7.0+)</span></h4>
+    <h4 id="adapter-react" class="section-anchor"><code>@go-go-scope/adapter-react</code> <span style="color: var(--primary);">(v2.8.0+)</span></h4>
     <pre><code><span class="keyword">import</span> { useTask, useChannel, useParallel, usePolling } <span class="keyword">from</span> <span class="string">'@go-go-scope/adapter-react'</span>
 
 <span class="comment">// Fetch data with automatic cleanup</span>
@@ -3522,7 +3532,7 @@ app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) =
   <span class="keyword">return</span> &lt;<span class="type">PriceTicker</span> price={price} /&gt;
 }</code></pre>
 
-    <h4 id="adapter-vue" class="section-anchor"><code>@go-go-scope/adapter-vue</code> <span style="color: var(--primary);">(v2.7.0+)</span></h4>
+    <h4 id="adapter-vue" class="section-anchor"><code>@go-go-scope/adapter-vue</code> <span style="color: var(--primary);">(v2.8.0+)</span></h4>
     <pre><code><span class="keyword">import</span> { useTask, useChannel, useParallel } <span class="keyword">from</span> <span class="string">'@go-go-scope/adapter-vue'</span>
 
 <span class="comment">// Composables for Vue 3</span>
@@ -3552,7 +3562,7 @@ app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) =
   }
 }</code></pre>
 
-    <h4 id="adapter-svelte" class="section-anchor"><code>@go-go-scope/adapter-svelte</code> <span style="color: var(--primary);">(v2.7.0+)</span></h4>
+    <h4 id="adapter-svelte" class="section-anchor"><code>@go-go-scope/adapter-svelte</code> <span style="color: var(--primary);">(v2.8.0+)</span></h4>
     <pre><code><span class="keyword">import</span> { createTask, createChannel, createPolling } <span class="keyword">from</span> <span class="string">'@go-go-scope/adapter-svelte'</span>
 
 <span class="comment">// Svelte 5 runes/store integration</span>
@@ -3672,6 +3682,7 @@ app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) =
             { title: 'scope.poll()', desc: 'Polling utility', href: '#scope-poll' },
             { title: 'scope.debounce()', desc: 'Debounce function', href: '#scope-debounce' },
             { title: 'scope.throttle()', desc: 'Throttle function', href: '#scope-throttle' },
+            { title: 'scope.delay()', desc: 'Delay with cancellation', href: '#scope-delay' },
             { title: 'scope.select()', desc: 'Select statement', href: '#scope-select' },
             { title: 'scope.broadcast()', desc: 'Create broadcast channel', href: '#scope-broadcast' },
             { title: 'scope.priorityChannel()', desc: 'Priority channel', href: '#scope-prioritychannel' },

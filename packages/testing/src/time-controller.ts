@@ -232,7 +232,7 @@ export function createTimeController(): TimeController {
  *     attempts++
  *     if (attempts < 3) throw new Error('fail')
  *     return 'success'
- *   }, { retry: { maxRetries: 3, delay: 1000 } })
+ *   }, { retry: { max: 3, delay: 1000 } })
  *
  *   // Fast forward through retries
  *   time.advance(1000) // First retry

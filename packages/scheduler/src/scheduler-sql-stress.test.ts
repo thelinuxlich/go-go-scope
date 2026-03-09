@@ -342,7 +342,7 @@ describe("SQL Stress Tests - Locking & Consistency", () => {
 
 		await admin.createSchedule("lock-timeout-test", {
 			interval: 100,
-			maxRetries: 3,
+			max: 3,
 			retryDelay: 50,
 		});
 

@@ -236,7 +236,7 @@ describe("opentelemetry plugin", () => {
 
 		await s.task(() => Promise.resolve("success"), {
 			otel: { name: "retryable-task" },
-			retry: { maxRetries: 3 },
+			retry: { max: 3 },
 		});
 
 		const taskSpan = spans.find((s) => s.name === "retryable-task");

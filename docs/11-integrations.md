@@ -83,21 +83,21 @@ if (err) {
 - **Type narrowing** - Inside each `case`, the error is fully typed with the `_tag` discriminator
 - **Refactoring safety** - Adding a new error type causes TypeScript errors where not handled
 
-### Alternative: Using goTryRaw Directly
+### Alternative: Using go Directly
 
-If you don't need scope's automatic signal propagation, use `goTryRaw` directly on raw operations:
+If you don't need scope's automatic signal propagation, use `go` directly on raw operations:
 
 ```typescript
 import { scope } from 'go-go-scope'
-import { taggedError, success, failure, goTryRaw } from 'go-go-try'
+import { taggedError, success, failure, go } from 'go-go-try'
 
 const DatabaseError = taggedError('DatabaseError')
 
 async function fetchUser(id: string) {
   await using s = scope({ timeout: 5000 })
   
-  // Use goTryRaw on raw operations (not s.task)
-  const [err, user] = await goTryRaw(
+  // Use go on raw operations (not s.task)
+  const [err, user] = await go(
     () => queryDatabase(id),  // Raw operation
     DatabaseError
   )
@@ -107,7 +107,7 @@ async function fetchUser(id: string) {
 }
 ```
 
-> **Note:** `goTryRaw(s.task(...))` doesn't work because `s.task()` already returns `Result<unknown, T>`, which would cause double-wrapping.
+> **Note:** `go(s.task(...))` doesn't work because `s.task()` already returns `Result<unknown, T>`, which would cause double-wrapping.
 
 ### Using goTry Inside Tasks
 
@@ -115,7 +115,7 @@ Use `goTry` inside big tasks to handle individual operations without breaking th
 
 ```typescript
 import { scope } from 'go-go-scope'
-import { goTry, goTryRaw } from 'go-go-try'
+import { goTry, go } from 'go-go-try'
 
 async function processOrder(orderId: string) {
   await using s = scope({ timeout: 30000 })
@@ -138,7 +138,7 @@ async function processOrder(orderId: string) {
     }
     
     // Fetch user with raw error for logging
-    const [userErr, user] = await goTryRaw(
+    const [userErr, user] = await go(
       services.db.query('SELECT * FROM users WHERE id = ?', [orderData.userId])
     )
     
@@ -183,21 +183,21 @@ async function processOrder(orderId: string) {
 }
 ```
 
-### goTry vs goTryRaw
+### goTry vs go
 
 - **`goTry`** - Returns error as `string` (error message)
-- **`goTryRaw`** - Returns error as `Error` object (with stack trace)
+- **`go`** - Returns error as `Error` object (with stack trace)
 
 ```typescript
-import { goTry, goTryRaw } from 'go-go-try'
+import { goTry, go } from 'go-go-try'
 
 await s.task(async () => {
   // goTry - error is string | undefined (good for simple checks)
   const [err, value] = goTry(() => JSON.parse(data))
   if (err) console.log('Parse error:', err) // "Unexpected token..."
   
-  // goTryRaw - error is Error | undefined (good for logging)
-  const [err, value] = goTryRaw(() => riskyOperation())
+  // go - error is Error | undefined (good for logging)
+  const [err, value] = go(() => riskyOperation())
   if (err) {
     console.error(err.message)
     console.error(err.stack) // Full stack trace
@@ -1398,7 +1398,7 @@ app.get('/data', async (req, res) => {
   const [err, data] = await req.scope.task(
     () => fetchData(),
     { 
-      retry: { maxRetries: 3 },
+      retry: { max: 3 },
       timeout: 5000 
     }
   )

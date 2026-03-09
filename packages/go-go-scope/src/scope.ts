@@ -679,11 +679,22 @@ export class Scope<
 					signal.addEventListener("abort", abortHandler, { once: true });
 				});
 
-				// Apply circuit breaker if configured
+				// Apply circuit breaker if configured (task-level takes precedence)
 				let result: T;
+				let taskCircuitBreaker: CircuitBreaker | undefined;
 				try {
-					if (this.scopeCircuitBreaker) {
-						result = await this.scopeCircuitBreaker.execute(() =>
+					// Create task-level circuit breaker if configured
+					if (options?.circuitBreaker) {
+						taskCircuitBreaker = new CircuitBreaker(
+							options.circuitBreaker,
+							signal,
+						);
+					}
+
+					const cb = taskCircuitBreaker || this.scopeCircuitBreaker;
+
+					if (cb) {
+						result = await cb.execute(() =>
 							Promise.race([
 								this.executeWithRetry(callFn, signal, options?.retry),
 								abortPromise,
@@ -699,6 +710,10 @@ export class Scope<
 					// Clean up abort listener to prevent unhandled rejections
 					if (abortHandler) {
 						signal.removeEventListener("abort", abortHandler);
+					}
+					// Cleanup task-level circuit breaker
+					if (taskCircuitBreaker) {
+						await taskCircuitBreaker[Symbol.asyncDispose]();
 					}
 				}
 
@@ -788,7 +803,7 @@ export class Scope<
 					if (this.concurrencySemaphore) {
 						const fnPromise = this.concurrencySemaphore.acquire(async () => {
 							return wrappedFn(parentSignal);
-						});
+						}, options?.priority ?? 0);
 						result = timeoutPromise
 							? await Promise.race([fnPromise, timeoutPromise])
 							: await fnPromise;
@@ -1312,14 +1327,14 @@ export class Scope<
 
 		// Handle string retry options by converting to object
 		let retryConfig: {
-			maxRetries?: number;
+			max?: number;
 			delay?: number | import("./types.js").RetryDelayFn;
-			retryCondition?: (error: unknown) => boolean;
+			if?: (error: unknown) => boolean;
 			onRetry?: (error: unknown, attempt: number) => void;
 		};
 		if (typeof retry === "string") {
 			retryConfig = {
-				maxRetries: 3,
+				max: 3,
 				delay:
 					retry === "exponential"
 						? exponentialBackoff()
@@ -1331,14 +1346,14 @@ export class Scope<
 			retryConfig = retry;
 		}
 
-		const maxRetries = retryConfig.maxRetries ?? 3;
+		const max = retryConfig.max ?? 3;
 		const delayFn = retryConfig.delay ?? exponentialBackoff();
-		const retryCondition = retryConfig.retryCondition;
+		const retryIf = retryConfig.if;
 		const retryCallback = retryConfig.onRetry;
 
 		let lastError: unknown;
 
-		for (let attempt = 0; attempt <= maxRetries; attempt++) {
+		for (let attempt = 0; attempt <= max; attempt++) {
 			if (signal.aborted) {
 				throw new AbortError(signal.reason);
 			}
@@ -1348,11 +1363,11 @@ export class Scope<
 			} catch (error) {
 				lastError = error;
 
-				if (attempt === maxRetries) {
+				if (attempt === max) {
 					throw error;
 				}
 
-				if (retryCondition && !retryCondition(error)) {
+				if (retryIf && !retryIf(error)) {
 					throw error;
 				}
 
@@ -1699,6 +1714,43 @@ export class Scope<
 		options?: ThrottleOptions,
 	): (...args: Args) => Promise<Result<unknown, T>> {
 		return throttleFn(this, fn, options);
+	}
+
+	/**
+	 * Delay execution for a specified number of milliseconds.
+	 * Automatically cancelled when the scope is disposed.
+	 *
+	 * @param ms - Number of milliseconds to delay
+	 * @returns Promise that resolves after the delay
+	 * @throws AbortError if the scope is cancelled during the delay
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * console.log('Start')
+	 * await s.delay(1000)
+	 * console.log('After 1 second')
+	 * ```
+	 */
+	delay(ms: number): Promise<void> {
+		return new Promise((resolve, reject) => {
+			if (this.abortController.signal.aborted) {
+				reject(new AbortError(this.abortController.signal.reason));
+				return;
+			}
+
+			const timeoutId = setTimeout(resolve, ms);
+
+			const abortHandler = () => {
+				clearTimeout(timeoutId);
+				reject(new AbortError(this.abortController.signal.reason));
+			};
+
+			this.abortController.signal.addEventListener("abort", abortHandler, {
+				once: true,
+			});
+		});
 	}
 
 	/**

@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/adapter-cloudflare-workers",
-	"version": "2.7.1",
+	"version": "2.8.0",
 	"description": "Cloudflare Workers adapter for go-go-scope",
 	"type": "module",
 	"exports": {

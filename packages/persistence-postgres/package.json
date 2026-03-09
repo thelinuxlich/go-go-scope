@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/persistence-postgres",
-	"version": "2.7.1",
+	"version": "2.8.0",
 	"description": "PostgreSQL persistence adapter for go-go-scope - distributed locks and circuit breaker state",
 	"type": "module",
 	"main": "./dist/index.mjs",

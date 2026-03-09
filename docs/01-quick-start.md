@@ -87,7 +87,7 @@ await using s = scope()
 
 const [err, result] = await s.task(
   () => fetchData(),
-  { retry: { maxRetries: 3, delay: 1000 } }
+  { retry: { max: 3, delay: 1000 } }
 )
 ```
 

@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/testing",
-	"version": "2.7.1",
+	"version": "2.8.0",
 	"description": "Testing utilities for go-go-scope - mocks, spies, and time control",
 	"type": "module",
 	"main": "./dist/index.mjs",

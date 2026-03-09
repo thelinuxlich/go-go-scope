@@ -76,7 +76,7 @@ function createHttpClient(baseUrl: string): HttpClient {
         },
         {
           retry: {
-            maxRetries: 3,
+            max: 3,
             delay: exponentialBackoff({ initial: 100, max: 5000, jitter: 0.3 })
           }
         }
@@ -101,7 +101,7 @@ function createHttpClient(baseUrl: string): HttpClient {
         },
         {
           retry: {
-            maxRetries: 3,
+            max: 3,
             delay: exponentialBackoff({ initial: 100, max: 5000 })
           }
         }
@@ -200,7 +200,7 @@ class WebSocketManager {
       () => connectWebSocket(),
       {
         retry: {
-          maxRetries: 10,
+          max: 10,
           delay: exponentialBackoff({ initial: 1000, max: 30000 })
         }
       }

@@ -40,7 +40,7 @@ export interface UseTaskOptions<T> {
 	name?: string;
 	immediate?: boolean;
 	timeout?: number;
-	retry?: { maxRetries?: number; delay?: number };
+	retry?: { max?: number; delay?: number };
 	initialData?: T;
 }
 

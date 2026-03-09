@@ -55,7 +55,7 @@ describe("v2.3.0 Features", () => {
 					logger.info("hello from task");
 					return "done";
 				},
-				{ otel: { name: "my-task" } },
+				{ id: "my-task" },
 			);
 
 			const logEntry = logs.find((l) => l.message.includes("hello from task"));

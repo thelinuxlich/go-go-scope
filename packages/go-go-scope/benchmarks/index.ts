@@ -337,7 +337,7 @@ async function benchRetry(): Promise<BenchmarkResult[]> {
         },
         {
           retry: {
-            maxRetries: 3,
+            max: 3,
             delay: 0, // No delay for benchmark
           },
         }
@@ -358,7 +358,7 @@ async function benchRetry(): Promise<BenchmarkResult[]> {
         },
         {
           retry: {
-            maxRetries: 3,
+            max: 3,
             delay: exponentialBackoff({ initial: 1, max: 10 }),
           },
         }
@@ -666,7 +666,7 @@ async function benchRetryStrategies(): Promise<BenchmarkResult[]> {
         },
         {
           retry: {
-            maxRetries: 3,
+            max: 3,
             delay: exponentialBackoff({ initial: 100, max: 1000 }),
           },
         }

@@ -668,7 +668,7 @@ describe("task() with retry option", () => {
 				}
 				return Promise.resolve("success");
 			},
-			{ retry: { maxRetries: 3 } },
+			{ retry: { max: 3 } },
 		);
 		const [err, result] = await t;
 
@@ -686,7 +686,7 @@ describe("task() with retry option", () => {
 				attempts++;
 				return Promise.reject(new Error(`attempt ${attempts}`));
 			},
-			{ retry: { maxRetries: 2 } },
+			{ retry: { max: 2 } },
 		);
 		const [err, result] = await t;
 
@@ -713,8 +713,8 @@ describe("task() with retry option", () => {
 			},
 			{
 				retry: {
-					maxRetries: 3,
-					retryCondition: (error) => error instanceof RetryableError,
+					max: 3,
+					if: (error) => error instanceof RetryableError,
 				},
 			},
 		);
@@ -741,7 +741,7 @@ describe("task() with retry option", () => {
 			},
 			{
 				retry: {
-					maxRetries: 3,
+					max: 3,
 					onRetry: (error, attempt) => {
 						retryCallbacks.push({ error, attempt });
 					},
@@ -768,7 +768,7 @@ describe("task() with retry option", () => {
 				}
 				return Promise.resolve("success");
 			},
-			{ retry: { maxRetries: 3, delay: 50 } },
+			{ retry: { max: 3, delay: 50 } },
 		);
 		const [err, result] = await t;
 
@@ -794,7 +794,7 @@ describe("task() with retry option", () => {
 			},
 			{
 				retry: {
-					maxRetries: 4,
+					max: 4,
 					delay: (attempt) => {
 						delays.push(attempt);
 						return attempt * 10;
@@ -812,7 +812,7 @@ describe("task() with retry option", () => {
 		await using s = scope({ signal: controller.signal });
 
 		const t = s.task(() => Promise.reject(new Error("fail")), {
-			retry: { maxRetries: 5, delay: 1000 },
+			retry: { max: 5, delay: 1000 },
 		});
 
 		setTimeout(() => controller.abort("cancelled"), 50);
@@ -825,13 +825,54 @@ describe("task() with retry option", () => {
 		await using s = scope({ timeout: 200 });
 
 		const t = s.task(() => Promise.reject(new Error("fail")), {
-			retry: { maxRetries: 10, delay: 100 },
+			retry: { max: 10, delay: 100 },
 		});
 		const [err] = await t;
 		expect(err).toBeInstanceOf(Error);
 		expect((err as Error).message).toContain("timeout");
 	});
 
+	test("retry with `if` condition - only retries matching errors", async () => {
+		await using s = scope();
+		let attempts = 0;
+
+		class RetryableError extends Error {}
+		class FatalError extends Error {}
+
+		const [err] = await s.task(
+			() => {
+				attempts++;
+				if (attempts === 1) {
+					return Promise.reject(new RetryableError("retry me"));
+				}
+				return Promise.reject(new FatalError("fatal"));
+			},
+			{
+				retry: {
+					max: 3,
+					if: (error) => error instanceof RetryableError,
+				},
+			},
+		);
+
+		expect((err as Error).message).toBe("fatal");
+		expect(attempts).toBe(2);
+	});
+
+	test("retry retries all errors if `if` not specified", async () => {
+		await using s = scope();
+		let attempts = 0;
+
+		const [err] = await s.task(
+			() => {
+				attempts++;
+				throw new Error(`attempt ${attempts}`);
+			},
+			{ retry: { max: 2 } },
+		);
+
+		expect(attempts).toBe(3); // Initial + 2 retries
+	});
 });
 
 describe("errorClass option", () => {
@@ -983,7 +1024,7 @@ describe("errorClass option", () => {
 			},
 			{
 				errorClass: RetryableError,
-				retry: { maxRetries: 2 },
+				retry: { max: 2 },
 			},
 		);
 
@@ -1276,7 +1317,7 @@ describe("systemErrorClass option", () => {
 			},
 			{
 				systemErrorClass: SystemError,
-				retry: { maxRetries: 2 },
+				retry: { max: 2 },
 			},
 		);
 

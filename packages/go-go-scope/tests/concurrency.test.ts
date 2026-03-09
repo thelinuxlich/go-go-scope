@@ -233,6 +233,37 @@ describe("Semaphore", () => {
 		expect(sem.waiting).toBe(0);
 		expect(sem.totalPermits).toBe(3);
 	});
+
+	test("priority queue - higher priority acquires first", async () => {
+		const sem = new Semaphore(1);
+		const executionOrder: number[] = [];
+
+		// Acquire first (no priority needed)
+		const blocker = sem.acquire(async () => {
+			await new Promise(r => setTimeout(r, 50));
+			executionOrder.push(0);
+		});
+
+		// Wait for blocker to acquire
+		await new Promise(r => setTimeout(r, 0));
+
+		// Queue multiple with different priorities
+		const t1 = sem.acquire(async () => {
+			executionOrder.push(1);
+		}, 1);
+
+		const t2 = sem.acquire(async () => {
+			executionOrder.push(2);
+		}, 10); // Highest
+
+		const t3 = sem.acquire(async () => {
+			executionOrder.push(3);
+		}, 5);
+
+		await Promise.all([blocker, t1, t2, t3]);
+
+		expect(executionOrder).toEqual([0, 2, 3, 1]);
+	});
 });
 
 describe("CircuitBreaker", () => {
@@ -331,6 +362,42 @@ describe("CircuitBreaker", () => {
 
 		// Circuit is now open - subsequent calls immediately use fallback
 		expect(await fetchWithFallback()).toBe("fallback");
+	});
+
+	test("per-task circuit breaker overrides scope-level", async () => {
+		await using s = scope({
+			circuitBreaker: { failureThreshold: 10 } // Scope-level: very high
+		});
+
+		let attempts = 0;
+
+		// Task with its own circuit breaker
+		const [err] = await s.task(
+			async () => {
+				attempts++;
+				throw new Error("fail");
+			},
+			{ circuitBreaker: { failureThreshold: 2 } }
+		);
+
+		expect(err).toBeInstanceOf(Error);
+		expect(attempts).toBe(1); // CB created fresh per task
+	});
+
+	test("per-task circuit breaker is isolated between tasks", async () => {
+		await using s = scope();
+
+		const cb1 = { failureThreshold: 2, resetTimeout: 1000 };
+
+		let task1Attempts = 0;
+
+		// Each task gets its own fresh circuit breaker instance
+		await s.task(async () => { task1Attempts++; throw new Error("fail"); }, { circuitBreaker: cb1 });
+		await s.task(async () => { task1Attempts++; throw new Error("fail"); }, { circuitBreaker: cb1 });
+		await s.task(async () => { task1Attempts++; throw new Error("fail"); }, { circuitBreaker: cb1 });
+
+		// Each task ran once, CB state is not shared
+		expect(task1Attempts).toBe(3);
 	});
 });
 
@@ -644,5 +711,67 @@ describe("Integration: Real-world scenarios", () => {
 		expect(results).toHaveLength(5);
 		expect(maxConcurrent).toBeLessThanOrEqual(2);
 		expect(maxConcurrent).toBeGreaterThan(1); // Should have some concurrency
+	});
+
+	test("task priority with concurrency - higher priority executes first", async () => {
+		await using s = scope({ concurrency: 1 });
+
+		const executionOrder: number[] = [];
+
+		// First, occupy the semaphore
+		const blockingTask = s.task(async () => {
+			await new Promise(r => setTimeout(r, 50));
+			executionOrder.push(0);
+		});
+
+		// Wait a tick to ensure blocking task acquires semaphore
+		await new Promise(r => setTimeout(r, 0));
+
+		// Now queue 3 tasks with different priorities
+		const t1 = s.task(async () => {
+			executionOrder.push(1);
+			return 1;
+		}, { priority: 1 });
+
+		const t2 = s.task(async () => {
+			executionOrder.push(2);
+			return 2;
+		}, { priority: 10 }); // Highest priority
+
+		const t3 = s.task(async () => {
+			executionOrder.push(3);
+			return 3;
+		}, { priority: 5 });
+
+		await Promise.all([blockingTask, t1, t2, t3]);
+
+		// Blocking task runs first (already acquired)
+		// Then: Task 2 (priority 10), Task 3 (priority 5), Task 1 (priority 1)
+		expect(executionOrder).toEqual([0, 2, 3, 1]);
+	});
+
+	test("task priority default is 0", async () => {
+		await using s = scope({ concurrency: 1 });
+
+		const executionOrder: string[] = [];
+
+		// Block first
+		const blocker = s.task(async () => {
+			await new Promise(r => setTimeout(r, 50));
+		});
+		await new Promise(r => setTimeout(r, 0));
+
+		const t1 = s.task(async () => {
+			executionOrder.push("default");
+		}, {});
+
+		const t2 = s.task(async () => {
+			executionOrder.push("high");
+		}, { priority: 5 });
+
+		await Promise.all([blocker, t1, t2]);
+
+		// Higher priority task should execute first after blocker
+		expect(executionOrder).toEqual(["high", "default"]);
 	});
 });

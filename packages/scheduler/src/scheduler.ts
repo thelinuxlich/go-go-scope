@@ -591,7 +591,7 @@ export class Scheduler<
 			successCount: 0,
 			failureCount: 0,
 			options: {
-				maxRetries: options.maxRetries ?? 3,
+				max: options.max ?? 3,
 				retryDelay: options.retryDelay ?? 1000,
 				timeout: options.timeout ?? 30000,
 				concurrent: options.concurrent ?? false,
@@ -704,7 +704,7 @@ export class Scheduler<
 			payload: options.defaultPayload ?? existing.payload,
 			updatedAt: new Date(),
 			options: {
-				maxRetries: options.maxRetries ?? existing.options?.maxRetries ?? 3,
+				max: options.max ?? existing.options?.max ?? 3,
 				retryDelay: options.retryDelay ?? existing.options?.retryDelay ?? 1000,
 				timeout: options.timeout ?? existing.options?.timeout ?? 30000,
 				concurrent: options.concurrent ?? existing.options?.concurrent ?? false,
@@ -1001,7 +1001,7 @@ export class Scheduler<
 			createdAt: new Date(),
 			runAt: options.delay ? new Date(Date.now() + options.delay) : new Date(),
 			retryCount: 0,
-			maxRetries: schedule.options?.maxRetries ?? 3,
+			max: schedule.options?.max ?? 3,
 		};
 
 		await this.storage.saveJob(job);
@@ -1487,8 +1487,8 @@ export class Scheduler<
 		job.error = error.message;
 		job.retryCount++;
 
-		const maxRetries = schedule.options?.maxRetries ?? job.maxRetries ?? 3;
-		const willRetry = job.retryCount < maxRetries;
+		const max = schedule.options?.max ?? job.max ?? 3;
+		const willRetry = job.retryCount < max;
 
 		if (willRetry) {
 			const baseDelay = schedule.options?.retryDelay ?? 1000;
@@ -1504,14 +1504,14 @@ export class Scheduler<
 				"retry scheduled: jobId=%s, attempt=%d/%d, delay=%dms",
 				job.id,
 				job.retryCount,
-				maxRetries,
+				max,
 				delay,
 			);
 			this.options.logger?.warn("Job retry scheduled", {
 				jobId: job.id,
 				scheduleName: job.scheduleName,
 				attempt: job.retryCount,
-				maxRetries,
+				max,
 				delay,
 				error: error.message,
 			});

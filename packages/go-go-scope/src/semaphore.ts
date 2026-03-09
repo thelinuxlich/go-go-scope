@@ -22,14 +22,17 @@
  * ])
  * ```
  */
+interface QueueItem {
+	resolve: () => void;
+	reject: (reason: unknown) => void;
+	priority?: number;
+}
+
 /* #__PURE__ */
 export class Semaphore implements AsyncDisposable {
 	private permits: number;
 	private initialPermits: number;
-	private queue: Array<{
-		resolve: () => void;
-		reject: (reason: unknown) => void;
-	}> = [];
+	private queue: QueueItem[] = [];
 	private aborted = false;
 	private abortReason: unknown;
 
@@ -54,9 +57,11 @@ export class Semaphore implements AsyncDisposable {
 	 * Acquire a permit and execute the function.
 	 * Blocks if no permits available.
 	 * Automatically releases permit when done.
+	 * @param fn - Function to execute with the permit
+	 * @param priority - Higher priority tasks are processed first (default: 0)
 	 */
-	async acquire<T>(fn: () => Promise<T>): Promise<T> {
-		await this.wait();
+	async acquire<T>(fn: () => Promise<T>, priority = 0): Promise<T> {
+		await this.wait(priority);
 		try {
 			return await fn();
 		} finally {
@@ -143,6 +148,7 @@ export class Semaphore implements AsyncDisposable {
 					clearTimeout(timeoutId);
 					resolve(false);
 				},
+				priority: 0,
 			});
 		});
 	}
@@ -212,8 +218,9 @@ export class Semaphore implements AsyncDisposable {
 
 	/**
 	 * Wait for a permit to become available.
+	 * @param priority - Higher priority tasks are processed first (default: 0)
 	 */
-	private wait(): Promise<void> {
+	private wait(priority = 0): Promise<void> {
 		if (this.aborted) {
 			return Promise.reject(this.abortReason);
 		}
@@ -229,7 +236,20 @@ export class Semaphore implements AsyncDisposable {
 			resolveSem = res;
 			rejectSem = rej;
 		});
-		this.queue.push({ resolve: resolveSem, reject: rejectSem });
+
+		// Insert into queue sorted by priority (higher first)
+		const item: QueueItem = {
+			resolve: resolveSem,
+			reject: rejectSem,
+			priority,
+		};
+		const index = this.queue.findIndex((q) => (q.priority ?? 0) < priority);
+		if (index === -1) {
+			this.queue.push(item);
+		} else {
+			this.queue.splice(index, 0, item);
+		}
+
 		return promise;
 	}
 
@@ -267,7 +287,7 @@ export class Semaphore implements AsyncDisposable {
 				resolveSem = res;
 				rejectSem = rej;
 			});
-			this.queue.push({ resolve: resolveSem, reject: rejectSem });
+			this.queue.push({ resolve: resolveSem, reject: rejectSem, priority: 0 });
 			return promise;
 		};
 

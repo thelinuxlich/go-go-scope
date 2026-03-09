@@ -175,7 +175,7 @@ async function getCommand(scheduler: Scheduler, name: string) {
 	print(`  Next Run:  ${formatDate(schedule.nextRunAt)}`);
 	print(`  Total Jobs: ${schedule.totalJobs || 0}`);
 	print(`  Options:`);
-	print(`    Max Retries:  ${schedule.options?.maxRetries ?? 3}`);
+	print(`    Max Retries:  ${schedule.options?.max ?? 3}`);
 	print(`    Retry Delay:  ${schedule.options?.retryDelay ?? 1000}ms`);
 	print(`    Timeout:      ${schedule.options?.timeout ?? 30000}ms`);
 	print(`    Concurrent:   ${schedule.options?.concurrent ?? false}`);
@@ -259,9 +259,9 @@ async function createCommand(
 		cron,
 		interval,
 		timezone,
-		maxRetries:
-			typeof args.maxRetries === "string"
-				? parseInt(args.maxRetries, 10)
+		max:
+			typeof args.max === "string"
+				? parseInt(args.max, 10)
 				: undefined,
 		retryDelay:
 			typeof args.retryDelay === "string"
@@ -294,9 +294,9 @@ async function updateCommand(
 				: typeof args.tz === "string"
 					? args.tz
 					: undefined,
-		maxRetries:
-			typeof args.maxRetries === "string"
-				? parseInt(args.maxRetries, 10)
+		max:
+			typeof args.max === "string"
+				? parseInt(args.max, 10)
 				: undefined,
 		retryDelay:
 			typeof args.retryDelay === "string"
@@ -394,7 +394,7 @@ async function main() {
 			interval: { type: "string" },
 			timezone: { type: "string" },
 			tz: { type: "string" },
-			maxRetries: { type: "string" },
+			max: { type: "string" },
 			retryDelay: { type: "string" },
 			timeout: { type: "string" },
 			concurrent: { type: "string" },
@@ -428,7 +428,7 @@ ${colors.bright}Options:${colors.reset}
   --cron            Cron expression (e.g., "0 9 * * *")
   --interval        Interval in milliseconds
   -tz, --timezone   Timezone (e.g., America/New_York)
-  --maxRetries      Maximum retry attempts
+  --max      Maximum retry attempts
   --retryDelay      Delay between retries (ms)
   --timeout         Job timeout (ms)
   --concurrent      Allow concurrent execution (true/false)

@@ -134,7 +134,7 @@ import { exponentialBackoff } from 'go-go-scope'
 
 await s.task(() => fetchData(), {
   retry: {
-    maxRetries: 5,
+    max: 5,
     delay: exponentialBackoff({ initial: 100, max: 5000 })
   }
 })

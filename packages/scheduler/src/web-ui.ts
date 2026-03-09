@@ -636,7 +636,7 @@ function createWebUIHTML(basePath: string): string {
           document.getElementById('schedule-name').value = s.name;
           document.getElementById('schedule-name').disabled = true;
           document.getElementById('schedule-timezone').value = s.timezone || '';
-          document.getElementById('schedule-retries').value = s.options?.maxRetries ?? 3;
+          document.getElementById('schedule-retries').value = s.options?.max ?? 3;
           document.getElementById('schedule-timeout').value = s.options?.timeout ?? 30000;
           
           if (s.cron) {
@@ -663,7 +663,7 @@ function createWebUIHTML(basePath: string): string {
       const name = document.getElementById('schedule-name').value;
       const type = document.getElementById('schedule-type').value;
       const timezone = document.getElementById('schedule-timezone').value;
-      const maxRetries = parseInt(document.getElementById('schedule-retries').value);
+      const max = parseInt(document.getElementById('schedule-retries').value);
       const timeout = parseInt(document.getElementById('schedule-timeout').value);
       
       let payload = {};
@@ -677,7 +677,7 @@ function createWebUIHTML(basePath: string): string {
 
       const options = {
         timezone: timezone || undefined,
-        maxRetries,
+        max,
         timeout,
         defaultPayload: payload
       };

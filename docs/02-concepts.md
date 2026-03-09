@@ -366,7 +366,7 @@ const [err, user] = await s.task(
     },
     // Retry configuration
     retry: {
-      maxRetries: 3,
+      max: 3,
       delay: 1000,
       retryCondition: (err) => err instanceof NetworkError
     },
