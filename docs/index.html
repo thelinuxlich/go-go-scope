@@ -2228,6 +2228,76 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
     <p>Delay for specified milliseconds. Respects cancellation.</p>
     <pre><code><span class="keyword">await</span> s.<span class="function">delay</span>(<span class="number">1000</span>)  <span class="comment">// Wait 1 second</span></code></pre>
 
+    <h5 id="scope-every" class="section-anchor"><code>scope.every(intervalMs, fn)</code> <span style="color: var(--primary);">v2.8.0+</span></h5>
+    <p>Execute a function repeatedly at a fixed interval. Automatically cancelled when scope is disposed.</p>
+    <pre><code><span class="function">every</span>&lt;T&gt;(
+  intervalMs: <span class="type">number</span>,
+  fn: (ctx: { signal: <span class="type">AbortSignal</span> }) => <span class="type">Promise</span>&lt;<span class="type">void</span>&gt;
+): () => <span class="type">void</span></code></pre>
+    <p><strong>Returns:</strong> A stop function to cancel the interval early.</p>
+    <pre><code><span class="comment">// Check for updates every 5 seconds</span>
+<span class="keyword">const</span> stop = s.<span class="function">every</span>(<span class="number">5000</span>, <span class="keyword">async</span> ({ signal }) => {
+  <span class="keyword">const</span> updates = <span class="keyword">await</span> <span class="function">checkForUpdates</span>({ signal })
+  <span class="keyword">if</span> (updates.<span class="property">length</span> > <span class="number">0</span>) <span class="variable">console</span>.<span class="function">log</span>(<span class="string">'New updates:'</span>, updates)
+})
+
+<span class="comment">// Stop manually if needed</span>
+<span class="function">stop</span>()</code></pre>
+
+    <h5 id="scope-any" class="section-anchor"><code>scope.any(factories, options?)</code> <span style="color: var(--primary);">v2.8.0+</span></h5>
+    <p>Wait for the first successful result from multiple tasks. Similar to <code>Promise.any</code> but returns a Result tuple and cancels remaining tasks.</p>
+    <pre><code><span class="function">any</span>&lt;T&gt;(
+  factories: <span class="type">readonly</span> (() => <span class="type">Promise</span>&lt;T&gt;)[],
+  options?: { timeout?: <span class="type">number</span> }
+): <span class="type">Promise</span>&lt;<span class="type">Result</span>&lt;<span class="type">unknown</span>, T&gt;&gt;</code></pre>
+    <p>Returns the first successful result, or an aggregate error if all fail.</p>
+    <pre><code><span class="comment">// Try multiple sources, get first successful response</span>
+<span class="keyword">const</span> [err, response] = <span class="keyword">await</span> s.<span class="function">any</span>([
+  () => <span class="function">fetchFromPrimary</span>(),
+  () => <span class="function">fetchFromBackup1</span>(),
+  () => <span class="function">fetchFromBackup2</span>(),
+])
+
+<span class="comment">// With timeout</span>
+<span class="keyword">const</span> [err, data] = <span class="keyword">await</span> s.<span class="function">any</span>([
+  () => <span class="function">fetchFast</span>(),
+  () => <span class="function">fetchSlow</span>(),
+], { timeout: <span class="number">5000</span> })</code></pre>
+
+    <h5 id="scope-batch" class="section-anchor"><code>scope.batch(options)</code> <span style="color: var(--primary);">v2.8.0+</span></h5>
+    <p>Create a batch processor that accumulates items and processes them in batches. Useful for bulk operations like database inserts.</p>
+    <pre><code><span class="function">batch</span>&lt;T, R&gt;(options: {
+  size?: <span class="type">number</span>       <span class="comment">// Max items per batch (default: 100)</span>
+  timeout?: <span class="type">number</span>    <span class="comment">// Max ms to wait before flush (default: 1000)</span>
+  process: (items: T[]) => <span class="type">Promise</span>&lt;R&gt;
+}): <span class="type">Batch</span>&lt;T, R&gt;</code></pre>
+    <p><strong>Batch methods:</strong></p>
+    <ul>
+      <li><code>add(item)</code> - Add single item. Returns Result if batch flushes.</li>
+      <li><code>addMany(items)</code> - Add multiple items.</li>
+      <li><code>flush()</code> - Manually flush current batch.</li>
+      <li><code>stop()</code> - Stop and flush remaining items.</li>
+      <li><code>size</code> - Current number of items in batch.</li>
+    </ul>
+    <pre><code><span class="keyword">const</span> batcher = s.<span class="function">batch</span>({
+  size: <span class="number">100</span>,
+  timeout: <span class="number">5000</span>,
+  process: <span class="keyword">async</span> (users) => {
+    <span class="keyword">await</span> db.<span class="property">users</span>.<span class="function">insertMany</span>(users)
+    <span class="keyword">return</span> users.<span class="property">length</span>
+  }
+})
+
+<span class="comment">// Add items - they accumulate</span>
+<span class="keyword">await</span> batcher.<span class="function">add</span>({ name: <span class="string">'Alice'</span> })
+<span class="keyword">await</span> batcher.<span class="function">add</span>({ name: <span class="string">'Bob'</span> })
+
+<span class="comment">// Manually flush when needed</span>
+<span class="keyword">const</span> [err, count] = <span class="keyword">await</span> batcher.<span class="function">flush</span>()
+
+<span class="comment">// Or call stop() before scope disposal</span>
+<span class="keyword">await</span> batcher.<span class="function">stop</span>()</code></pre>
+
     <h5 id="scope-select" class="section-anchor"><code>scope.select(cases, options?)</code></h5>
     <p>Go-style select statement for channel operations.</p>
     <pre><code><span class="function">select</span>(
@@ -3683,6 +3753,9 @@ app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) =
             { title: 'scope.debounce()', desc: 'Debounce function', href: '#scope-debounce' },
             { title: 'scope.throttle()', desc: 'Throttle function', href: '#scope-throttle' },
             { title: 'scope.delay()', desc: 'Delay with cancellation', href: '#scope-delay' },
+            { title: 'scope.every()', desc: 'Interval execution', href: '#scope-every' },
+            { title: 'scope.any()', desc: 'First success', href: '#scope-any' },
+            { title: 'scope.batch()', desc: 'Batch processing', href: '#scope-batch' },
             { title: 'scope.select()', desc: 'Select statement', href: '#scope-select' },
             { title: 'scope.broadcast()', desc: 'Create broadcast channel', href: '#scope-broadcast' },
             { title: 'scope.priorityChannel()', desc: 'Priority channel', href: '#scope-prioritychannel' },

@@ -5,6 +5,7 @@
 /// <reference types="./global.d.ts" />
 import createDebug from "debug";
 
+import { Batch, type BatchOptions } from "./batch.js";
 import { BroadcastChannel } from "./broadcast-channel.js";
 import { Channel } from "./channel.js";
 import {
@@ -203,7 +204,7 @@ export interface ScopeOptions<
 /**
  * A Scope for structured concurrency.
  */
-// @ts-ignore TypeScript may not recognize Symbol.asyncDispose in all configurations
+// @ts-expect-error TypeScript may not recognize Symbol.asyncDispose in all configurations
 export class Scope<
 	Services extends Record<string, unknown> = Record<string, never>,
 > implements AsyncDisposable
@@ -1751,6 +1752,178 @@ export class Scope<
 				once: true,
 			});
 		});
+	}
+
+	/**
+	 * Create a batch processor that accumulates items and processes them in batches.
+	 * Automatically flushes when batch is full or timeout is reached.
+	 * Auto-flushes on scope disposal.
+	 *
+	 * @param options - Batch configuration
+	 * @returns Batch instance for adding items
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * const batcher = s.batch({
+	 *   size: 100,
+	 *   timeout: 5000,
+	 *   process: async (users) => {
+	 *     await db.users.insertMany(users)
+	 *     return users.length
+	 *   }
+	 * })
+	 *
+	 * // Add items - they accumulate
+	 * await batcher.add({ name: 'Alice' })
+	 * await batcher.add({ name: 'Bob' })
+	 *
+	 * // Manually flush when needed
+	 * const [err, count] = await batcher.flush()
+	 * ```
+	 */
+	batch<T, R>(options: BatchOptions<T, R>): Batch<T, R> {
+		return new Batch(this, options);
+	}
+
+	/**
+	 * Execute a function repeatedly at a fixed interval.
+	 * Automatically cancelled when the scope is disposed.
+	 *
+	 * @param intervalMs - Interval in milliseconds between executions
+	 * @param fn - Function to execute. Receives AbortSignal for cancellation.
+	 * @returns A function to stop the interval early
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * // Check for updates every 5 seconds
+	 * const stop = s.every(5000, async ({ signal }) => {
+	 *   const updates = await checkForUpdates({ signal })
+	 *   if (updates.length > 0) console.log('New updates:', updates)
+	 * })
+	 *
+	 * // Stop manually if needed
+	 * stop()
+	 * ```
+	 */
+	every(
+		intervalMs: number,
+		fn: (ctx: { signal: AbortSignal }) => Promise<void>,
+	): () => void {
+		let stopped = false;
+		let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+		const run = async (): Promise<void> => {
+			if (stopped || this.abortController.signal.aborted) return;
+
+			try {
+				await fn({ signal: this.abortController.signal });
+			} catch (error) {
+				// Errors don't stop the interval, but don't throw
+				if (debugScope.enabled) {
+					debugScope("[%s] every() task error: %s", this.name, error);
+				}
+			}
+
+			if (!stopped && !this.abortController.signal.aborted) {
+				timeoutId = setTimeout(run, intervalMs);
+			}
+		};
+
+		// Start first execution immediately
+		run();
+
+		// Register cleanup
+		this.onDispose(() => {
+			stopped = true;
+			if (timeoutId) clearTimeout(timeoutId);
+		});
+
+		// Return stop function
+		return () => {
+			stopped = true;
+			if (timeoutId) clearTimeout(timeoutId);
+		};
+	}
+
+	/**
+	 * Wait for the first successful result from multiple tasks.
+	 * Similar to Promise.any but returns a Result tuple and cancels remaining tasks.
+	 *
+	 * @param factories - Array of factory functions that create promises
+	 * @param options - Optional timeout
+	 * @returns Result tuple with first success, or aggregate error if all fail
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * // Try multiple sources, get first successful response
+	 * const [err, response] = await s.any([
+	 *   () => fetchFromPrimary(),
+	 *   () => fetchFromBackup1(),
+	 *   () => fetchFromBackup2(),
+	 * ])
+	 * ```
+	 */
+	async any<T>(
+		factories: readonly (() => Promise<T>)[],
+		options?: { timeout?: number },
+	): Promise<Result<unknown, T>> {
+		if (factories.length === 0) {
+			return [new Error("Cannot race empty array"), undefined];
+		}
+
+		const errors: unknown[] = [];
+		const childScope = this.createChild({ timeout: options?.timeout });
+
+		try {
+			return await new Promise<Result<unknown, T>>((resolve) => {
+				let completed = 0;
+				const total = factories.length;
+
+				for (const factory of factories) {
+					childScope
+						.task(async () => factory())
+						.then((result) => {
+							const [err, value] = result;
+							completed++;
+
+							if (!err) {
+								// First success - resolve and cleanup
+								resolve([undefined, value as T]);
+							} else if (completed === total) {
+								// All failed - return aggregate error
+								resolve([
+									typeof AggregateError !== "undefined"
+										? new AggregateError(errors, "All tasks failed")
+										: new Error(`All ${errors.length} tasks failed`),
+									undefined,
+								]);
+							}
+						})
+						.catch((error) => {
+							errors.push(error);
+							completed++;
+
+							if (completed === total) {
+								resolve([
+									typeof AggregateError !== "undefined"
+										? new AggregateError(errors, "All tasks failed")
+										: new Error(`All ${errors.length} tasks failed`),
+									undefined,
+								]);
+							}
+						});
+				}
+			});
+		} finally {
+			// Cleanup child scope - cancels remaining tasks
+			void (childScope as unknown as AsyncDisposable)[Symbol.asyncDispose]();
+		}
 	}
 
 	/**

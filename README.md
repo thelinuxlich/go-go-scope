@@ -41,6 +41,11 @@ else console.log("User:", data);
 | 🔄 **Structured Concurrency** | No fire-and-forget, all tasks tracked and awaitable |
 | 🛡️ **Resilience Built-in** | Circuit breakers, retries, timeouts, idempotency |
 | 🧵 **Worker Thread Support** | Offload CPU-intensive tasks to worker threads (v2.4.0+) |
+| ⏱️ **Cancellable Delays** | `scope.delay()` with automatic cancellation (v2.8.0+) |
+| 🎯 **Per-Task Circuit Breaker** | Override scope CB settings per task (v2.8.0+) |
+| 🔄 **Interval Execution** | `scope.every()` for recurring tasks (v2.8.0+) |
+| 🏆 **First Success** | `scope.any()` returns first successful result (v2.8.0+) |
+| 📦 **Batch Processing** | `scope.batch()` accumulates and processes in batches (v2.8.0+) |
 | 📊 **Observable** | OpenTelemetry, Prometheus metrics, built-in profiling |
 | 🔌 **Framework Agnostic** | Adapters for Fastify, Express, NestJS, Hono, Koa, Hapi, Elysia, Vue, Svelte |
 | 💾 **Persistence Ready** | Redis, PostgreSQL, MySQL, MongoDB, DynamoDB, SQLite, Cloudflare DO adapters |

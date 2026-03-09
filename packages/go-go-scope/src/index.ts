@@ -26,6 +26,7 @@ export {
 	zip,
 } from "./async-iterable.js";
 // Re-export classes
+export type { BatchOptions } from "./batch.js";
 export { BroadcastChannel } from "./broadcast-channel.js";
 // Re-export cache utilities
 export { createCache, InMemoryCache } from "./cache.js";

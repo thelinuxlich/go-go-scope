@@ -57,6 +57,9 @@ Complete guide to structured concurrency in TypeScript.
 - ✅ **Resource Management** - Automatic cleanup via `using`/`await using`
 - ✅ **Type-Safe DI** - Dependency injection with `provide`/`use`
 - ✅ **Bun Compatible** - Full support for Bun runtime
+- ✅ **Interval Execution** - `scope.every()` for recurring tasks (v2.8.0+)
+- ✅ **Batch Processing** - `scope.batch()` for efficient bulk operations (v2.8.0+)
+- ✅ **First Success** - `scope.any()` for redundant operations (v2.8.0+)
 
 ### Reliability
 - ✅ **Circuit Breaker** - Prevent cascading failures with shared state

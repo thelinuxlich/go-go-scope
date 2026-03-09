@@ -22,6 +22,10 @@ Complete reference for all functions, methods, and types in `go-go-scope`.
   - [`scope.poll(fn, onValue, options?)`](#scopepollfn-onvalue-options)
   - [`scope.debounce(fn, options?)](#scopedebouncefn-options)
   - [`scope.throttle(fn, options?)](#scopethrottlefn-options)
+  - [`scope.delay(ms)`](#scopedelayms)
+  - [`scope.every(intervalMs, fn)`](#scopeeveryintervalms-fn)
+  - [`scope.any(factories, options?)`](#scopeanyfactories-options)
+  - [`scope.batch(options)`](#scopebatchoptions)
   - [`scope.select(cases)`](#scopeselectcases)
   - [`scope.metrics()`](#scopemetrics)
   - [`scope.broadcast()`](#scopebroadcast)
@@ -1574,6 +1578,144 @@ async function fetchWithRetry(url: string, maxAttempts = 3) {
   }
   throw new Error('Max retries exceeded')
 }
+```
+
+---
+
+### `scope.every(intervalMs, fn)`
+
+Execute a function repeatedly at a fixed interval. Automatically cancelled when the scope is disposed. Errors in the function do not stop the interval.
+
+```typescript
+every(
+  intervalMs: number,
+  fn: (ctx: { signal: AbortSignal }) => Promise<void>
+): () => void
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `intervalMs` | `number` | Interval in milliseconds between executions |
+| `fn` | `Function` | Function to execute. Receives `{ signal }` for cancellation |
+
+**Returns:** `() => void` - A stop function to cancel the interval early
+
+**Example:**
+
+```typescript
+await using s = scope()
+
+// Check for updates every 5 seconds
+const stop = s.every(5000, async ({ signal }) => {
+  const updates = await checkForUpdates({ signal })
+  if (updates.length > 0) console.log('New updates:', updates)
+})
+
+// Stop manually if needed
+stop()
+```
+
+---
+
+### `scope.any(factories, options?)`
+
+Wait for the first successful result from multiple tasks. Similar to `Promise.any` but returns a Result tuple and cancels remaining tasks. Returns an aggregate error if all tasks fail.
+
+```typescript
+any<T>(
+  factories: readonly (() => Promise<T>)[],
+  options?: { timeout?: number }
+): Promise<Result<unknown, T>>
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `factories` | `Array` | Array of factory functions that create promises |
+| `options.timeout` | `number` | Optional timeout in milliseconds |
+
+**Returns:** `Promise<Result<unknown, T>>` - First success, or aggregate error
+
+**Example:**
+
+```typescript
+await using s = scope()
+
+// Try multiple sources, get first successful response
+const [err, response] = await s.any([
+  () => fetchFromPrimary(),
+  () => fetchFromBackup1(),
+  () => fetchFromBackup2(),
+])
+
+// With timeout
+const [err, data] = await s.any([
+  () => fetchFast(),
+  () => fetchSlow(),
+], { timeout: 5000 })
+```
+
+---
+
+### `scope.batch(options)`
+
+Create a batch processor that accumulates items and processes them in batches. Auto-flushes when batch is full or timeout is reached. Call `stop()` before scope disposal to ensure items are processed.
+
+```typescript
+batch<T, R>(options: {
+  size?: number       // Max items per batch (default: 100)
+  timeout?: number    // Max ms to wait before flush (default: 1000)
+  process: (items: T[]) => Promise<R>
+}): Batch<T, R>
+```
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `options.size` | `number` | Maximum items per batch (default: 100) |
+| `options.timeout` | `number` | Milliseconds to wait before flush (default: 1000) |
+| `options.process` | `Function` | Function to process a batch of items |
+
+**Returns:** `Batch<T, R>` - Batch instance with methods below
+
+**Batch Methods:**
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `add(item)` | `add(item: T): Promise<Result<unknown, R> \| undefined>` | Add single item. Returns Result if batch flushes |
+| `addMany(items)` | `addMany(items: T[]): Promise<Result<unknown, R>[]>` | Add multiple items |
+| `flush()` | `flush(): Promise<Result<unknown, R>>` | Manually flush current batch |
+| `stop()` | `stop(): Promise<Result<unknown, R> \| undefined>` | Stop and flush remaining items |
+| `size` (getter) | `number` | Current number of items in batch |
+| `isStopped` (getter) | `boolean` | Whether batch is stopped |
+
+**Example:**
+
+```typescript
+await using s = scope()
+
+const batcher = s.batch({
+  size: 100,
+  timeout: 5000,
+  process: async (users) => {
+    await db.users.insertMany(users)
+    return users.length
+  }
+})
+
+// Add items - they accumulate
+await batcher.add({ name: 'Alice' })
+await batcher.add({ name: 'Bob' })
+
+// Manually flush when needed
+const [err, count] = await batcher.flush()
+
+// Or call stop() before scope disposal
+await batcher.stop()
 ```
 
 ---
