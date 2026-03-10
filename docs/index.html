@@ -685,26 +685,23 @@
         }
 
         .code-block-wrapper pre {
-            padding: 0;
+            padding: 32px 40px !important;
             overflow-x: auto;
-            background: var(--bg-code);
+            background: var(--bg-code) !important;
             margin: 0;
-        }
-        
-        .code-block-wrapper pre code {
-            display: block;
-            padding: 32px 40px;
+            border: none;
         }
 
         .code-block-wrapper pre code {
-            background: transparent;
-            padding: 0;
+            background: transparent !important;
             color: #e0e0e0;
             font-size: 14px;
             line-height: 1.6;
             font-weight: 400;
             border-radius: 0;
             display: block;
+            padding: 0 !important;
+            margin: 0 !important;
         }
 
         /* Prism.js overrides for go-go-scope theme */
@@ -713,13 +710,6 @@
             font-family: 'JetBrains Mono', monospace;
             font-size: 14px;
             line-height: 1.6;
-        }
-        
-        /* Ensure code blocks have proper background */
-        pre[class*="language-"] {
-            background: var(--bg-code) !important;
-            margin: 0;
-            padding: 0 !important;
         }
         
         /* Override Prism's default text color */
@@ -1509,7 +1499,11 @@
                         <span class="nav-section-title">Concurrency</span>
                     </button>
                     <div class="nav-section-items">
-                        <a href="#channels" class="nav-link">Channels</a>
+                        <a href="#concurrency-patterns" class="nav-link">Patterns</a>
+                        <a href="#worker-threads" class="nav-link sub">Worker Threads</a>
+                        <a href="#semaphores" class="nav-link sub">Semaphores</a>
+                        <a href="#select" class="nav-link sub">Select</a>
+                        <a href="#broadcast" class="nav-link sub">Broadcast</a>
                     </div>
                 </div>
 
@@ -1522,8 +1516,11 @@
                         <span class="nav-section-title">Resilience</span>
                     </button>
                     <div class="nav-section-items">
-                        <a href="#guide-circuit-breaker" class="nav-link">Circuit Breaker</a>
-                        <a href="#guide-retry" class="nav-link">Retry</a>
+                        <a href="#resilience" class="nav-link">Patterns</a>
+                        <a href="#circuit-breaker-detail" class="nav-link sub">Circuit Breaker</a>
+                        <a href="#timeout-patterns" class="nav-link sub">Timeout</a>
+                        <a href="#graceful-shutdown" class="nav-link sub">Graceful Shutdown</a>
+                        <a href="#deadlock-detection" class="nav-link sub">Deadlock Detection</a>
                     </div>
                 </div>
 
@@ -1996,6 +1993,311 @@ async function fetchUser(id: string) {
                     </div>
                 </section>
 
+                <!-- Concurrency -->
+                <section id="concurrency-patterns" class="content">
+                    <h2 id="concurrency-patterns">Concurrency Patterns</h2>
+                    
+                    <p>go-go-scope provides powerful primitives for concurrent programming. Here's how to use them effectively.</p>
+
+                    <h3 id="worker-threads">Worker Threads</h3>
+                    <p>Offload CPU-intensive tasks to worker threads to avoid blocking the main thread:</p>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">import { scope } from 'go-go-scope'
+
+// CPU-intensive calculation
+function fibonacci(n: number): number {
+  if (n < 2) return n
+  return fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+async function parallelProcessing() {
+  await using s = scope()
+
+  // Run CPU-intensive tasks in parallel using workers
+  const [err, results] = await s.parallel([
+    () => fibonacci(40),
+    () => fibonacci(39),
+    () => fibonacci(38),
+  ], { 
+    workers: true,  // Use worker threads
+    concurrency: 2  // Max 2 workers at a time
+  })
+
+  if (err) {
+    console.error('Some tasks failed:', err)
+    return
+  }
+
+  console.log('Fibonacci results:', results)
+}</code></pre>
+                    </div>
+
+                    <h3 id="semaphores">Semaphores</h3>
+                    <p>Control access to limited resources with semaphores:</p>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">import { scope } from 'go-go-scope'
+
+async function rateLimitedRequests(urls: string[]) {
+  await using s = scope()
+
+  // Create a semaphore with 5 permits
+  const semaphore = s.semaphore(5)
+
+  const results = await Promise.all(
+    urls.map(async (url) => {
+      // Acquire a permit (blocks if none available)
+      await semaphore.acquire()
+      
+      try {
+        const response = await fetch(url)
+        return response.json()
+      } finally {
+        // Always release the permit
+        semaphore.release()
+      }
+    })
+  )
+
+  return results
+}</code></pre>
+                    </div>
+
+                    <h3 id="select">Select Statement</h3>
+                    <p>Wait on multiple channel operations simultaneously, similar to Go's select:</p>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">import { scope } from 'go-go-scope'
+
+async function multiplexChannels() {
+  await using s = scope()
+
+  const ch1 = s.channel<string>()
+  const ch2 = s.channel<string>()
+  const timeout = s.channel<never>()
+
+  // Producer 1
+  s.task(async () => {
+    await ch1.send('message from ch1')
+  })
+
+  // Producer 2
+  s.task(async () => {
+    await ch2.send('message from ch2')
+  })
+
+  // Timeout
+  s.task(async () => {
+    await s.delay(5000)
+    timeout.close()
+  })
+
+  // Select - wait for first ready channel
+  const result = await s.select([
+    { channel: ch1, action: (msg) => console.log('Got:', msg) },
+    { channel: ch2, action: (msg) => console.log('Got:', msg) },
+    { channel: timeout, action: () => console.log('Timeout!') }
+  ])
+
+  return result
+}</code></pre>
+                    </div>
+
+                    <h3 id="broadcast">Broadcast Channels</h3>
+                    <p>Send messages to multiple consumers simultaneously:</p>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">import { scope } from 'go-go-scope'
+
+async function eventBroadcasting() {
+  await using s = scope()
+
+  // Create broadcast channel - all subscribers receive every message
+  const broadcast = s.broadcast<string>()
+
+  // Subscribe multiple consumers
+  const consumer1 = broadcast.subscribe()
+  const consumer2 = broadcast.subscribe()
+  const consumer3 = broadcast.subscribe()
+
+  // Publish messages
+  await broadcast.send('Event 1')
+  await broadcast.send('Event 2')
+
+  // All consumers receive both events
+  for await (const event of consumer1) {
+    console.log('Consumer 1:', event)
+  }
+}</code></pre>
+                    </div>
+                </section>
+
+                <!-- Resilience -->
+                <section id="resilience" class="content">
+                    <h2 id="resilience">Resilience Patterns</h2>
+                    
+                    <p>Build fault-tolerant applications with built-in resilience patterns.</p>
+
+                    <h3 id="circuit-breaker-detail">Circuit Breaker</h3>
+                    <p>Prevent cascading failures by automatically detecting when a service is unhealthy:</p>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">import { scope } from 'go-go-scope'
+
+async function resilientServiceCall() {
+  await using s = scope({
+    circuitBreaker: {
+      failureThreshold: 5,     // Open after 5 failures
+      resetTimeout: 30000,     // Try again after 30s
+      successThreshold: 2,     // Need 2 successes to close
+      onStateChange: (from, to) => {
+        console.log(`Circuit: ${from} → ${to}`)
+      },
+      onOpen: (failures) => {
+        alert(`Service down after ${failures} failures`)
+      }
+    }
+  })
+
+  const [err, result] = await s.task(() => callExternalAPI())
+
+  if (err) {
+    if (err.message === 'Circuit breaker is open') {
+      // Use cached data or fallback
+      return getCachedData()
+    }
+    throw err
+  }
+
+  return result
+}</code></pre>
+                    </div>
+
+                    <h3 id="timeout-patterns">Timeout Patterns</h3>
+                    <p>Set timeouts at different levels for granular control:</p>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">import { scope } from 'go-go-scope'
+
+async function granularTimeouts() {
+  // Overall operation timeout
+  await using s = scope({ timeout: 30000 })
+
+  // Quick health check with short timeout
+  const [healthErr, healthy] = await s.task(
+    () => checkHealth(),
+    { timeout: 5000 }
+  )
+
+  if (healthErr || !healthy) {
+    throw new Error('Service unhealthy')
+  }
+
+  // Main operation with medium timeout
+  const [err, result] = await s.task(
+    () => processData(),
+    { timeout: 20000 }
+  )
+
+  return result
+}</code></pre>
+                    </div>
+
+                    <h3 id="graceful-shutdown">Graceful Shutdown</h3>
+                    <p>Handle process termination gracefully with configurable strategies:</p>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">import { scope } from 'go-go-scope'
+
+async function main() {
+  await using s = scope()
+
+  // Setup graceful shutdown
+  const shutdown = setupGracefulShutdown(s, {
+    signals: ['SIGTERM', 'SIGINT'],
+    timeout: 30000,
+    beforeShutdown: async () => {
+      console.log('Starting graceful shutdown...')
+      await closeDatabaseConnections()
+      await flushLogs()
+    },
+    afterShutdown: () => {
+      console.log('Shutdown complete')
+    }
+  })
+
+  // Your application logic
+  await startServer()
+}
+
+// When process receives SIGTERM:
+// 1. Stop accepting new requests
+// 2. Wait for in-flight requests (up to 30s)
+// 3. Clean up resources
+// 4. Exit cleanly</code></pre>
+                    </div>
+
+                    <h3 id="deadlock-detection">Deadlock Detection</h3>
+                    <p>Detect and prevent deadlocks in concurrent code:</p>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">import { scope } from 'go-go-scope'
+
+async function safeLockAcquisition() {
+  await using s = scope({
+    deadlockDetection: {
+      enabled: true,
+      timeout: 10000,  // Warn if lock held > 10s
+      onPotentialDeadlock: (info) => {
+        console.warn('Potential deadlock detected:', info)
+      }
+    }
+  })
+
+  // Acquire multiple locks safely
+  const lock1 = await s.acquireLock('resource-1')
+  const lock2 = await s.acquireLock('resource-2')
+
+  // Use resources...
+
+  // Automatic release on scope disposal
+}</code></pre>
+                    </div>
+                </section>
+
                 <!-- Guides -->
                 <section id="guide-http-client" class="content">
                     <h2 id="guide-http-client">Guide: HTTP Client with Retry</h2>
@@ -2442,6 +2744,18 @@ const [err, result] = await s.task(
 
             { title: 'Circuit Breaker', desc: 'Protect services from failures', href: '#guide-circuit-breaker', section: 'Guides' },
             { title: 'Retry Patterns', desc: 'Exponential backoff and strategies', href: '#guide-retry', section: 'Guides' },
+            // Concurrency
+            { title: 'Concurrency Patterns', desc: 'Worker threads, semaphores, select', href: '#concurrency-patterns', section: 'Concurrency' },
+            { title: 'Worker Threads', desc: 'CPU-intensive tasks in parallel', href: '#worker-threads', section: 'Concurrency' },
+            { title: 'Semaphores', desc: 'Control access to limited resources', href: '#semaphores', section: 'Concurrency' },
+            { title: 'Select Statement', desc: 'Wait on multiple channels', href: '#select', section: 'Concurrency' },
+            { title: 'Broadcast Channels', desc: 'Send to multiple consumers', href: '#broadcast', section: 'Concurrency' },
+            // Resilience
+            { title: 'Resilience Patterns', desc: 'Fault-tolerant application design', href: '#resilience', section: 'Resilience' },
+            { title: 'Circuit Breaker', desc: 'Prevent cascading failures', href: '#circuit-breaker-detail', section: 'Resilience' },
+            { title: 'Timeout Patterns', desc: 'Granular timeout control', href: '#timeout-patterns', section: 'Resilience' },
+            { title: 'Graceful Shutdown', desc: 'Handle process termination', href: '#graceful-shutdown', section: 'Resilience' },
+            { title: 'Deadlock Detection', desc: 'Detect and prevent deadlocks', href: '#deadlock-detection', section: 'Resilience' },
             // API
             { title: 'API Overview', desc: 'Complete API reference', href: '#api', section: 'API Reference' },
 
@@ -2647,6 +2961,8 @@ const [err, result] = await s.task(
             { id: 'guide-db-pool', title: 'DB Connection Pool' },
             { id: 'guide-circuit-breaker', title: 'Circuit Breaker' },
             { id: 'guide-retry', title: 'Retry Patterns' },
+            { id: 'concurrency-patterns', title: 'Concurrency Patterns' },
+            { id: 'resilience', title: 'Resilience Patterns' },
             { id: 'api', title: 'API Reference' }
         ];
         
