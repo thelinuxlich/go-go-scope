@@ -7,6 +7,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Prism.js Syntax Highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
     <style>
         /* ============================================
            CSS VARIABLES - THEME SYSTEM
@@ -20,18 +25,18 @@
             --secondary-dark: #3dbdb5;
             --accent: #ffe66d;
             
-            /* Light Theme (default) */
-            --bg-primary: #f5f2ed;
-            --bg-secondary: #faf8f5;
-            --bg-tertiary: #ffffff;
-            --bg-code: #1a1a1a;
-            --text-primary: #2a2a2a;
+            /* Light Theme (default) - Muted, easy on the eyes */
+            --bg-primary: #e8e5e0;
+            --bg-secondary: #f0ede8;
+            --bg-tertiary: #f5f2ee;
+            --bg-code: #2d2d2d;
+            --text-primary: #3d3d3d;
             --text-secondary: #5a5a5a;
             --text-tertiary: #7a7a7a;
-            --text-muted: #9a9a9a;
-            --border-color: #2a2a2a;
-            --border-light: #e0ddd8;
-            --shadow-color: rgba(42, 42, 42, 0.15);
+            --text-muted: #888888;
+            --border-color: #3d3d3d;
+            --border-light: #c8c5c0;
+            --shadow-color: rgba(0, 0, 0, 0.1);
             
             /* Layout */
             --header-height: 64px;
@@ -603,8 +608,9 @@
             background: var(--bg-tertiary);
             padding: 2px 6px;
             border-radius: 4px;
-            color: var(--primary);
-            font-weight: 500;
+            color: var(--secondary-dark);
+            font-weight: 600;
+            border: 1px solid var(--border-light);
         }
 
         /* Code Blocks */
@@ -676,15 +682,26 @@
             display: block;
         }
 
-        /* Syntax Highlighting */
-        .token.keyword { color: #ff6b6b; }
-        .token.string { color: #4ecdc4; }
-        .token.function { color: #ffe66d; }
-        .token.comment { color: #6a737d; font-style: italic; }
-        .token.number { color: #ff6b9d; }
-        .token.type { color: #95e1d3; }
-        .token.operator { color: #d4d4d4; }
-        .token.punctuation { color: #d4d4d4; }
+        /* Prism.js overrides for go-go-scope theme */
+        code[class*="language-"],
+        pre[class*="language-"] {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        /* Ensure code blocks have proper background */
+        pre[class*="language-"] {
+            background: var(--bg-code) !important;
+            margin: 0;
+            padding: 0;
+        }
+        
+        /* Override Prism's default text color */
+        code[class*="language-"] {
+            color: #e0e0e0;
+            text-shadow: none;
+        }
 
         /* Tables */
         .content table {
