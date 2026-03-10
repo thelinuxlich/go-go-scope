@@ -714,7 +714,7 @@
         pre[class*="language-"] {
             background: var(--bg-code) !important;
             margin: 0;
-            padding: 0;
+            padding: 32px 40px !important;
         }
         
         /* Override Prism's default text color */
@@ -1389,7 +1389,6 @@
 
         <div class="header-right">
             <nav class="header-nav">
-                <a href="#features">Features</a>
                 <a href="#quickstart">Quick Start</a>
                 <a href="#api">API</a>
             </nav>
@@ -1491,12 +1490,8 @@
                     <div class="nav-section-items">
                         <a href="#guide-http-client" class="nav-link">HTTP Client</a>
                         <a href="#guide-db-pool" class="nav-link">DB Connection Pool</a>
-                        <a href="#guide-websocket" class="nav-link">WebSocket Manager</a>
-                        <a href="#guide-pipeline" class="nav-link">Data Pipeline</a>
                         <a href="#guide-circuit-breaker" class="nav-link">Circuit Breaker</a>
                         <a href="#guide-retry" class="nav-link">Retry Patterns</a>
-                        <a href="#guide-parallel" class="nav-link">Parallel Processing</a>
-                        <a href="#guide-rate-limiting" class="nav-link">Rate Limiting</a>
                     </div>
                 </div>
 
@@ -1509,11 +1504,7 @@
                         <span class="nav-section-title">Concurrency</span>
                     </button>
                     <div class="nav-section-items">
-                        <a href="#channels-guide" class="nav-link">Channels</a>
-                        <a href="#broadcast-channels" class="nav-link">Broadcast Channels</a>
-                        <a href="#select" class="nav-link">Select Statement</a>
-                        <a href="#worker-threads" class="nav-link">Worker Threads</a>
-                        <a href="#semaphores" class="nav-link">Semaphores</a>
+                        <a href="#channels" class="nav-link">Channels</a>
                     </div>
                 </div>
 
@@ -1526,10 +1517,8 @@
                         <span class="nav-section-title">Resilience</span>
                     </button>
                     <div class="nav-section-items">
-                        <a href="#circuit-breaker" class="nav-link">Circuit Breaker</a>
-                        <a href="#retry" class="nav-link">Retry</a>
-                        <a href="#timeout" class="nav-link">Timeout</a>
-                        <a href="#deadlock-detection" class="nav-link">Deadlock Detection</a>
+                        <a href="#guide-circuit-breaker" class="nav-link">Circuit Breaker</a>
+                        <a href="#guide-retry" class="nav-link">Retry</a>
                     </div>
                 </div>
 
@@ -1543,11 +1532,7 @@
                     </button>
                     <div class="nav-section-items">
                         <a href="#api" class="nav-link">Overview</a>
-                        <a href="#api-scope" class="nav-link sub">Scope</a>
-                        <a href="#api-task" class="nav-link sub">Task</a>
-                        <a href="#api-channel" class="nav-link sub">Channel</a>
-                        <a href="#api-stream" class="nav-link sub">Stream</a>
-                        <a href="#api-full" class="nav-link">Complete API Docs →</a>
+                        <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/README.md" target="_blank" class="nav-link">Complete API Docs →</a>
                     </div>
                 </div>
             </nav>
@@ -1579,7 +1564,7 @@
                 </section>
                 <!-- Installation -->
                 <section id="installation" class="content">
-                    <h2>Installation</h2>
+                    <h2 id="installation">Installation</h2>
                     <p>Install go-go-scope using your favorite package manager:</p>
                     
                     <div class="install-tabs" id="installTabs">
@@ -1601,9 +1586,9 @@
 
                 <!-- Quick Start -->
                 <section id="quickstart" class="content">
-                    <h2>Quick Start</h2>
+                    <h2 id="quick-start">Quick Start</h2>
                     
-                    <h3>Your First Example</h3>
+                    <h3 id="your-first-example">Your First Example</h3>
                     <p>The simplest way to understand <code>go-go-scope</code> is with a timeout example:</p>
                     
                     <div class="code-block-wrapper">
@@ -1642,7 +1627,7 @@ async function fetchData() {
                         </ul>
                     </div>
 
-                    <h3>Key Pattern: The Result Tuple</h3>
+                    <h3 id="key-pattern-the-result-tuple">Key Pattern: The Result Tuple</h3>
                     <p>Every task returns <code>[error, value]</code>:</p>
 
                     <div class="code-block-wrapper">
@@ -1664,7 +1649,7 @@ if (err) {
 
                 <!-- Core Concepts -->
                 <section id="structured-concurrency" class="content">
-                    <h2>Structured Concurrency</h2>
+                    <h2 id="structured-concurrency">Structured Concurrency</h2>
                     
                     <p>Structured concurrency is a programming paradigm that ensures:</p>
                     <ol>
@@ -1700,11 +1685,11 @@ async function parent() {
                 </section>
 
                 <section id="the-scope" class="content">
-                    <h2>The Scope</h2>
+                    <h2 id="the-scope">The Scope</h2>
                     
                     <p>A <strong>Scope</strong> is a container for async operations. Think of it as a "workspace" for your tasks.</p>
 
-                    <h3>Creating a Scope</h3>
+                    <h3 id="creating-a-scope">Creating a Scope</h3>
                     <div class="code-block-wrapper">
                         <div class="code-block-header">
                             <span class="code-block-lang">TypeScript</span>
@@ -1745,7 +1730,7 @@ await using s = scope({
 })</code></pre>
                     </div>
 
-                    <h3>Resource Cleanup</h3>
+                    <h3 id="resource-cleanup">Resource Cleanup</h3>
                     <p>Resources are cleaned up in LIFO order (reverse of creation):</p>
 
                     <div class="code-block-wrapper">
@@ -1771,7 +1756,7 @@ await using s = scope({
                 </section>
 
                 <section id="the-task" class="content">
-                    <h2>The Task</h2>
+                    <h2 id="the-task">The Task</h2>
                     
                     <p>A <strong>Task</strong> is a unit of work within a scope. It's like a Promise, but:</p>
                     <ul>
@@ -1780,7 +1765,7 @@ await using s = scope({
                         <li><strong>Returns a Result</strong> - Never throws, always returns <code>[error, value]</code></li>
                     </ul>
 
-                    <h3>Lazy Execution</h3>
+                    <h3 id="lazy-execution">Lazy Execution</h3>
                     <div class="code-block-wrapper">
                         <div class="code-block-header">
                             <span class="code-block-lang">TypeScript</span>
@@ -1801,7 +1786,7 @@ if (err) {
 return result</code></pre>
                     </div>
 
-                    <h3>Parallel Execution</h3>
+                    <h3 id="parallel-execution">Parallel Execution</h3>
                     <div class="code-block-wrapper">
                         <div class="code-block-header">
                             <span class="code-block-lang">TypeScript</span>
@@ -1828,11 +1813,11 @@ for (const { index, error } of result.errors) {
                 </section>
 
                 <section id="result-tuples" class="content">
-                    <h2>Result Tuples</h2>
+                    <h2 id="result-tuples">Result Tuples</h2>
                     
                     <p>Every task returns a <strong>Result tuple</strong>: <code>[error, value]</code></p>
 
-                    <h3>Why Result Tuples?</h3>
+                    <h3 id="why-result-tuples">Why Result Tuples?</h3>
                     <p>Promises throw errors:</p>
                     <div class="code-block-wrapper">
                         <div class="code-block-header">
@@ -1872,7 +1857,7 @@ if (err) {
                 </section>
 
                 <section id="cancellation" class="content">
-                    <h2>Cancellation</h2>
+                    <h2 id="cancellation">Cancellation</h2>
                     
                     <p>Every task receives an <code>AbortSignal</code> that you can use for cancellation:</p>
 
@@ -1898,7 +1883,7 @@ if (err) {
 })</code></pre>
                     </div>
 
-                    <h3>When is Cancellation Triggered?</h3>
+                    <h3 id="when-is-cancellation-triggered">When is Cancellation Triggered?</h3>
                     <ol>
                         <li><strong>Timeout</strong> - Scope timeout is reached</li>
                         <li><strong>Scope disposal</strong> - <code>await using</code> block ends</li>
@@ -1908,7 +1893,7 @@ if (err) {
                 </section>
 
                 <section id="channels" class="content">
-                    <h2>Channels</h2>
+                    <h2 id="channels">Channels</h2>
                     
                     <p>Channels provide Go-style concurrent communication between tasks with configurable backpressure strategies.</p>
 
@@ -1934,7 +1919,7 @@ for await (const log of ch) {
 }</code></pre>
                     </div>
 
-                    <h3>Backpressure Strategies</h3>
+                    <h3 id="backpressure-strategies">Backpressure Strategies</h3>
                     <table>
                         <thead>
                             <tr>
@@ -1969,7 +1954,7 @@ for await (const log of ch) {
                 </section>
 
                 <section id="error-handling" class="content">
-                    <h2>Error Handling</h2>
+                    <h2 id="error-handling">Error Handling</h2>
                     
                     <p>Use <a href="https://github.com/thelinuxlich/go-go-try" target="_blank">go-go-try</a> alongside <code>go-go-scope</code> for typed error handling:</p>
 
@@ -2008,7 +1993,7 @@ async function fetchUser(id: string) {
 
                 <!-- Guides -->
                 <section id="guide-http-client" class="content">
-                    <h2>Guide: HTTP Client with Retry</h2>
+                    <h2 id="guide-http-client">Guide: HTTP Client with Retry</h2>
                     
                     <p>A resilient HTTP client with automatic retries and exponential backoff:</p>
 
@@ -2047,7 +2032,7 @@ function createHttpClient(baseUrl: string) {
                 </section>
 
                 <section id="guide-db-pool" class="content">
-                    <h2>Guide: Database Connection Pool</h2>
+                    <h2 id="guide-db-pool">Guide: Database Connection Pool</h2>
                     
                     <p>Manage a pool of database connections with automatic cleanup:</p>
 
@@ -2083,7 +2068,7 @@ async function withDatabase&lt;T&gt;(
                 </section>
 
                 <section id="guide-circuit-breaker" class="content">
-                    <h2>Guide: Circuit Breaker Pattern</h2>
+                    <h2 id="guide-circuit-breaker">Guide: Circuit Breaker Pattern</h2>
                     
                     <p>Protect services with circuit breaker pattern:</p>
 
@@ -2123,9 +2108,9 @@ async function callExternalService() {
                 </section>
 
                 <section id="guide-retry" class="content">
-                    <h2>Guide: Retry Patterns</h2>
+                    <h2 id="guide-retry">Guide: Retry Patterns</h2>
                     
-                    <h3>Exponential Backoff</h3>
+                    <h3 id="exponential-backoff">Exponential Backoff</h3>
                     <div class="code-block-wrapper">
                         <div class="code-block-header">
                             <span class="code-block-lang">TypeScript</span>
@@ -2147,7 +2132,7 @@ const [err, result] = await s.task(
 )</code></pre>
                     </div>
 
-                    <h3>Conditional Retry</h3>
+                    <h3 id="conditional-retry">Conditional Retry</h3>
                     <div class="code-block-wrapper">
                         <div class="code-block-header">
                             <span class="code-block-lang">TypeScript</span>
@@ -2170,11 +2155,11 @@ const [err, result] = await s.task(
 
                 <!-- API Reference -->
                 <section id="api" class="content">
-                    <h2>API Reference</h2>
+                    <h2 id="api">API Reference</h2>
                     
                     <p>The complete API documentation is automatically generated from JSDoc comments in the source code, ensuring it's always up-to-date with the latest changes.</p>
 
-                    <h3>Core Packages</h3>
+                    <h3 id="core-packages">Core Packages</h3>
                     <div class="features-grid">
                         <div class="feature-card">
                             <h3>🏃 go-go-scope</h3>
@@ -2449,13 +2434,12 @@ const [err, result] = await s.task(
             // Guides
             { title: 'HTTP Client', desc: 'Resilient HTTP client with retry', href: '#guide-http-client', section: 'Guides' },
             { title: 'DB Connection Pool', desc: 'Database connection management', href: '#guide-db-pool', section: 'Guides' },
-            { title: 'WebSocket Manager', desc: 'WebSocket with auto-reconnection', href: '#guide-websocket', section: 'Guides' },
+
             { title: 'Circuit Breaker', desc: 'Protect services from failures', href: '#guide-circuit-breaker', section: 'Guides' },
             { title: 'Retry Patterns', desc: 'Exponential backoff and strategies', href: '#guide-retry', section: 'Guides' },
             // API
             { title: 'API Overview', desc: 'Complete API reference', href: '#api', section: 'API Reference' },
-            // Features
-            { title: 'Features', desc: 'Key features and capabilities', href: '#features', section: 'Overview' }
+
         ];
         
         let selectedResultIndex = -1;
