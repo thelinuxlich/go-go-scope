@@ -57,23 +57,43 @@
             --z-tooltip: 500;
         }
 
-        /* Dark Theme */
+        /* Dark Theme - Muted, easy on the eyes */
         [data-theme="dark"] {
             --bg-primary: #0f0f0f;
             --bg-secondary: #1a1a1a;
             --bg-tertiary: #242424;
             --bg-code: #0d0d0d;
-            --text-primary: #f0f0f0;
+            --text-primary: #e8e8e8;
             --text-secondary: #b0b0b0;
             --text-tertiary: #808080;
             --text-muted: #606060;
             --border-color: #404040;
             --border-light: #2a2a2a;
             --shadow-color: rgba(0, 0, 0, 0.5);
-            --primary: #ff7b7b;
-            --primary-dark: #ff6b6b;
-            --secondary: #5eddd4;
-            --accent: #fff07d;
+            /* Muted primary (was too bright red/pink) */
+            --primary: #c45a5a;
+            --primary-dark: #a84a4a;
+            --primary-light: #d06a6a;
+            /* Muted accent (was too bright yellow) */
+            --accent: #b8a85a;
+            --accent-dark: #9a8a4a;
+        }
+
+        /* Dark mode specific overrides */
+        [data-theme="dark"] .hero-badge {
+            background: #3d3828;
+            color: #c4b86a;
+            border: 1px solid #5a5038;
+        }
+
+        [data-theme="dark"] .btn-primary {
+            background: #8a4a4a;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+        }
+
+        [data-theme="dark"] .btn-primary:hover {
+            background: #9a5a5a;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
         }
 
         /* ============================================
@@ -665,7 +685,7 @@
         }
 
         .code-block-wrapper pre {
-            padding: 20px;
+            padding: 24px 28px;
             overflow-x: auto;
             background: var(--bg-code);
             margin: 0;
@@ -1557,44 +1577,6 @@
                         </a>
                     </div>
                 </section>
-
-                <!-- Features -->
-                <section id="features" class="content">
-                    <h2>Key Features</h2>
-                    <div class="features-grid">
-                        <div class="feature-card">
-                            <div class="feature-icon">⚡</div>
-                            <h3>Native Resource Management</h3>
-                            <p>Use <code>using</code> and <code>await using</code> for automatic cleanup with ES2022+ Disposable symbols.</p>
-                        </div>
-                        <div class="feature-card">
-                            <div class="feature-icon">🎯</div>
-                            <h3>Structured Concurrency</h3>
-                            <p>Automatic parent-child cancellation propagation with proper task boundaries.</p>
-                        </div>
-                        <div class="feature-card">
-                            <div class="feature-icon">🔄</div>
-                            <h3>Built-in Retry</h3>
-                            <p>Exponential backoff, jitter, and linear strategies with configurable conditions.</p>
-                        </div>
-                        <div class="feature-card">
-                            <div class="feature-icon">📡</div>
-                            <h3>Go-Style Channels</h3>
-                            <p>Concurrent communication with map, filter, reduce, and select operations.</p>
-                        </div>
-                        <div class="feature-card">
-                            <div class="feature-icon">🛡️</div>
-                            <h3>Circuit Breaker</h3>
-                            <p>Prevent cascading failures with automatic recovery and state transitions.</p>
-                        </div>
-                        <div class="feature-card">
-                            <div class="feature-icon">📊</div>
-                            <h3>Observability</h3>
-                            <p>OpenTelemetry tracing, metrics collection, and Prometheus integration.</p>
-                        </div>
-                    </div>
-                </section>
-
                 <!-- Installation -->
                 <section id="installation" class="content">
                     <h2>Installation</h2>
