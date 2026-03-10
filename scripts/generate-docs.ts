@@ -665,42 +665,6 @@ The API documentation is automatically generated from JSDoc comments in the sour
 
 For a complete searchable index of all APIs across all packages, see the [API README](./api/README.md) or the [search index](./api/search-index.json).
 
-## Core API Quick Reference
-
-### Main Functions
-
-`;
-
-  // Add core functions
-  const coreFunctions = allDocs.filter(
-    (d) => d.kind === "function" && ["scope", "parallel", "race", "poll"].includes(d.name)
-  );
-
-  for (const fn of coreFunctions) {
-    md += `- [\`${fn.name}()\`](./api/go-go-scope.md#${fn.name.toLowerCase()}) - ${fn.description}\n`;
-  }
-
-  md += `
-### Core Classes
-
-`;
-
-  // Add core classes
-  const coreClasses = allDocs.filter(
-    (d) => d.kind === "class" && ["Scope", "Task", "Channel", "BroadcastChannel", "Semaphore", "CircuitBreaker"].includes(d.name)
-  );
-
-  for (const cls of coreClasses) {
-    md += `- [\`${cls.name}<T>\`](./api/go-go-scope.md#${cls.name.toLowerCase()}) - ${cls.description}\n`;
-  }
-
-  md += `
-### Type Aliases
-
-- [\`Result<E, T>\`](./api/go-go-scope.md#result) - Error-first result tuple
-- [\`Success<T>\`](./api/go-go-scope.md#success) - Success variant
-- [\`Failure<E>\`](./api/go-go-scope.md#failure) - Failure variant
-
 ## Updating the API Documentation
 
 The API documentation is automatically generated from JSDoc comments. To regenerate:
@@ -779,6 +743,7 @@ async function updateIndexHtml(allDocs: DocEntry[]): Promise<void> {
  * Generate the API section HTML for index.html
  */
 function generateApiSection(allDocs: DocEntry[]): string {
+  const GITHUB_BASE_URL = "https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api";
   const packages = [...new Set(allDocs.map((d) => d.package))];
 
   // Get core package stats
@@ -818,7 +783,7 @@ function generateApiSection(allDocs: DocEntry[]): string {
     <div style="margin: 32px 0; padding: 24px; background: linear-gradient(135deg, var(--accent) 0%, var(--secondary) 100%); border: 3px solid var(--border); box-shadow: var(--shadow);">
         <h3 style="margin-top: 0; color: var(--border);">📚 Auto-Generated API Docs</h3>
         <p style="color: var(--border); margin-bottom: 16px;">Browse the complete API reference organized by package:</p>
-        <a href="./api/README.md" style="display: inline-block; padding: 12px 24px; background: var(--border); color: var(--surface); text-decoration: none; font-weight: 700; border: 3px solid var(--border); box-shadow: 4px 4px 0px rgba(0,0,0,0.2);">View Complete API Reference →</a>
+        <a href="${GITHUB_BASE_URL}/README.md" target="_blank" style="display: inline-block; padding: 12px 24px; background: var(--border); color: var(--surface); text-decoration: none; font-weight: 700; border: 3px solid var(--border); box-shadow: 4px 4px 0px rgba(0,0,0,0.2);">View Complete API Reference →</a>
     </div>
 
     <h3>Core Packages</h3>
@@ -826,22 +791,22 @@ function generateApiSection(allDocs: DocEntry[]): string {
         <div class="feature-card" style="padding: 20px;">
             <div class="feature-title" style="font-size: 16px;">🏃 go-go-scope</div>
             <p class="feature-desc">Core library with Scope, Task, Channel, and concurrency primitives</p>
-            <a href="./api/go-go-scope.md" class="code" style="color: var(--primary);">View API (${goGoScopeCount} items) →</a>
+            <a href="${GITHUB_BASE_URL}/go-go-scope.md" target="_blank" class="code" style="color: var(--primary);">View API (${goGoScopeCount} items) →</a>
         </div>
         <div class="feature-card" style="padding: 20px;">
             <div class="feature-title" style="font-size: 16px;">🌊 @go-go-scope/stream</div>
             <p class="feature-desc">Lazy stream processing with ${streamOpCount}+ operators</p>
-            <a href="./api/stream.md" class="code" style="color: var(--primary);">View API (${streamCount} items) →</a>
+            <a href="${GITHUB_BASE_URL}/stream.md" target="_blank" class="code" style="color: var(--primary);">View API (${streamCount} items) →</a>
         </div>
         <div class="feature-card" style="padding: 20px;">
             <div class="feature-title" style="font-size: 16px;">⏰ @go-go-scope/scheduler</div>
             <p class="feature-desc">Distributed job scheduler with cron support</p>
-            <a href="./api/scheduler.md" class="code" style="color: var(--primary);">View API (${schedulerCount} items) →</a>
+            <a href="${GITHUB_BASE_URL}/scheduler.md" target="_blank" class="code" style="color: var(--primary);">View API (${schedulerCount} items) →</a>
         </div>
         <div class="feature-card" style="padding: 20px;">
             <div class="feature-title" style="font-size: 16px;">🧪 @go-go-scope/testing</div>
             <p class="feature-desc">Testing utilities and mock helpers</p>
-            <a href="./api/testing.md" class="code" style="color: var(--primary);">View API (${testingCount} items) →</a>
+            <a href="${GITHUB_BASE_URL}/testing.md" target="_blank" class="code" style="color: var(--primary);">View API (${testingCount} items) →</a>
         </div>
     </div>
 
@@ -854,7 +819,7 @@ function generateApiSection(allDocs: DocEntry[]): string {
     html += `
         <div class="feature-card" style="padding: 16px;">
             <div class="feature-title" style="font-size: 14px;">${name.charAt(0).toUpperCase() + name.slice(1)}</div>
-            <a href="./api/${pkg}.md" class="code" style="color: var(--primary); font-size: 12px;">View (${count} items) →</a>
+            <a href="${GITHUB_BASE_URL}/${pkg}.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (${count} items) →</a>
         </div>`;
   }
 
@@ -870,7 +835,7 @@ function generateApiSection(allDocs: DocEntry[]): string {
     html += `
         <div class="feature-card" style="padding: 16px;">
             <div class="feature-title" style="font-size: 14px;">${name.charAt(0).toUpperCase() + name.slice(1)}</div>
-            <a href="./api/${pkg}.md" class="code" style="color: var(--primary); font-size: 12px;">View (${count} items) →</a>
+            <a href="${GITHUB_BASE_URL}/${pkg}.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (${count} items) →</a>
         </div>`;
   }
 
