@@ -996,53 +996,6 @@
             </section>
 
             <!-- Installation -->
-            <section class="install-section" id="installation">
-                <h2>Installation</h2>
-                <div class="install-tabs">
-                    <button class="install-tab active" data-tab="npm">npm</button>
-                    <button class="install-tab" data-tab="pnpm">pnpm</button>
-                    <button class="install-tab" data-tab="yarn">yarn</button>
-                    <button class="install-tab" data-tab="bun">bun</button>
-                </div>
-                <div class="install-code" id="installCode">npm install go-go-scope</div>
-            </section>
-
-            <!-- Quick Start -->
-            <section class="quick-start" id="quickstart">
-                <h3>Quick Start</h3>
-                <pre><code><span class="keyword">import</span> { scope, exponentialBackoff } <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
-
-<span class="comment">// Build a resilient API in 30 lines</span>
-<span class="keyword">await using</span> s = <span class="function">scope</span>({
-  timeout: <span class="number">10000</span>,
-  circuitBreaker: { failureThreshold: <span class="number">3</span>, resetTimeout: <span class="number">30000</span> }
-})
-
-<span class="comment">// Race multiple data sources - first to succeed wins</span>
-<span class="keyword">const</span> [err, data] = <span class="keyword">await</span> s.<span class="function">race</span>([
-  () => <span class="function">fetchFromPrimary</span>(),
-  () => <span class="function">fetchFromCache</span>(),
-  () => <span class="function">fetchFromBackup</span>()
-])
-
-<span class="comment">// Parallel processing with retry and backoff</span>
-<span class="keyword">const</span> [pErr, results] = <span class="keyword">await</span> s.<span class="function">parallel</span>(
-  ids.<span class="function">map</span>(id => () => 
-    s.<span class="function">task</span>(() => <span class="function">processItem</span>(id), {
-      retry: {
-        maxRetries: <span class="number">3</span>,
-        delay: <span class="function">exponentialBackoff</span>({ initial: <span class="number">100</span>, max: <span class="number">2000</span> })
-      }
-    })
-  ),
-  { concurrency: <span class="number">5</span> }
-)
-
-<span class="comment">// Everything cancels and cleans up automatically</span>
-<span class="comment">// No memory leaks, no hanging promises, no manual cleanup</span></code></pre>
-            </section>
-
-            <!-- Scope Section -->
             <!-- API Reference Section - Links to Auto-Generated Documentation -->
 
 <section id="api" class="content">
@@ -1187,6 +1140,10 @@
         <p style="margin: 0; color: var(--text-muted);">📚 For detailed guides and examples, see the <a href="./03-api-reference.md" style="color: var(--primary);">API Reference Overview</a> or explore the <a href="https://github.com/thelinuxlich/go-go-scope/tree/main/examples" style="color: var(--primary);" target="_blank">examples directory</a>.</p>
     </div>
 </section>
+
+<!-- /API Reference Section -->
+
+<!-- /API Reference Section -->
 
 <!-- /API Reference Section -->
 

@@ -36,6 +36,23 @@ interface PackageDocs {
   exports: DocEntry[];
 }
 
+/**
+ * Truncate text at word boundary, adding ellipsis if truncated
+ */
+function truncateText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  
+  // Find the last space within the limit
+  const truncated = text.slice(0, maxLength);
+  const lastSpace = truncated.lastIndexOf(' ');
+  
+  // If no space found, just truncate with ellipsis
+  if (lastSpace === -1) return truncated + '...';
+  
+  // Truncate at word boundary
+  return truncated.slice(0, lastSpace) + '...';
+}
+
 const PACKAGES_DIR = "packages";
 const OUTPUT_DIR = "docs/api";
 const DOCS_DIR = "docs";
@@ -480,7 +497,7 @@ function generateMainIndex(allDocs: DocEntry[]): string {
   if (coreFunctions.length > 0) {
     md += "### Core Functions\n\n";
     for (const fn of coreFunctions) {
-      md += `- **${fn.name}** - ${fn.description.slice(0, 100)}...\n`;
+      md += `- **${fn.name}** - ${fn.description}\n`;
     }
   }
 
@@ -490,7 +507,7 @@ function generateMainIndex(allDocs: DocEntry[]): string {
   if (coreClasses.length > 0) {
     md += "\n### Core Classes\n\n";
     for (const cls of coreClasses) {
-      md += `- **${cls.name}** - ${cls.description.slice(0, 100)}...\n`;
+      md += `- **${cls.name}** - ${cls.description}\n`;
     }
   }
 
@@ -633,7 +650,7 @@ For a complete searchable index of all APIs across all packages, see the [API RE
   );
 
   for (const fn of coreFunctions) {
-    md += `- [\`${fn.name}()\`](./api/go-go-scope.md#${fn.name.toLowerCase()}) - ${fn.description.slice(0, 80)}...\n`;
+    md += `- [\`${fn.name}()\`](./api/go-go-scope.md#${fn.name.toLowerCase()}) - ${fn.description}\n`;
   }
 
   md += `
@@ -647,7 +664,7 @@ For a complete searchable index of all APIs across all packages, see the [API RE
   );
 
   for (const cls of coreClasses) {
-    md += `- [\`${cls.name}<T>\`](./api/go-go-scope.md#${cls.name.toLowerCase()}) - ${cls.description.slice(0, 80)}...\n`;
+    md += `- [\`${cls.name}<T>\`](./api/go-go-scope.md#${cls.name.toLowerCase()}) - ${cls.description}\n`;
   }
 
   md += `
