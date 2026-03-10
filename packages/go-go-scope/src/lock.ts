@@ -6,6 +6,11 @@
  * - Read-write lock - multiple readers OR one writer
  * - In-memory (fast, single-process) or distributed (multi-process with persistence)
  *
+ * For distributed locking across multiple processes/servers, provide a persistence
+ * provider (Redis, PostgreSQL, etc.) from @go-go-scope/persistence-* packages.
+ *
+ * @module lock
+ *
  * @example
  * ```typescript
  * import { scope, Lock } from "go-go-scope";
@@ -13,21 +18,26 @@
  *
  * await using s = scope();
  *
- * // In-memory exclusive lock
+ * // In-memory exclusive lock (mutex)
  * const mutex = new Lock(s.signal);
  * await using guard = await mutex.acquire();
+ * // Critical section - only one holder at a time
  *
  * // In-memory read-write lock
  * const rwlock = new Lock(s.signal, { allowMultipleReaders: true });
  * await using readGuard = await rwlock.read();
+ * // Multiple readers can hold this simultaneously
+ * await using writeGuard = await rwlock.write();
+ * // Exclusive write access - no other readers or writers
  *
- * // Distributed lock (uses persistence provider)
+ * // Distributed lock (requires persistence provider)
  * const distLock = new Lock(s.signal, {
  *   provider: new RedisAdapter(redis),
  *   key: "resource:123",
  *   ttl: 30000,
  * });
  * await using guard = await distLock.acquire();
+ * // Lock is visible across all processes
  * ```
  */
 
@@ -37,70 +47,157 @@ import type { LockProvider } from "./persistence/types.js";
 const debugLock = createDebug("go-go-scope:lock");
 
 /**
- * Options for creating a Lock
+ * Configuration options for creating a {@link Lock} instance.
+ *
+ * These options determine whether the lock operates in exclusive mode,
+ * read-write mode, or distributed mode.
  */
 export interface LockOptions {
 	/**
 	 * Persistence provider for distributed locking.
-	 * If not provided, the lock is in-memory only.
+	 *
+	 * When provided, the lock operates in distributed mode and uses
+	 * the persistence provider to coordinate across multiple processes.
+	 *
+	 * Requires: {@link key} must also be specified.
+	 *
+	 * @example
+	 * ```typescript
+	 * import { RedisAdapter } from "@go-go-scope/persistence-redis";
+	 *
+	 * const lock = new Lock(s.signal, {
+	 *   provider: new RedisAdapter(redis),
+	 *   key: "my-resource",
+	 *   ttl: 30000
+	 * });
+	 * ```
 	 */
 	provider?: LockProvider;
+
 	/**
 	 * Unique key for distributed locks.
-	 * Required when using a provider.
+	 *
+	 * Required when using a persistence provider. All processes using
+	 * the same key will compete for the same lock.
+	 *
+	 * @example
+	 * ```typescript
+	 * // All instances using "payment:123" compete for same lock
+	 * key: "payment:123"
+	 * ```
 	 */
 	key?: string;
+
 	/**
-	 * Lock TTL in milliseconds for distributed locks.
-	 * Default: 30000 (30 seconds)
+	 * Lock TTL (time-to-live) in milliseconds for distributed locks.
+	 *
+	 * The lock will automatically expire after this time if not released.
+	 * The lock is automatically extended while held (at 60% of TTL).
+	 *
+	 * @default 30000 (30 seconds)
 	 */
 	ttl?: number;
+
 	/**
 	 * Owner identifier for distributed locks.
-	 * Default: random string
+	 *
+	 * Used to identify which process holds the lock. Should be unique
+	 * across all processes. A random value is generated if not specified.
+	 *
+	 * @default Random string
 	 */
 	owner?: string;
+
 	/**
 	 * Allow multiple simultaneous readers (read-write lock mode).
-	 * When true, the lock supports read() and write() methods.
-	 * When false (default), only acquire() is available (mutex mode).
+	 *
+	 * When `true`, the lock supports {@link Lock.read} and {@link Lock.write} methods.
+	 * When `false` (default), only {@link Lock.acquire} is available (mutex mode).
+	 *
+	 * @default false
 	 */
 	allowMultipleReaders?: boolean;
+
 	/**
 	 * Name for debugging purposes.
+	 *
+	 * Used in debug logs to identify this lock instance.
+	 *
+	 * @default Random string
 	 */
 	name?: string;
 }
 
 /**
- * Options for acquiring a lock
+ * Options for acquiring a lock.
  */
 export interface LockAcquireOptions {
 	/**
-	 * Timeout in milliseconds.
-	 * Default: no timeout (wait indefinitely)
+	 * Timeout in milliseconds for lock acquisition.
+	 *
+	 * If the lock cannot be acquired within this time, an error is thrown.
+	 *
+	 * @default No timeout (wait indefinitely)
 	 */
 	timeout?: number;
+
 	/**
-	 * Priority for lock acquisition (higher =优先).
-	 * Default: 0
+	 * Priority for lock acquisition (higher =优先/priority).
+	 *
+	 * Higher priority requests are granted the lock before lower priority ones.
+	 *
+	 * @default 0
 	 */
 	priority?: number;
+
 	/**
 	 * Polling interval for distributed locks.
-	 * Default: 100ms
+	 *
+	 * How often to retry acquiring a distributed lock.
+	 *
+	 * @default 100ms
 	 */
 	pollInterval?: number;
 }
 
 /**
- * A lock guard that releases the lock when disposed
+ * A lock guard that releases the lock when disposed.
+ *
+ * This class implements both `Disposable` and `AsyncDisposable` for use with
+ * the `using` and `await using` statements. The lock is automatically released
+ * when the guard goes out of scope.
+ *
+ * @implements {Disposable}
+ * @implements {AsyncDisposable}
+ *
+ * @example
+ * ```typescript
+ * const lock = new Lock(s.signal);
+ *
+ * // Automatic release with await using
+ * await using guard = await lock.acquire();
+ * // Lock is held here
+ * // ... critical section ...
+ * // Lock automatically released when guard goes out of scope
+ *
+ * // Manual release
+ * const guard = await lock.acquire();
+ * try {
+ *   // ... critical section ...
+ * } finally {
+ *   await guard.release();
+ * }
+ * ```
  */
 export class LockGuard implements Disposable, AsyncDisposable {
 	private released = false;
 	private releaseFn: (() => void) | (() => Promise<void>);
 	private isAsync: boolean;
 
+	/**
+	 * Creates a new LockGuard instance.
+	 * @internal
+	 */
 	constructor(
 		releaseFn: () => void | Promise<void>,
 		isAsync: boolean,
@@ -116,7 +213,19 @@ export class LockGuard implements Disposable, AsyncDisposable {
 	}
 
 	/**
-	 * Release the lock manually
+	 * Releases the lock manually.
+	 *
+	 * This can be called explicitly to release the lock before the guard
+	 * goes out of scope. Throws an error if the lock has already been released.
+	 *
+	 * @returns Promise that resolves when the lock is released
+	 * @throws Error if the lock has already been released
+	 *
+	 * @example
+	 * ```typescript
+	 * const guard = await lock.acquire();
+	 * await guard.release(); // Explicit release
+	 * ```
 	 */
 	async release(): Promise<void> {
 		if (this.released) {
@@ -135,6 +244,20 @@ export class LockGuard implements Disposable, AsyncDisposable {
 		}
 	}
 
+	/**
+	 * Synchronously disposes the guard (releases the lock).
+	 *
+	 * Called automatically when using the `using` statement.
+	 * Only works for in-memory locks. Distributed locks require async disposal.
+	 *
+	 * @example
+	 * ```typescript
+	 * using guard = lock.tryAcquire();
+	 * if (guard) {
+	 *   // Lock automatically released on scope exit
+	 * }
+	 * ```
+	 */
 	[Symbol.dispose](): void {
 		if (!this.released && !this.isAsync) {
 			(this.releaseFn as () => void)();
@@ -142,6 +265,18 @@ export class LockGuard implements Disposable, AsyncDisposable {
 		}
 	}
 
+	/**
+	 * Asynchronously disposes the guard (releases the lock).
+	 *
+	 * Called automatically when using the `await using` statement.
+	 * Works for both in-memory and distributed locks.
+	 *
+	 * @example
+	 * ```typescript
+	 * await using guard = await lock.acquire();
+	 * // Lock automatically released on scope exit
+	 * ```
+	 */
 	async [Symbol.asyncDispose](): Promise<void> {
 		if (!this.released) {
 			await this.release();
@@ -150,7 +285,8 @@ export class LockGuard implements Disposable, AsyncDisposable {
 }
 
 /**
- * Queue entry for pending lock requests
+ * Internal queue entry for pending lock requests.
+ * @internal
  */
 interface QueuedRequest {
 	id: number;
@@ -162,12 +298,45 @@ interface QueuedRequest {
 }
 
 /**
- * Unified Lock implementation
+ * Unified Lock implementation supporting exclusive, read-write, and distributed modes.
  *
- * Supports three modes:
- * 1. **Exclusive/Mutex** (default): Only one holder at a time
- * 2. **Read-Write**: Multiple readers OR one writer
- * 3. **Distributed**: Uses persistence provider for cross-process locking
+ * The Lock class provides a flexible locking mechanism that can operate in three modes:
+ *
+ * 1. **Exclusive/Mutex** (default): Only one holder at a time. Use {@link Lock.acquire}.
+ * 2. **Read-Write**: Multiple readers OR one writer. Use {@link Lock.read} and {@link Lock.write}.
+ * 3. **Distributed**: Uses persistence provider for cross-process locking.
+ *
+ * @implements {AsyncDisposable}
+ *
+ * @example
+ * ```typescript
+ * import { scope, Lock } from "go-go-scope";
+ * import { RedisAdapter } from "@go-go-scope/persistence-redis";
+ *
+ * await using s = scope();
+ *
+ * // Exclusive lock (mutex)
+ * const mutex = new Lock(s.signal);
+ * await using guard = await mutex.acquire();
+ *
+ * // Read-write lock
+ * const rwlock = new Lock(s.signal, { allowMultipleReaders: true });
+ *
+ * // Multiple readers allowed
+ * await using readGuard1 = await rwlock.read();
+ * await using readGuard2 = await rwlock.read();
+ *
+ * // Exclusive writer - waits for all readers
+ * await using writeGuard = await rwlock.write();
+ *
+ * // Distributed lock with Redis
+ * const distLock = new Lock(s.signal, {
+ *   provider: new RedisAdapter(redis),
+ *   key: "resource:123",
+ *   ttl: 30000
+ * });
+ * await using guard = await distLock.acquire({ timeout: 5000 });
+ * ```
  */
 export class Lock implements AsyncDisposable {
 	private readonly provider?: LockProvider;
@@ -188,6 +357,36 @@ export class Lock implements AsyncDisposable {
 	// Distributed state
 	private distributedExtendTimeout?: ReturnType<typeof setTimeout>;
 
+	/**
+	 * Creates a new Lock instance.
+	 *
+	 * @param signal - AbortSignal for cancellation (optional)
+	 * @param options - Lock configuration options
+	 * @param options.provider - Persistence provider for distributed locking
+	 * @param options.key - Unique key for distributed locks
+	 * @param options.ttl - Lock TTL in milliseconds for distributed locks (default: 30000)
+	 * @param options.owner - Owner identifier for distributed locks (default: random string)
+	 * @param options.allowMultipleReaders - Allow multiple simultaneous readers (default: false)
+	 * @param options.name - Name for debugging purposes (default: random string)
+	 * @throws Error if using a persistence provider without specifying a key
+	 *
+	 * @example
+	 * ```typescript
+	 * // Exclusive in-memory lock
+	 * const lock = new Lock(s.signal);
+	 *
+	 * // Read-write lock
+	 * const rwlock = new Lock(s.signal, { allowMultipleReaders: true });
+	 *
+	 * // Distributed lock
+	 * const distLock = new Lock(s.signal, {
+	 *   provider: redisAdapter,
+	 *   key: "my-resource",
+	 *   ttl: 30000,
+	 *   owner: `process-${process.pid}`
+	 * });
+	 * ```
+	 */
 	constructor(signal?: AbortSignal, options: LockOptions = {}) {
 		// signal stored for potential future use in cancellation
 		const _signal = signal ?? new AbortController().signal;
@@ -220,14 +419,29 @@ export class Lock implements AsyncDisposable {
 	}
 
 	/**
-	 * Acquire an exclusive lock.
-	 * Only one holder can have the lock at a time.
+	 * Acquires an exclusive lock (mutex mode).
+	 *
+	 * Only one holder can have the lock at a time. Other acquire calls will
+	 * wait until the lock is released or the timeout expires.
+	 *
+	 * Only available when `allowMultipleReaders` is `false` (default).
+	 *
+	 * @param options - Acquisition options
+	 * @param options.timeout - Timeout in milliseconds for lock acquisition (default: no timeout)
+	 * @param options.priority - Priority for lock acquisition, higher is prioritized (default: 0)
+	 * @param options.pollInterval - Polling interval for distributed locks in milliseconds (default: 100)
+	 * @returns A LockGuard that releases the lock when disposed
+	 * @throws Error if lock is in read-write mode
+	 * @throws Error if acquisition times out
 	 *
 	 * @example
 	 * ```typescript
 	 * const lock = new Lock(s.signal);
-	 * await using guard = await lock.acquire();
-	 * // Critical section
+	 *	 * // With timeout
+	 * await using guard = await lock.acquire({ timeout: 5000 });
+	 *
+	 * // With priority (higher =优先)
+	 * await using guard = await lock.acquire({ priority: 10 });
 	 * ```
 	 */
 	async acquire(options: LockAcquireOptions = {}): Promise<LockGuard> {
@@ -245,14 +459,31 @@ export class Lock implements AsyncDisposable {
 	}
 
 	/**
-	 * Acquire a read lock (read-write mode only).
-	 * Multiple readers can hold the lock simultaneously.
+	 * Acquires a read lock (read-write mode only).
+	 *
+	 * Multiple readers can hold the lock simultaneously, but writers are blocked.
+	 * If there's a waiting writer with higher priority, new readers will wait.
+	 *
+	 * Only available when `allowMultipleReaders` is `true`.
+	 *
+	 * @param options - Acquisition options
+	 * @param options.timeout - Timeout in milliseconds for lock acquisition (default: no timeout)
+	 * @param options.priority - Priority for lock acquisition, higher is prioritized (default: 0)
+	 * @param options.pollInterval - Polling interval for distributed locks in milliseconds (default: 100)
+	 * @returns A LockGuard that releases the read lock when disposed
+	 * @throws Error if lock is not in read-write mode
+	 * @throws Error if acquisition times out
 	 *
 	 * @example
 	 * ```typescript
 	 * const lock = new Lock(s.signal, { allowMultipleReaders: true });
-	 * await using guard = await lock.read();
-	 * // Read operation
+	 *
+	 * // Multiple readers can acquire simultaneously
+	 * await using guard1 = await lock.read();
+	 * await using guard2 = await lock.read();
+	 *
+	 * // Readers block writers
+	 * // const writeGuard = await lock.write(); // Waits for readers
 	 * ```
 	 */
 	async read(options: LockAcquireOptions = {}): Promise<LockGuard> {
@@ -270,14 +501,28 @@ export class Lock implements AsyncDisposable {
 	}
 
 	/**
-	 * Acquire a write lock (read-write mode only).
-	 * Exclusive access, no other readers or writers.
+	 * Acquires a write lock (read-write mode only).
+	 *
+	 * Exclusive access - no other readers or writers can hold the lock.
+	 * Writers have priority over new readers if they have higher priority.
+	 *
+	 * Only available when `allowMultipleReaders` is `true`.
+	 *
+	 * @param options - Acquisition options
+	 * @param options.timeout - Timeout in milliseconds for lock acquisition (default: no timeout)
+	 * @param options.priority - Priority for lock acquisition, higher is prioritized (default: 0)
+	 * @param options.pollInterval - Polling interval for distributed locks in milliseconds (default: 100)
+	 * @returns A LockGuard that releases the write lock when disposed
+	 * @throws Error if lock is not in read-write mode
+	 * @throws Error if acquisition times out
 	 *
 	 * @example
 	 * ```typescript
 	 * const lock = new Lock(s.signal, { allowMultipleReaders: true });
+	 *
+	 * // Writer has exclusive access
 	 * await using guard = await lock.write();
-	 * // Write operation
+	 * // No readers or other writers allowed here
 	 * ```
 	 */
 	async write(options: LockAcquireOptions = {}): Promise<LockGuard> {
@@ -295,8 +540,26 @@ export class Lock implements AsyncDisposable {
 	}
 
 	/**
-	 * Try to acquire the lock immediately without waiting.
-	 * Returns null if the lock is not available.
+	 * Tries to acquire the lock immediately without waiting.
+	 *
+	 * Returns `null` if the lock is not available. Only available for
+	 * in-memory exclusive locks (not read-write or distributed).
+	 *
+	 * @returns A LockGuard if acquired, `null` if lock is not available
+	 * @throws Error if lock is in read-write mode or distributed
+	 *
+	 * @example
+	 * ```typescript
+	 * const lock = new Lock(s.signal);
+	 *
+	 * using guard = lock.tryAcquire();
+	 * if (guard) {
+	 *   // Lock acquired - do work
+	 *   // Automatically released when guard goes out of scope
+	 * } else {
+	 *   // Lock not available - do something else
+	 * }
+	 * ```
 	 */
 	tryAcquire(): LockGuard | null {
 		if (this.allowMultipleReaders) {
@@ -326,7 +589,23 @@ export class Lock implements AsyncDisposable {
 	}
 
 	/**
-	 * Try to acquire a read lock immediately (read-write mode only).
+	 * Tries to acquire a read lock immediately (read-write mode only).
+	 *
+	 * Returns `null` if a writer is active or waiting with higher priority.
+	 * Only available for in-memory locks.
+	 *
+	 * @returns A LockGuard if acquired, `null` if lock is not available
+	 * @throws Error if lock is not in read-write mode or is distributed
+	 *
+	 * @example
+	 * ```typescript
+	 * const lock = new Lock(s.signal, { allowMultipleReaders: true });
+	 *
+	 * using guard = lock.tryRead();
+	 * if (guard) {
+	 *   // Read lock acquired
+	 * }
+	 * ```
 	 */
 	tryRead(): LockGuard | null {
 		if (!this.allowMultipleReaders) {
@@ -351,7 +630,23 @@ export class Lock implements AsyncDisposable {
 	}
 
 	/**
-	 * Try to acquire a write lock immediately (read-write mode only).
+	 * Tries to acquire a write lock immediately (read-write mode only).
+	 *
+	 * Returns `null` if any readers or writers are active, or if there are pending requests.
+	 * Only available for in-memory locks.
+	 *
+	 * @returns A LockGuard if acquired, `null` if lock is not available
+	 * @throws Error if lock is not in read-write mode or is distributed
+	 *
+	 * @example
+	 * ```typescript
+	 * const lock = new Lock(s.signal, { allowMultipleReaders: true });
+	 *
+	 * using guard = lock.tryWrite();
+	 * if (guard) {
+	 *   // Write lock acquired exclusively
+	 * }
+	 * ```
 	 */
 	tryWrite(): LockGuard | null {
 		if (!this.allowMultipleReaders) {
@@ -383,7 +678,24 @@ export class Lock implements AsyncDisposable {
 	}
 
 	/**
-	 * Check if the lock is currently held (in-memory only).
+	 * Checks if the lock is currently held.
+	 *
+	 * For exclusive locks, returns `true` if acquired.
+	 * For read-write locks, returns `true` if any readers or a writer is active.
+	 *
+	 * Only available for in-memory locks.
+	 *
+	 * @returns `true` if the lock is held
+	 * @throws Error for distributed locks
+	 *
+	 * @example
+	 * ```typescript
+	 * const lock = new Lock(s.signal);
+	 * console.log(lock.isLocked); // false
+	 *
+	 * await using guard = await lock.acquire();
+	 * console.log(lock.isLocked); // true
+	 * ```
 	 */
 	get isLocked(): boolean {
 		if (this.provider) {
@@ -399,7 +711,21 @@ export class Lock implements AsyncDisposable {
 	}
 
 	/**
-	 * Get statistics about the lock (in-memory only).
+	 * Gets statistics about the lock state.
+	 *
+	 * Returns reader count, writer state, and pending request count.
+	 * Only available for in-memory locks.
+	 *
+	 * @returns Lock statistics object
+	 * @throws Error for distributed locks
+	 *
+	 * @example
+	 * ```typescript
+	 * const lock = new Lock(s.signal, { allowMultipleReaders: true });
+	 * const stats = lock.stats;
+	 * console.log(`${stats.readerCount} active readers`);
+	 * console.log(`${stats.pendingRequests} pending requests`);
+	 * ```
 	 */
 	get stats(): {
 		readerCount: number;
@@ -419,6 +745,18 @@ export class Lock implements AsyncDisposable {
 		};
 	}
 
+	/**
+	 * Disposes the lock and rejects all pending requests.
+	 *
+	 * Called automatically when using the `await using` statement.
+	 *
+	 * @example
+	 * ```typescript
+	 * await using lock = new Lock(s.signal);
+	 * // ... use lock
+	 * // All pending requests rejected on disposal
+	 * ```
+	 */
 	async [Symbol.asyncDispose](): Promise<void> {
 		if (this.disposed) return;
 		this.disposed = true;
@@ -446,6 +784,10 @@ export class Lock implements AsyncDisposable {
 	// In-Memory Implementation
 	// ============================================================================
 
+	/**
+	 * Acquires an exclusive lock using in-memory coordination.
+	 * @internal
+	 */
 	private acquireInMemoryExclusive(
 		options: LockAcquireOptions,
 	): Promise<LockGuard> {
@@ -482,6 +824,10 @@ export class Lock implements AsyncDisposable {
 		});
 	}
 
+	/**
+	 * Acquires a read lock using in-memory coordination.
+	 * @internal
+	 */
 	private acquireInMemoryRead(options: LockAcquireOptions): Promise<LockGuard> {
 		const { timeout, priority = 0 } = options;
 
@@ -516,6 +862,10 @@ export class Lock implements AsyncDisposable {
 		});
 	}
 
+	/**
+	 * Acquires a write lock using in-memory coordination.
+	 * @internal
+	 */
 	private acquireInMemoryWrite(
 		options: LockAcquireOptions,
 	): Promise<LockGuard> {
@@ -556,6 +906,10 @@ export class Lock implements AsyncDisposable {
 	// Distributed Implementation
 	// ============================================================================
 
+	/**
+	 * Acquires an exclusive distributed lock.
+	 * @internal
+	 */
 	private async acquireDistributedExclusive(
 		options: LockAcquireOptions,
 	): Promise<LockGuard> {
@@ -577,6 +931,10 @@ export class Lock implements AsyncDisposable {
 		}
 	}
 
+	/**
+	 * Attempts to acquire an exclusive distributed lock.
+	 * @internal
+	 */
 	private async tryAcquireDistributedExclusive(): Promise<LockGuard | null> {
 		if (!this.provider || !this.key) return null;
 
@@ -600,6 +958,10 @@ export class Lock implements AsyncDisposable {
 		return null;
 	}
 
+	/**
+	 * Acquires a distributed read lock.
+	 * @internal
+	 */
 	private async acquireDistributedRead(
 		options: LockAcquireOptions,
 	): Promise<LockGuard> {
@@ -621,6 +983,10 @@ export class Lock implements AsyncDisposable {
 		}
 	}
 
+	/**
+	 * Attempts to acquire a distributed read lock.
+	 * @internal
+	 */
 	private async tryAcquireDistributedRead(): Promise<LockGuard | null> {
 		if (!this.provider || !this.key) return null;
 
@@ -657,6 +1023,10 @@ export class Lock implements AsyncDisposable {
 		return null;
 	}
 
+	/**
+	 * Acquires a distributed write lock.
+	 * @internal
+	 */
 	private async acquireDistributedWrite(
 		options: LockAcquireOptions,
 	): Promise<LockGuard> {
@@ -680,6 +1050,10 @@ export class Lock implements AsyncDisposable {
 		}
 	}
 
+	/**
+	 * Attempts to acquire a distributed write lock.
+	 * @internal
+	 */
 	private async tryAcquireDistributedWrite(): Promise<LockGuard | null> {
 		if (!this.provider || !this.key) return null;
 
@@ -711,6 +1085,10 @@ export class Lock implements AsyncDisposable {
 	// Queue Processing
 	// ============================================================================
 
+	/**
+	 * Processes the lock request queue, granting locks when possible.
+	 * @internal
+	 */
 	private processQueue(): void {
 		if (this.disposed) return;
 
@@ -788,16 +1166,28 @@ export class Lock implements AsyncDisposable {
 	// Release Methods
 	// ============================================================================
 
+	/**
+	 * Releases an exclusive lock and processes the queue.
+	 * @internal
+	 */
 	private releaseExclusive(): void {
 		this.exclusiveActive = false;
 		this.processQueue();
 	}
 
+	/**
+	 * Releases a read lock and processes the queue.
+	 * @internal
+	 */
 	private releaseRead(): void {
 		this.readerCount--;
 		this.processQueue();
 	}
 
+	/**
+	 * Releases a write lock and processes the queue.
+	 * @internal
+	 */
 	private releaseWrite(): void {
 		this.writerActive = false;
 		this.processQueue();
@@ -807,6 +1197,10 @@ export class Lock implements AsyncDisposable {
 	// Distributed Helpers
 	// ============================================================================
 
+	/**
+	 * Schedules automatic extension of a distributed lock.
+	 * @internal
+	 */
 	private scheduleDistributedExtend(key: string): void {
 		const extendInterval = Math.floor(this.ttl * 0.6);
 		this.distributedExtendTimeout = setTimeout(async () => {
@@ -819,6 +1213,10 @@ export class Lock implements AsyncDisposable {
 		}, extendInterval);
 	}
 
+	/**
+	 * Clears the distributed lock extension timeout.
+	 * @internal
+	 */
 	private clearDistributedExtend(): void {
 		if (this.distributedExtendTimeout) {
 			clearTimeout(this.distributedExtendTimeout);
@@ -830,6 +1228,10 @@ export class Lock implements AsyncDisposable {
 	// Utility
 	// ============================================================================
 
+	/**
+	 * Removes a request from the queue.
+	 * @internal
+	 */
 	private removeRequest(request: QueuedRequest): void {
 		const index = this.requestQueue.indexOf(request);
 		if (index > -1) {
@@ -837,31 +1239,55 @@ export class Lock implements AsyncDisposable {
 		}
 	}
 
+	/**
+	 * Clears the timeout for a request.
+	 * @internal
+	 */
 	private clearTimeout(request: QueuedRequest): void {
 		if (request.timeoutId) {
 			clearTimeout(request.timeoutId);
 		}
 	}
 
+	/**
+	 * Sleeps for the specified duration.
+	 * @internal
+	 */
 	private sleep(ms: number): Promise<void> {
 		return new Promise((resolve) => setTimeout(resolve, ms));
 	}
 }
 
 /**
- * Create a Lock instance
+ * Creates a new {@link Lock} instance.
+ *
+ * This is a convenience factory function. See {@link Lock} for detailed usage.
+ *
+ * @param signal - AbortSignal for cancellation (optional)
+ * @param options - Lock configuration options
+ * @param options.provider - Persistence provider for distributed locking
+ * @param options.key - Unique key for distributed locks
+ * @param options.ttl - Lock TTL in milliseconds for distributed locks (default: 30000)
+ * @param options.owner - Owner identifier for distributed locks (default: random string)
+ * @param options.allowMultipleReaders - Allow multiple simultaneous readers (default: false)
+ * @param options.name - Name for debugging purposes (default: random string)
+ * @returns A new Lock instance
  *
  * @example
  * ```typescript
+ * import { createLock } from "go-go-scope";
+ * import { RedisAdapter } from "@go-go-scope/persistence-redis";
+ *
  * // Exclusive lock
  * const mutex = createLock(s.signal);
  * await using guard = await mutex.acquire();
  *
  * // Read-write lock
  * const rwlock = createLock(s.signal, { allowMultipleReaders: true });
- * await using guard = await rwlock.read();
+ * await using readGuard = await rwlock.read();
+ * await using writeGuard = await rwlock.write();
  *
- * // Distributed lock
+ * // Distributed lock with Redis
  * const distLock = createLock(s.signal, {
  *   provider: new RedisAdapter(redis),
  *   key: "my-resource",

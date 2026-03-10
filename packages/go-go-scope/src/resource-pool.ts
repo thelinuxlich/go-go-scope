@@ -1,28 +1,121 @@
 /**
  * ResourcePool class for go-go-scope - Managed pool of resources
+ *
+ * @module go-go-scope/resource-pool
+ *
+ * @description
+ * Provides a managed pool of resources with automatic lifecycle management,
+ * health checking, and acquire/release semantics. Ideal for database connections,
+ * HTTP clients, worker threads, or any resource that benefits from pooling.
+ *
+ * Features:
+ * - Automatic resource lifecycle management (create/destroy)
+ * - Configurable min/max pool size
+ * - Blocking acquire with timeout support
+ * - Automatic health checks with periodic verification
+ * - Graceful shutdown with resource cleanup
+ * - Queue-based fairness for waiting acquirers
+ * - Statistics tracking
+ *
+ * @see {@link Scope.resourcePool} For creating pools via scope
+ * @see {@link HealthCheckResult} For health check return type
+ *
+ * @example
+ * ```typescript
+ * import { scope } from "go-go-scope";
+ *
+ * await using s = scope();
+ *
+ * // Create a database connection pool
+ * const pool = s.resourcePool({
+ *   create: async () => {
+ *     const conn = await createDatabaseConnection();
+ *     return conn;
+ *   },
+ *   destroy: async (conn) => {
+ *     await conn.close();
+ *   },
+ *   min: 2,
+ *   max: 10,
+ *   acquireTimeout: 5000,
+ *   healthCheck: async (conn) => {
+ *     try {
+ *       await conn.query('SELECT 1');
+ *       return { healthy: true };
+ *     } catch (err) {
+ *       return { healthy: false, message: String(err) };
+ *     }
+ *   },
+ *   healthCheckInterval: 30000
+ * });
+ *
+ * // Use with manual acquire/release
+ * const conn = await pool.acquire();
+ * try {
+ *   const result = await conn.query('SELECT * FROM users');
+ * } finally {
+ *   await pool.release(conn);
+ * }
+ *
+ * // Or use execute for automatic release
+ * const result = await pool.execute(async (conn) => {
+ *   return await conn.query('SELECT * FROM users');
+ * });
+ * ```
  */
 
 import type { ResourcePoolOptions } from "./types.js";
 
 /**
- * Health check result for a resource
+ * Health check result for a resource.
+ *
+ * Returned by the health check function to indicate whether a resource
+ * is healthy and can continue to be used.
+ *
+ * @interface
+ *
+ * @example
+ * ```typescript
+ * const healthCheck = async (connection: DatabaseConnection): Promise<HealthCheckResult> => {
+ *   try {
+ *     await connection.ping();
+ *     return { healthy: true };
+ *   } catch (error) {
+ *     return { healthy: false, message: "Ping failed: " + String(error) };
+ *   }
+ * };
+ * ```
  */
 export interface HealthCheckResult {
-	/** Whether the resource is healthy */
+	/** Whether the resource is healthy and can be used */
 	healthy: boolean;
-	/** Optional message explaining the health status */
+	/** Optional message explaining the health status or failure reason */
 	message?: string;
 }
 
 /**
  * A managed pool of resources with automatic lifecycle management.
- * Useful for connection pooling (databases, HTTP clients, etc.).
+ *
+ * Useful for connection pooling (databases, HTTP clients, etc.) and any scenario
+ * where creating resources is expensive and reusing them improves performance.
+ *
+ * The pool maintains a minimum number of resources (warming) and scales up to
+ * a maximum under load. Resources can be health-checked periodically and
+ * unhealthy resources are automatically replaced.
+ *
+ * @template T The type of resource being pooled
+ *
+ * @implements {AsyncDisposable}
+ *
+ * @see {@link Scope.resourcePool} Factory method on scope
+ * @see {@link ResourcePoolOptions} Configuration options
+ * @see {@link HealthCheckResult} Health check return type
  *
  * @example
  * ```typescript
  * await using s = scope()
  *
- * const pool = s.pool({
+ * const pool = s.resourcePool({
  *   create: () => createDatabaseConnection(),
  *   destroy: (conn) => conn.close(),
  *   healthCheck: async (conn) => {
@@ -64,6 +157,23 @@ export class ResourcePool<T> implements AsyncDisposable {
 	private healthCheckTimer?: ReturnType<typeof setInterval>;
 	private unhealthyResources = new Set<T>();
 
+	/**
+	 * Creates a new ResourcePool instance.
+	 *
+	 * @param options - Configuration options for the pool
+	 * @param options.create - Factory function to create a new resource
+	 * @param options.destroy - Function to destroy a resource when removed from pool
+	 * @param options.min - Minimum number of resources to maintain (default: 0)
+	 * @param options.max - Maximum number of resources allowed (default: 10)
+	 * @param options.acquireTimeout - Timeout in milliseconds for acquiring a resource (default: 30000)
+	 * @param options.healthCheck - Optional function to check resource health
+	 * @param options.healthCheckInterval - Interval in milliseconds between health checks (default: 30000)
+	 * @param parentSignal - Optional AbortSignal from parent scope for cancellation propagation
+	 *
+	 * @throws {Error} If options are invalid or create callback is missing
+	 *
+	 * @internal Use {@link Scope.resourcePool} instead of constructing directly
+	 */
 	constructor(
 		private options: ResourcePoolOptions<T>,
 		parentSignal?: AbortSignal,
@@ -92,7 +202,26 @@ export class ResourcePool<T> implements AsyncDisposable {
 
 	/**
 	 * Initialize the pool with minimum resources.
+	 *
 	 * Called automatically on first acquire if not already initialized.
+	 * Pre-warms the pool by creating resources up to the configured minimum.
+	 *
+	 * @returns {Promise<void>} Resolves when minimum resources are created
+	 *
+	 * @throws {Error} If the pool has been disposed
+	 *
+	 * @example
+	 * ```typescript
+	 * const pool = s.resourcePool({
+	 *   create: () => createConnection(),
+	 *   destroy: (c) => c.close(),
+	 *   min: 5
+	 * });
+	 *
+	 * // Pre-warm the pool before accepting requests
+	 * await pool.initialize();
+	 * console.log('Pool ready with 5 connections');
+	 * ```
 	 */
 	async initialize(): Promise<void> {
 		if (this.disposed || this.aborted) {
@@ -107,10 +236,33 @@ export class ResourcePool<T> implements AsyncDisposable {
 
 	/**
 	 * Acquire a resource from the pool.
-	 * Blocks if no resources are available until one is returned or timeout.
 	 *
-	 * @throws Error if pool is disposed
-	 * @throws Error if acquire timeout is reached
+	 * Returns an available resource immediately if one exists.
+	 * If no resources are available, creates a new one if under max capacity.
+	 * Otherwise, blocks until a resource is returned or timeout occurs.
+	 *
+	 * @returns {Promise<T>} A resource from the pool
+	 *
+	 * @throws {Error} If the pool is disposed
+	 * @throws {Error} If acquire timeout is reached
+	 * @throws {unknown} If the parent scope was aborted
+	 *
+	 * @see {@link ResourcePool.release} For returning the resource
+	 * @see {@link ResourcePool.execute} For automatic resource management
+	 *
+	 * @example
+	 * ```typescript
+	 * const conn = await pool.acquire();
+	 * try {
+	 *   // Use the connection
+	 *   await conn.query('SELECT * FROM users');
+	 * } catch (err) {
+	 *   console.error('Query failed:', err);
+	 * } finally {
+	 *   // Always release back to pool
+	 *   await pool.release(conn);
+	 * }
+	 * ```
 	 */
 	async acquire(): Promise<T> {
 		if (this.disposed) {
@@ -155,7 +307,31 @@ export class ResourcePool<T> implements AsyncDisposable {
 
 	/**
 	 * Release a resource back to the pool.
-	 * The resource should have been acquired from this pool.
+	 *
+	 * The resource should have been acquired from this pool using {@link acquire}.
+	 * If there are waiting acquirers, the resource is handed off immediately.
+	 * Otherwise, it's returned to the available pool.
+	 *
+	 * If the pool has been disposed or aborted, the resource is destroyed instead
+	 * of being returned to the pool.
+	 *
+	 * @param resource - The resource to release back to the pool
+	 *
+	 * @returns {Promise<void>} Resolves when the resource is released
+	 *
+	 * @see {@link ResourcePool.acquire} For acquiring resources
+	 * @see {@link ResourcePool.execute} For automatic acquire/release
+	 *
+	 * @example
+	 * ```typescript
+	 * const conn = await pool.acquire();
+	 * try {
+	 *   await conn.doWork();
+	 * } finally {
+	 *   // Release back to pool even if work fails
+	 *   await pool.release(conn);
+	 * }
+	 * ```
 	 */
 	async release(resource: T): Promise<void> {
 		if (this.disposed) {
@@ -185,13 +361,31 @@ export class ResourcePool<T> implements AsyncDisposable {
 
 	/**
 	 * Execute a function with an acquired resource.
-	 * The resource is automatically released after the function completes.
+	 *
+	 * Automatically acquires a resource, executes the provided function,
+	 * and releases the resource back to the pool (even if the function throws).
+	 * This is the recommended way to use pool resources as it ensures
+	 * proper cleanup.
+	 *
+	 * @template R Return type of the function
+	 * @param fn - Function to execute with the acquired resource
+	 * @returns {Promise<R>} Result of the function
+	 *
+	 * @throws {Error} If pool is disposed or acquire times out
+	 * @throws {*} Any error thrown by the provided function
+	 *
+	 * @see {@link ResourcePool.acquire} For manual acquire
+	 * @see {@link ResourcePool.release} For manual release
 	 *
 	 * @example
 	 * ```typescript
-	 * await pool.execute(async (resource) => {
-	 *   await resource.doSomething()
-	 * })
+	 * const result = await pool.execute(async (resource) => {
+	 *   const data = await resource.fetchData();
+	 *   const processed = await processData(data);
+	 *   return processed;
+	 * });
+	 *
+	 * // Resource is automatically released, even if an error occurs
 	 * ```
 	 */
 	async execute<R>(fn: (resource: T) => Promise<R>): Promise<R> {
@@ -205,6 +399,26 @@ export class ResourcePool<T> implements AsyncDisposable {
 
 	/**
 	 * Get pool statistics.
+	 *
+	 * Returns current metrics about the pool state including total resources,
+	 * available resources, waiting acquirers, and health check status.
+	 *
+	 * @returns {Object} Pool statistics
+	 * @returns {number} returns.total Total number of resources in the pool
+	 * @returns {number} returns.available Number of available (idle) resources
+	 * @returns {number} returns.inUse Number of resources currently acquired
+	 * @returns {number} returns.waiting Number of acquirers waiting for resources
+	 * @returns {number} returns.creating Number of resources being created
+	 * @returns {number} returns.unhealthy Number of resources that failed health checks
+	 * @returns {boolean} returns.healthChecksEnabled Whether health checks are enabled
+	 *
+	 * @example
+	 * ```typescript
+	 * const stats = pool.stats;
+	 * console.log(`Available: ${stats.available}/${stats.total}`);
+	 * console.log(`Waiting: ${stats.waiting}`);
+	 * console.log(`Unhealthy: ${stats.unhealthy}`);
+	 * ```
 	 */
 	get stats(): {
 		total: number;
@@ -230,9 +444,24 @@ export class ResourcePool<T> implements AsyncDisposable {
 
 	/**
 	 * Manually trigger a health check on all resources.
-	 * Unhealthy resources will be destroyed and replaced (if min pool size is set).
 	 *
-	 * @returns Number of unhealthy resources found and removed
+	 * Iterates through all resources and runs the configured health check.
+	 * Unhealthy resources are destroyed and replaced (if min pool size is set).
+	 * This is called automatically if healthCheckInterval is configured.
+	 *
+	 * @returns {Promise<number>} Number of unhealthy resources found and removed
+	 *
+	 * @see {@link ResourcePoolOptions.healthCheck} For configuring health checks
+	 * @see {@link ResourcePoolOptions.healthCheckInterval} For automatic health checks
+	 *
+	 * @example
+	 * ```typescript
+	 * // Check health manually before a critical operation
+	 * const unhealthyCount = await pool.checkHealth();
+	 * if (unhealthyCount > 0) {
+	 *   console.warn(`Removed ${unhealthyCount} unhealthy connections`);
+	 * }
+	 * ```
 	 */
 	async checkHealth(): Promise<number> {
 		if (!this.options.healthCheck) {
@@ -278,7 +507,8 @@ export class ResourcePool<T> implements AsyncDisposable {
 
 	/**
 	 * Start periodic health checks.
-	 * @internal
+	 *
+	 * @internal Called by constructor when healthCheckInterval is configured
 	 */
 	private startHealthChecks(): void {
 		const interval = this.options.healthCheckInterval ?? 30000;
@@ -289,6 +519,7 @@ export class ResourcePool<T> implements AsyncDisposable {
 
 	/**
 	 * Remove a resource from the pool and destroy it.
+	 *
 	 * @internal
 	 */
 	private async removeResource(resource: T): Promise<void> {
@@ -316,6 +547,20 @@ export class ResourcePool<T> implements AsyncDisposable {
 
 	/**
 	 * Dispose the pool and destroy all resources.
+	 *
+	 * Stops health checks, rejects all waiting acquirers, and destroys
+	 * all resources. Called automatically when the parent scope is disposed.
+	 *
+	 * @returns {Promise<void>} Resolves when all resources are cleaned up
+	 *
+	 * @implements {AsyncDisposable}
+	 *
+	 * @example
+	 * ```typescript
+	 * await using pool = s.resourcePool({ ... });
+	 * // Use pool...
+	 * // Automatically disposed when scope exits
+	 * ```
 	 */
 	async [Symbol.asyncDispose](): Promise<void> {
 		if (this.disposed) return;

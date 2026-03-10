@@ -9,18 +9,50 @@ import type { Result, Scope, ScopePlugin } from "go-go-scope";
 
 /**
  * A lazy stream that processes async iterables with composable operations.
- * Integrates with Scope for automatic cancellation.
+ *
+ * The Stream class provides a powerful, functional API for processing asynchronous
+ * data streams. All operations are lazy - they don't execute until a terminal
+ * operation like `toArray()`, `forEach()`, or `runDrain()` is called.
+ *
+ * Streams integrate seamlessly with go-go-scope's structured concurrency system,
+ * automatically respecting scope cancellation and cleaning up resources.
+ *
+ * @template T - The type of values in the stream
  *
  * @example
  * ```typescript
- * await using s = scope()
+ * import { scope } from 'go-go-scope'
+ * import { streamPlugin } from '@go-go-scope/stream'
  *
+ * await using s = scope({ plugins: [streamPlugin] })
+ *
+ * // Transform data with a pipeline of operations
  * const [err, results] = await s.stream(fetchData())
  *   .map(x => x * 2)
  *   .filter(x => x > 10)
  *   .take(5)
  *   .toArray()
  * ```
+ *
+ * @example
+ * ```typescript
+ * // Real-world: Processing paginated API results
+ * const [err, users] = await s.stream(fetchUsers())
+ *   .flatMap(page => page.items)
+ *   .filter(user => user.isActive)
+ *   .map(user => ({
+ *     id: user.id,
+ *     name: user.name,
+ *     email: user.email.toLowerCase()
+ *   }))
+ *   .take(100)
+ *   .toArray()
+ * ```
+ *
+ * @see streamPlugin for adding stream support to Scope
+ * @see {@link map} for transforming values
+ * @see {@link filter} for filtering values
+ * @see {@link toArray} for collecting results
  */
 /* #__PURE__ */
 export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
@@ -86,8 +118,40 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 	// ============================================================================
 
 	/**
-	 * Transform each value.
-	 * Lazy - applies as values flow through.
+	 * Transform each value in the stream using the provided function.
+	 *
+	 * This operation is lazy - the transformation is only applied when values
+	 * are consumed from the stream. The original stream is not modified.
+	 *
+	 * @template R - The return type of the transformation function
+	 * @param fn - Transformation function that receives each value and its index
+	 * @returns A new Stream with transformed values
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * const numbers = s.stream([1, 2, 3, 4, 5])
+	 *
+	 * const doubled = numbers.map(x => x * 2)
+	 *
+	 * const [err, result] = await doubled.toArray()
+	 * // result: [2, 4, 6, 8, 10]
+	 * ```
+	 *
+	 * @example
+	 * ```typescript
+	 * // Chaining multiple operations
+	 * const [err, result] = await s.stream(users)
+	 *   .map(u => u.name)
+	 *   .filter(name => name.length > 3)
+	 *   .take(10)
+	 *   .toArray()
+	 * ```
+	 *
+	 * @see {@link flatMap} for mapping to multiple values
+	 * @see {@link filter} for filtering values
+	 * @see {@link filterMap} for mapping and filtering in one operation
 	 */
 	map<R>(fn: (value: T, index: number) => R): Stream<R> {
 		const self = this;
@@ -106,8 +170,36 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 	}
 
 	/**
-	 * Filter values based on predicate.
-	 * Lazy - filters as values flow through.
+	 * Filter values based on a predicate function.
+	 *
+	 * This operation is lazy - values are tested as they flow through,
+	 * and only those matching the predicate are yielded. The original
+	 * stream is not modified.
+	 *
+	 * @param predicate - Function that returns true for values to keep
+	 * @returns A new Stream containing only values that match the predicate
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * const [err, evens] = await s.stream([1, 2, 3, 4, 5, 6])
+	 *   .filter(x => x % 2 === 0)
+	 *   .toArray()
+	 * // evens: [2, 4, 6]
+	 * ```
+	 *
+	 * @example
+	 * ```typescript
+	 * // Filtering with index
+	 * const [err, result] = await s.stream(['a', 'b', 'c', 'd'])
+	 *   .filter((_, index) => index % 2 === 0)
+	 *   .toArray()
+	 * // result: ['a', 'c']
+	 * ```
+	 *
+	 * @see {@link filterMap} for filtering and mapping in one operation
+	 * @see {@link map} for transforming values
 	 */
 	filter(predicate: (value: T, index: number) => boolean): Stream<T> {
 		const self = this;
@@ -129,7 +221,45 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 
 	/**
 	 * Map and flatten in one operation.
-	 * Lazy - flattens as values flow through.
+	 *
+	 * Applies a function to each value that returns an iterable, then
+	 * flattens the results into a single stream. Useful for operations
+	 * like fetching related data or expanding nested structures.
+	 *
+	 * This operation is lazy - flattening happens as values flow through.
+	 *
+	 * @template R - The type of values in the inner iterables
+	 * @param fn - Function that returns an iterable for each value
+	 * @returns A new Stream with all flattened values
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * // Flatten arrays
+	 * const [err, result] = await s.stream([[1, 2], [3, 4], [5, 6]])
+	 *   .flatMap(arr => arr)
+	 *   .toArray()
+	 * // result: [1, 2, 3, 4, 5, 6]
+	 * ```
+	 *
+	 * @example
+	 * ```typescript
+	 * // Fetch related data for each item
+	 * const [err, comments] = await s.stream(postIds)
+	 *   .flatMap(async function* (id) {
+	 *     const post = await fetchPost(id)
+	 *     for (const comment of post.comments) {
+	 *       yield comment
+	 *     }
+	 *   })
+	 *   .take(50)
+	 *   .toArray()
+	 * ```
+	 *
+	 * @see {@link map} for simple transformation
+	 * @see {@link concatMap} for sequential flatMap
+	 * @see {@link exhaustMap} for ignoring emissions during processing
 	 */
 	flatMap<R>(
 		fn: (value: T, index: number) => Iterable<R> | AsyncIterable<R>,
@@ -173,11 +303,31 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 		);
 	}
 
-
-
 	/**
 	 * Tap into the stream to perform side effects without modifying values.
-	 * Lazy - executes effect as values flow through.
+	 *
+	 * This operation is lazy - the side effect is executed as values flow
+	 * through the stream. The original values are passed through unchanged.
+	 * Useful for logging, debugging, or triggering external actions.
+	 *
+	 * @param fn - Side effect function that receives each value
+	 * @returns A new Stream with the same values (unchanged)
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * const [err, result] = await s.stream([1, 2, 3])
+	 *   .tap(x => console.log('Processing:', x))
+	 *   .map(x => x * 2)
+	 *   .tap(x => console.log('Doubled:', x))
+	 *   .toArray()
+	 * // Logs: Processing: 1, Doubled: 2, Processing: 2, Doubled: 4, ...
+	 * // result: [2, 4, 6]
+	 * ```
+	 *
+	 * @see {@link map} for transforming values
+	 * @see {@link forEach} for terminal side effects
 	 */
 	tap(fn: (value: T) => void | Promise<void>): Stream<T> {
 		const self = this;
@@ -381,8 +531,30 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 	// ============================================================================
 
 	/**
-	 * Take first n elements.
-	 * Lazy - stops after n elements.
+	 * Take the first n elements from the stream.
+	 *
+	 * Limits the stream to at most n elements. After n elements have
+	 * been yielded, the stream completes. If the source has fewer than
+	 * n elements, all are yielded.
+	 *
+	 * This operation is lazy - it stops consuming after n elements.
+	 *
+	 * @param n - Number of elements to take (must be non-negative)
+	 * @returns A new Stream with at most n elements
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * const [err, result] = await s.stream([1, 2, 3, 4, 5])
+	 *   .take(3)
+	 *   .toArray()
+	 * // result: [1, 2, 3]
+	 * ```
+	 *
+	 * @see {@link takeWhile} for conditional taking
+	 * @see {@link takeUntil} for predicate-based taking
+	 * @see {@link drop} for skipping elements
 	 */
 	take(n: number): Stream<T> {
 		const self = this;
@@ -938,8 +1110,29 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 
 	/**
 	 * Throttle the stream (limit rate).
-	 * Allows up to `limit` elements per `interval` milliseconds.
-	 * Lazy - throttles as values flow through.
+	 *
+	 * Allows up to `limit` elements per `interval` milliseconds. This is useful for
+	 * rate limiting streams to prevent overwhelming downstream consumers or APIs.
+	 *
+	 * This operation is lazy - throttles as values flow through.
+	 *
+	 * @param options - Throttle configuration options
+	 * @param options.limit - Maximum number of elements to emit per interval (default: 1)
+	 * @param options.interval - Time window in milliseconds (default: 1000)
+	 * @returns A new Stream that emits throttled values
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * // Allow up to 5 values per second
+	 * const [_, results] = await s.stream(fastSource)
+	 *   .throttle({ limit: 5, interval: 1000 })
+	 *   .toArray()
+	 * ```
+	 *
+	 * @see {@link debounce} for waiting for quiet periods
+	 * @see {@link auditTime} for emitting latest on interval
 	 */
 	throttle(options: { limit: number; interval: number }): Stream<T> {
 		const self = this;
@@ -992,8 +1185,30 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 
 	/**
 	 * Debounce the stream (wait for quiet period).
-	 * Emits only after ms of silence.
-	 * Lazy - debounces as values flow through.
+	 *
+	 * Waits for `ms` milliseconds of silence (no new values) before
+	 * emitting the most recent value. Useful for handling rapid-fire
+	 * events like search input or resize events.
+	 *
+	 * This operation is lazy - emits only after the quiet period.
+	 *
+	 * @param ms - Quiet period duration in milliseconds
+	 * @returns A new Stream that emits debounced values
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * // Search as user types, but wait for pause
+	 * await s.stream(searchInputEvents)
+	 *   .debounce(300)
+	 *   .forEach(({ query }) => {
+	 *     return performSearch(query)
+	 *   })
+	 * ```
+	 *
+	 * @see {@link throttle} for rate limiting
+	 * @see {@link auditTime} for emitting latest on interval
 	 */
 	debounce(ms: number): Stream<T> {
 		const self = this;
@@ -1242,8 +1457,30 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 
 	/**
 	 * Merge with another stream (interleave values).
-	 * Both streams are consumed concurrently.
-	 * Lazy - merges as values arrive from either stream.
+	 *
+	 * Consumes both streams concurrently and yields values from whichever
+	 * stream produces them first. Values from both streams are interleaved
+	 * in the order they arrive.
+	 *
+	 * This operation is lazy - merges as values arrive from either stream.
+	 *
+	 * @param other - Stream to merge with
+	 * @returns A new Stream with interleaved values from both streams
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * const stream1 = s.stream(interval(100)).map(() => 'A')
+	 * const stream2 = s.stream(interval(150)).map(() => 'B')
+	 *
+	 * const [err, result] = await stream1.merge(stream2).take(5).toArray()
+	 * // result might be: ['A', 'B', 'A', 'A', 'B'] (order depends on timing)
+	 * ```
+	 *
+	 * @see {@link concat} for sequential combination
+	 * @see {@link zip} for pairing values
+	 * @see {@link interleave} for round-robin combination
 	 */
 	merge(other: Stream<T>): Stream<T> {
 		const self = this;
@@ -1325,8 +1562,32 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 
 	/**
 	 * Zip with another stream - pair elements.
-	 * Stops when either stream ends.
-	 * Lazy - zips as values arrive.
+	 *
+	 * Pairs elements from both streams into tuples [T, R].
+	 * Stops when either stream ends. Both streams are consumed
+	 * in lockstep.
+	 *
+	 * This operation is lazy - zips as values arrive from both streams.
+	 *
+	 * @template R - The type of values in the other stream
+	 * @param other - Stream to zip with
+	 * @returns A new Stream of tuples [T, R]
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * const names = s.stream(['Alice', 'Bob', 'Carol'])
+	 * const ages = s.stream([25, 30, 35])
+	 *
+	 * const [err, result] = await names.zip(ages).toArray()
+	 * // result: [['Alice', 25], ['Bob', 30], ['Carol', 35]]
+	 * ```
+	 *
+	 * @see {@link zipWith} for zipping with a combining function
+	 * @see {@link zipWithIndex} for adding indices
+	 * @see {@link zipLatest} for using latest values
+	 * @see {@link zipAll} for continuing until both end
 	 */
 	zip<R>(other: Stream<R>): Stream<[T, R]> {
 		const self = this;
@@ -2170,17 +2431,28 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 
 	/**
 	 * Share - multicast to multiple subscribers.
+	 *
 	 * Returns a new Stream that can be subscribed to multiple times,
-	 * with all subscribers receiving the same values.
+	 * with all subscribers receiving the same values. This is useful for
+	 * broadcasting a single source to multiple consumers without re-executing
+	 * the source for each subscriber.
+	 *
+	 * @param options - Share configuration options
+	 * @param options.bufferSize - Number of values to buffer for late subscribers (default: 1)
+	 * @returns A new shared Stream that multicasts to multiple subscribers
 	 *
 	 * @example
 	 * ```typescript
-	 * const shared = s.stream(source).share();
+	 * await using s = scope()
+	 *
+	 * const shared = s.stream(source).share({ bufferSize: 5 });
 	 *
 	 * // Both subscribers receive the same values
 	 * shared.forEach(v => console.log('A:', v));
 	 * shared.forEach(v => console.log('B:', v));
 	 * ```
+	 *
+	 * @see {@link broadcast} for splitting into multiple independent streams
 	 */
 	share(options?: { bufferSize?: number }): Stream<T> {
 		const bufferSize = options?.bufferSize ?? 1;
@@ -2195,16 +2467,27 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 
 	/**
 	 * Partition stream into two based on predicate.
-	 * Returns [pass, fail] tuple.
-	 * Uses queue-based distribution - each stream has independent buffer.
-	 * The faster stream can advance up to bufferSize elements ahead.
+	 *
+	 * Returns [pass, fail] tuple where elements matching the predicate go to the
+	 * first stream and non-matching elements go to the second. Uses queue-based
+	 * distribution - each stream has an independent buffer.
+	 *
+	 * @param predicate - Function that returns true for values that should go to the first stream
+	 * @param options - Partition configuration options
+	 * @param options.bufferSize - Size of the buffer for each partition (default: 16)
+	 * @returns A tuple of [passingStream, failingStream]
 	 *
 	 * @example
 	 * ```typescript
-	 * const [evens, odds] = s.stream(nums).partition(n => n % 2 === 0)
-	 * const [_, evenArr] = await evens.toArray()
-	 * const [__, oddArr] = await odds.toArray()
+	 * await using s = scope()
+	 *
+	 * const [evens, odds] = s.stream([1, 2, 3, 4, 5, 6]).partition(n => n % 2 === 0)
+	 * const [_, evenArr] = await evens.toArray() // [2, 4, 6]
+	 * const [__, oddArr] = await odds.toArray()   // [1, 3, 5]
 	 * ```
+	 *
+	 * @see {@link splitAt} for splitting at a specific position
+	 * @see {@link broadcast} for broadcasting to multiple consumers
 	 */
 	partition(
 		predicate: (value: T) => boolean,
@@ -2253,15 +2536,28 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 
 	/**
 	 * Split stream at position n into two streams.
-	 * Returns [firstN, rest] tuple.
-	 * Uses queue-based distribution with independent consumption.
+	 *
+	 * Returns [firstN, rest] tuple where the first stream contains the first n elements
+	 * and the second stream contains the remaining elements. Uses queue-based
+	 * distribution with independent consumption.
+	 *
+	 * @param n - Number of elements for the first stream
+	 * @param options - Split configuration options
+	 * @param options.bufferSize - Size of the buffer for each stream (default: 16)
+	 * @returns A tuple of [firstNStream, restStream]
 	 *
 	 * @example
 	 * ```typescript
-	 * const [head, tail] = s.stream(items).splitAt(5)
-	 * const [_, firstFive] = await head.toArray()
-	 * const [__, rest] = await tail.toArray()
+	 * await using s = scope()
+	 *
+	 * const [head, tail] = s.stream([1, 2, 3, 4, 5, 6]).splitAt(3)
+	 * const [_, firstThree] = await head.toArray() // [1, 2, 3]
+	 * const [__, rest] = await tail.toArray()       // [4, 5, 6]
 	 * ```
+	 *
+	 * @see {@link partition} for splitting based on predicate
+	 * @see {@link take} for taking only the first n elements
+	 * @see {@link drop} for dropping the first n elements
 	 */
 	splitAt(
 		n: number,
@@ -2328,18 +2624,30 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 
 	/**
 	 * Broadcast stream to multiple consumers.
-	 * Returns array of streams that all receive the same values.
-	 * Uses queue-based distribution with independent consumption.
-	 * Auto-registers with scope for cleanup.
+	 *
+	 * Returns an array of streams that all receive the same values from the source.
+	 * Uses queue-based distribution with independent consumption, allowing each
+	 * consumer to process at its own pace. Auto-registers with scope for cleanup.
+	 *
+	 * @param n - Number of streams to create
+	 * @param options - Broadcast configuration options
+	 * @param options.bufferSize - Size of the buffer for each consumer (default: 0, unbounded)
+	 * @returns An array of streams, each receiving all values from the source
 	 *
 	 * @example
 	 * ```typescript
-	 * const [stream1, stream2, stream3] = s.stream(source).broadcast(3)
+	 * await using s = scope()
+	 *
+	 * const [stream1, stream2, stream3] = s.stream(source).broadcast(3, { bufferSize: 10 })
 	 *
 	 * // Each consumer gets all values
 	 * const [_, results1] = await stream1.toArray()
 	 * const [__, results2] = await stream2.toArray()
+	 * const [___, results3] = await stream3.toArray()
 	 * ```
+	 *
+	 * @see {@link share} for multicasting with shared subscription
+	 * @see {@link partition} for splitting based on predicate
 	 */
 	broadcast(n: number, options?: { bufferSize?: number }): Stream<T>[] {
 		const bufferSize = options?.bufferSize ?? 0;
@@ -2388,8 +2696,26 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 	// ============================================================================
 
 	/**
-	 * Collect all values into an array.
-	 * Returns Result tuple for type-safe error handling.
+	 * Collect all values from the stream into an array.
+	 *
+	 * This is a terminal operation that consumes the entire stream and
+	 * collects all values into an array. Returns a Result tuple for
+	 * type-safe error handling.
+	 *
+	 * @returns A Promise resolving to a Result tuple [error, values]
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * const [err, values] = await s.stream([1, 2, 3, 4, 5])
+	 *   .filter(x => x % 2 === 0)
+	 *   .toArray()
+	 * // values: [2, 4]
+	 * ```
+	 *
+	 * @see {@link forEach} for iterating without collecting
+	 * @see {@link runDrain} for consuming without collecting
 	 */
 	async toArray(): Promise<Result<unknown, T[]>> {
 		try {
@@ -2698,10 +3024,18 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 
 	/**
 	 * Pipe the stream through a series of transformation functions.
-	 * Enables functional composition of stream operations.
+	 *
+	 * Enables functional composition of stream operations by applying
+	 * a chain of transformation functions in order.
+	 *
+	 * @template U - The type of values in the resulting stream
+	 * @param fns - Array of transformation functions to apply
+	 * @returns A new Stream transformed by all functions in the pipe
 	 *
 	 * @example
 	 * ```typescript
+	 * await using s = scope()
+	 *
 	 * const [_, result] = await s.stream([1, 2, 3, 4, 5])
 	 *   .pipe(
 	 *     s => s.filter(x => x % 2 === 0),
@@ -2709,8 +3043,10 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 	 *     s => s.take(2)
 	 *   )
 	 *   .toArray()
-	 * // result = [20, 40]
+	 * // result: [20, 40]
 	 * ```
+	 *
+	 * @see {@link map} for single transformation
 	 */
 	pipe<U>(...fns: Array<(stream: Stream<T>) => Stream<U>>): Stream<U> {
 		// biome-ignore lint/suspicious/noExplicitAny: Pipe transforms stream type through chain
@@ -2719,7 +3055,30 @@ export class Stream<T> implements AsyncIterable<T>, AsyncDisposable {
 
 	/**
 	 * Retry the stream on failure with configurable delay.
-	 * Eager - retries immediately on failure.
+	 *
+	 * When the stream encounters an error, it will automatically retry up to `max` times
+	 * with a `delay` milliseconds between attempts. If all retries are exhausted,
+	 * the error is re-thrown.
+	 *
+	 * This operation is eager - retries immediately on failure.
+	 *
+	 * @param options - Retry configuration options
+	 * @param options.max - Maximum number of retry attempts (default: 3)
+	 * @param options.delay - Delay in milliseconds between retry attempts (default: 0)
+	 * @returns A new Stream with retry logic applied
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope()
+	 *
+	 * // Retry up to 5 times with 1 second delay between attempts
+	 * const [_, results] = await s.stream(unreliableSource)
+	 *   .retry({ max: 5, delay: 1000 })
+	 *   .toArray()
+	 * ```
+	 *
+	 * @see {@link catchAll} for catching errors without retrying
+	 * @see {@link orElse} for providing a fallback stream
 	 */
 	retry(options?: { max?: number; delay?: number }): Stream<T> {
 		const self = this;
@@ -3097,19 +3456,29 @@ interface QueueResult<T> {
 // ============================================================================
 
 /**
- * Stream plugin for go-go-scope
- * Adds the stream() method to Scope
+ * Stream plugin for go-go-scope.
+ *
+ * This plugin adds the `stream()` method to Scope, enabling lazy stream
+ * processing with structured concurrency. Install this plugin when creating
+ * a scope to access stream functionality.
  *
  * @example
  * ```typescript
  * import { scope } from 'go-go-scope'
  * import { streamPlugin } from '@go-go-scope/stream'
  *
- * const s = scope({ plugins: [streamPlugin] })
- * const st = s.stream([1, 2, 3])
+ * // Create a scope with the stream plugin
+ * await using s = scope({ plugins: [streamPlugin] })
+ *
+ * // Now you can use s.stream() to create streams
+ * const [err, result] = await s.stream([1, 2, 3, 4, 5])
+ *   .filter(x => x % 2 === 0)
  *   .map(x => x * 2)
  *   .toArray()
+ * // result: [4, 8]
  * ```
+ *
+ * @see {@link Stream} for stream operations
  */
 export const streamPlugin: ScopePlugin = {
 	name: "stream",

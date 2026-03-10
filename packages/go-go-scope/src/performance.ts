@@ -250,13 +250,36 @@ export interface BenchmarkOptions {
 	worker?: boolean;
 }
 
+/**
+ * Results from a benchmark execution.
+ *
+ * Contains timing statistics and performance metrics from running
+ * a function multiple times to measure its performance characteristics.
+ *
+ * @example
+ * ```typescript
+ * const result = await benchmark('my-function', () => {
+ *   // Function to benchmark
+ * }, { iterations: 1000 });
+ *
+ * console.log(`Average: ${result.avgDuration}ms`);
+ * console.log(`Ops/sec: ${result.opsPerSecond}`);
+ * ```
+ */
 export interface BenchmarkResult {
+	/** Name of the benchmark */
 	name: string;
+	/** Number of iterations executed */
 	iterations: number;
+	/** Total duration of all iterations in milliseconds */
 	totalDuration: number;
+	/** Average duration per iteration in milliseconds */
 	avgDuration: number;
+	/** Minimum duration of any iteration in milliseconds */
 	minDuration: number;
+	/** Maximum duration of any iteration in milliseconds */
 	maxDuration: number;
+	/** Operations per second (throughput) */
 	opsPerSecond: number;
 }
 

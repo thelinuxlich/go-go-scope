@@ -1,5 +1,9 @@
 /**
  * Race function for go-go-scope
+ *
+ * Provides utilities for racing multiple tasks against each other with
+ * structured concurrency guarantees. The first task to settle wins, and
+ * all other tasks are automatically cancelled.
  */
 
 import createDebug from "debug";
@@ -30,49 +34,162 @@ function createAggregateError(errors: unknown[]): Error {
 }
 
 /**
- * Race multiple tasks - the first to settle wins, others are cancelled.
- * Implements structured concurrency: all tasks run within a scope.
+ * Races multiple tasks - the first to settle wins, others are cancelled.
  *
+ * Implements structured concurrency: all tasks run within a scope and are
+ * automatically cancelled when a winner is determined. This prevents resource
+ * leaks from abandoned tasks.
+ *
+ * Features:
+ * - First settled task wins (success or error by default)
+ * - Optional `requireSuccess` to wait for first successful result
+ * - Timeout support with automatic cancellation
+ * - Concurrency limiting for controlled execution
+ * - Staggered start (hedging pattern) for latency-sensitive operations
+ * - Worker thread support for CPU-intensive tasks
+ * - Structured concurrency - losers are cancelled
+ *
+ * @typeParam T - The type of value returned by the task factories
  * @param factories - Array of factory functions that receive AbortSignal and create promises
  * @param options - Optional race configuration
- * @returns A Promise that resolves to the value of the first settled task
+ * @param options.signal - AbortSignal to cancel the race
+ * @param options.requireSuccess - If true, only successful results count. Errors continue racing (default: false)
+ * @param options.timeout - Timeout in milliseconds. If no task wins within this time, the race fails
+ * @param options.concurrency - Maximum concurrent tasks. When limit reached, new tasks start as others fail
+ * @param options.workers - Worker thread configuration for CPU-intensive tasks
+ * @param options.workers.threads - Number of worker threads (default: CPU count - 1)
+ * @param options.workers.idleTimeout - Idle timeout in ms before workers terminate (default: 60000)
+ * @param options.staggerDelay - Delay in ms between starting each task (hedging pattern)
+ * @param options.staggerMaxConcurrent - Maximum concurrent tasks when using staggered start
+ * @returns A Promise that resolves to a Result tuple of the winning task
  *
  * @example
  * ```typescript
- * // Basic race - first to settle wins
- * const winner = await race([
- *   ({ signal }) => fetch('https://a.com', { signal }),
- *   ({ signal }) => fetch('https://b.com', { signal }),
- * ])
+ * import { race } from 'go-go-scope';
  *
+ * // Basic race - first to settle wins
+ * const [err, winner] = await race([
+ *   ({ signal }) => fetch('https://api-primary.com/data', { signal }),
+ *   ({ signal }) => fetch('https://api-backup.com/data', { signal }),
+ * ]);
+ *
+ * if (!err) {
+ *   console.log('Winner:', winner);
+ * }
+ * // Losing fetch is automatically cancelled
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Race for first success only
+ * const [err, winner] = await race([
+ *   ({ signal }) => fetchWithRetry('https://a.com', { signal }),
+ *   ({ signal }) => fetchWithRetry('https://b.com', { signal }),
+ * ], { requireSuccess: true });
+ *
+ * // If first task errors, race continues until one succeeds
+ * // If all fail, returns aggregate error
+ * ```
+ *
+ * @example
+ * ```typescript
  * // Race with timeout
- * const winner = await race([
+ * const [err, winner] = await race([
  *   ({ signal }) => fetch('https://slow.com', { signal }),
  *   ({ signal }) => fetch('https://fast.com', { signal }),
- * ], { timeout: 5000 })
+ * ], { timeout: 5000 });
  *
- * // Race for first success only
- * const winner = await race([
- *   () => fetchWithRetry('https://a.com'),  // might fail then retry
- *   () => fetchWithRetry('https://b.com'),  // might fail then retry
- * ], { requireSuccess: true })
- *
- * // Race with limited concurrency
- * const winner = await race([
- *   () => fetch(url1),
- *   () => fetch(url2),
- *   () => fetch(url3),
- *   () => fetch(url4),
- *   () => fetch(url5),
- * ], { concurrency: 2 })
- *
- * // Race with worker threads for CPU-intensive tasks
- * const winner = await race([
- *   () => computeHash(data1),
- *   () => computeHash(data2),
- *   () => computeHash(data3),
- * ], { workers: { threads: 3 }, requireSuccess: true })
+ * if (err) {
+ *   console.log('No winner within 5 seconds');
+ * }
  * ```
+ *
+ * @example
+ * ```typescript
+ * // Hedging pattern - staggered start
+ * // Start first task, wait 50ms, start second if still running
+ * const [err, winner] = await race([
+ *   ({ signal }) => fetchFromPrimary({ signal }),
+ *   ({ signal }) => fetchFromBackup({ signal }),
+ *   ({ signal }) => fetchFromFallback({ signal }),
+ * ], {
+ *   staggerDelay: 50,           // 50ms between starts
+ *   staggerMaxConcurrent: 2     // Max 2 tasks running concurrently
+ * });
+ *
+ * // Reduces load on backup servers while maintaining low latency
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Race with limited concurrency
+ * const [err, winner] = await race([
+ *   () => searchEngineA(query),
+ *   () => searchEngineB(query),
+ *   () => searchEngineC(query),
+ *   () => searchEngineD(query),
+ *   () => searchEngineE(query),
+ * ], { concurrency: 2 });
+ *
+ * // Only 2 engines queried at a time
+ * // If first fails and requireSuccess is true, next starts
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Race with worker threads for CPU-intensive tasks
+ * const [err, hash] = await race([
+ *   () => computeHashVariantA(data),
+ *   () => computeHashVariantB(data),
+ *   () => computeHashVariantC(data),
+ * ], {
+ *   workers: { threads: 3 },
+ *   requireSuccess: true
+ * });
+ *
+ * // Fastest algorithm wins, others cancelled
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Race with cancellation
+ * const controller = new AbortController();
+ *
+ * const racePromise = race([
+ *   ({ signal }) => longRunningTask1({ signal }),
+ *   ({ signal }) => longRunningTask2({ signal }),
+ * ], { signal: controller.signal });
+
+ * // Cancel the race externally
+ * setTimeout(() => controller.abort('User cancelled'), 1000);
+ *
+ * const [err, winner] = await racePromise;
+ * if (err) {
+ *   console.log('Race was cancelled');
+ * }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Database query with multiple strategies
+ * const [err, result] = await race([
+ *   // Try cache first (usually fast)
+ *   () => cache.get(key),
+ *
+ *   // If cache miss, query primary DB
+ *   () => primaryDB.query(sql),
+ *
+ *   // Fallback to replica if primary slow
+ *   () => replicaDB.query(sql),
+ * ], {
+ *   requireSuccess: true,
+ *   staggerDelay: 10  // Small delay between strategies
+ * });
+ * ```
+ *
+ * @see {@link parallel} - For running all tasks in parallel
+ * @see {@link Scope#race} - For scoped race execution
+ * @see {@link RaceOptions} - For all available options
  */
 export async function race<T>(
 	factories: readonly ((signal: AbortSignal) => Promise<T>)[],
@@ -470,8 +587,23 @@ export async function race<T>(
 }
 
 /**
- * Race multiple tasks using worker threads.
- * This is for CPU-intensive synchronous functions that need to run in parallel.
+ * Races multiple tasks using worker threads.
+ *
+ * This is for CPU-intensive synchronous functions that need to run in parallel
+ * without blocking the main thread. Factory functions are serialized and
+ * executed in worker threads.
+ *
+ * @internal
+ * @typeParam T - The type of value returned by the task factories
+ * @param factories - Array of factory functions
+ * @param options - Worker thread configuration
+ * @param options.workers - Number of worker threads
+ * @param options.workerIdleTimeout - Timeout in ms before idle workers are terminated
+ * @param options.requireSuccess - If true, only successful results count
+ * @param options.timeout - Timeout in milliseconds for the race
+ * @param options.concurrency - Maximum concurrent tasks
+ * @param options.signal - AbortSignal to cancel the race
+ * @returns Promise resolving to Result of the winning task
  */
 async function raceWithWorkers<T>(
 	factories: readonly ((signal: AbortSignal) => Promise<T>)[],

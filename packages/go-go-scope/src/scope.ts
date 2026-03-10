@@ -559,6 +559,39 @@ export class Scope<
 		)._persistence;
 	}
 
+	/**
+	 * Spawns a task within this scope.
+	 *
+	 * Tasks are lazy - they don't start executing until awaited or `.then()` is called.
+	 * When awaited, they return a Result tuple `[error, value]` where exactly one is defined.
+	 *
+	 * @typeParam T - The return type of the task
+	 * @typeParam E - The error type for typed error handling
+	 * @param fnOrModule - Task function or WorkerModuleSpec for worker thread execution
+	 *   Receives a context object with services, signal, logger, context, checkpoint, and progress
+	 * @param options - Optional task configuration
+	 * @param options.id - Unique task identifier for checkpointing, idempotency, and observability
+	 * @param options.timeout - Timeout in milliseconds. Task is aborted after this duration
+	 * @param options.retry - Retry configuration: 'exponential', 'linear', 'fixed' string, or object with max, delay, if, onRetry
+	 * @param options.retry.max - Maximum number of retry attempts (default: 3)
+	 * @param options.retry.delay - Delay between retries in ms, or a RetryDelayFn
+	 * @param options.retry.if - Function to determine if an error should trigger retry
+	 * @param options.retry.onRetry - Callback invoked before each retry with error and attempt number
+	 * @param options.circuitBreaker - Circuit breaker configuration for this specific task
+	 * @param options.priority - Task priority when scope has concurrency limits (higher = earlier execution)
+	 * @param options.dedupe - Deduplication key. Tasks with same key share results while in-flight
+	 * @param options.memo - Memoization config with key and ttl. Caches successful results
+	 * @param options.idempotency - Idempotency config with key and ttl. Persists results across calls
+	 * @param options.worker - Execute task in a worker thread for CPU-intensive operations
+	 * @param options.data - Data to pass to worker thread. ArrayBuffers are transferred (zero-copy)
+	 * @param options.checkpoint - Checkpoint config with interval, onCheckpoint, onResume, maxCheckpoints
+	 * @param options.errorClass - Error class to wrap ALL errors (including AbortError)
+	 * @param options.systemErrorClass - Error class to wrap only untagged/system errors
+	 * @param options.errorContext - Context object attached to errors for debugging
+	 * @param options.onCleanup - Cleanup function called when task completes or is cancelled
+	 * @param options.otel - OpenTelemetry tracing options with additional attributes
+	 * @returns A Task that can be awaited for a Result tuple
+	 */
 	task<T, E extends Error = Error>(
 		fnOrModule:
 			| ((ctx: {
@@ -1103,8 +1136,12 @@ export class Scope<
 	 * Run multiple tasks in parallel with optional concurrency limit.
 	 * All tasks run within this scope and are cancelled together on failure.
 	 *
+	 * @typeParam T - Tuple type of factory functions
 	 * @param factories - Array of factory functions that receive AbortSignal and create promises
-	 * @param options - Optional configuration including concurrency limit, progress callback, and error handling
+	 * @param options - Optional configuration for parallel execution
+	 * @param options.concurrency - Maximum number of concurrent tasks. 0 or undefined means unlimited
+	 * @param options.onProgress - Callback invoked after each task completes. Receives completed count, total count, and the result
+	 * @param options.continueOnError - If true, continue running tasks even if some fail (default: false)
 	 * @returns A Promise that resolves to a tuple of Results (one per factory)
 	 */
 	async parallel<T extends readonly (() => Promise<unknown>)[]>(
@@ -1242,8 +1279,12 @@ export class Scope<
 	/**
 	 * Race multiple tasks against each other - first to settle wins.
 	 *
+	 * @typeParam T - The type of value returned by the task factories
 	 * @param factories - Array of factory functions that receive AbortSignal and create promises
-	 * @param options - Optional race configuration including timeout, requireSuccess, and concurrency
+	 * @param options - Optional race configuration
+	 * @param options.timeout - Timeout in milliseconds. If no task wins within this time, race fails
+	 * @param options.requireSuccess - If true, only successful results count. Errors continue racing (default: false)
+	 * @param options.concurrency - Maximum concurrent tasks. When limit reached, new tasks start as others fail
 	 * @returns A Promise that resolves to the Result of the winning task
 	 */
 	async race<T>(
@@ -1827,6 +1868,18 @@ export class Scope<
 		return new TokenBucket(options);
 	}
 
+	/**
+	 * Polls a function at regular intervals with structured concurrency.
+	 *
+	 * @typeParam T - The type of value returned by the polled function
+	 * @param fn - The async function to poll. Receives AbortSignal for cancellation
+	 * @param onValue - Callback invoked with each successful poll result. Can be async
+	 * @param options - Polling configuration options
+	 * @param options.interval - Interval in milliseconds between polls (default: 5000)
+	 * @param options.immediate - Run immediately on start, or wait for first interval (default: true)
+	 * @param options.signal - Optional AbortSignal to cancel polling
+	 * @returns A PollController for starting, stopping, and monitoring the poll
+	 */
 	poll<T>(
 		fn: (signal: AbortSignal) => Promise<T>,
 		onValue: (value: T) => void | Promise<void>,
@@ -1925,6 +1978,15 @@ export class Scope<
 	 * Create a debounced function that delays invoking the provided function
 	 * until after `wait` milliseconds have elapsed since the last time it was invoked.
 	 * Automatically cancelled when the scope is disposed.
+	 *
+	 * @typeParam T - The return type of the debounced function
+	 * @typeParam Args - The argument types of the debounced function
+	 * @param fn - The function to debounce
+	 * @param options - Debounce configuration options
+	 * @param options.wait - Wait time in milliseconds (default: 300)
+	 * @param options.leading - Trigger on the leading edge (first call) (default: false)
+	 * @param options.trailing - Trigger on the trailing edge (after wait period) (default: true)
+	 * @returns A debounced function that returns a Promise<Result>
 	 */
 	debounce<T, Args extends unknown[]>(
 		fn: (...args: Args) => Promise<T>,
@@ -1937,6 +1999,15 @@ export class Scope<
 	 * Create a throttled function that only invokes the provided function
 	 * at most once per every `wait` milliseconds.
 	 * Automatically cancelled when the scope is disposed.
+	 *
+	 * @typeParam T - The return type of the throttled function
+	 * @typeParam Args - The argument types of the throttled function
+	 * @param fn - The function to throttle
+	 * @param options - Throttle configuration options
+	 * @param options.interval - Interval in milliseconds between allowed executions (default: 300)
+	 * @param options.leading - Trigger on the leading edge (first call) (default: true)
+	 * @param options.trailing - Trigger on the trailing edge (after interval) (default: false)
+	 * @returns A throttled function that returns a Promise<Result>
 	 */
 	throttle<T, Args extends unknown[]>(
 		fn: (...args: Args) => Promise<T>,
@@ -1987,7 +2058,12 @@ export class Scope<
 	 * Automatically flushes when batch is full or timeout is reached.
 	 * Auto-flushes on scope disposal.
 	 *
-	 * @param options - Batch configuration
+	 * @typeParam T - The type of items being batched
+	 * @typeParam R - The return type of the batch process function
+	 * @param options - Batch configuration options
+	 * @param options.size - Maximum number of items per batch (default: 100)
+	 * @param options.timeout - Maximum time in ms to wait before flushing (default: 1000)
+	 * @param options.process - Function to process a batch of items. Receives the batch array and should return a promise
 	 * @returns Batch instance for adding items
 	 *
 	 * @example

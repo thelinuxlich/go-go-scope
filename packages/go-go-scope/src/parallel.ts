@@ -1,5 +1,9 @@
 /**
  * Parallel execution function for go-go-scope
+ *
+ * Provides utilities for running multiple tasks concurrently with structured
+ * concurrency guarantees. Includes support for concurrency limiting, progress
+ * tracking, error handling strategies, and worker threads for CPU-intensive tasks.
  */
 
 import createDebug from "debug";
@@ -10,27 +14,195 @@ import { WorkerPool } from "./worker-pool.js";
 const debugScope = createDebug("go-go-scope:parallel");
 
 /**
- * Run multiple tasks in parallel with optional concurrency limit and progress tracking.
- * All tasks run within a scope and are cancelled together on failure.
+ * Options for configuring parallel execution behavior.
  *
+ * @example
+ * ```typescript
+ * const options = {
+ *   concurrency: 3,           // Run max 3 tasks at once
+ *   continueOnError: true,    // Continue even if some tasks fail
+ *   onProgress: (completed, total, result) => {
+ *     console.log(`${completed}/${total} done`);
+ *   }
+ * };
+ * ```
+ */
+export interface ParallelOptions {
+	/** Maximum number of concurrent tasks. 0 or undefined means unlimited. */
+	concurrency?: number;
+	/** AbortSignal to cancel all running tasks. */
+	signal?: AbortSignal;
+	/** Callback invoked after each task completes. */
+	onProgress?: (
+		completed: number,
+		total: number,
+		result: Result<unknown, unknown>,
+	) => void;
+	/** If true, continue running tasks even if some fail. */
+	continueOnError?: boolean;
+	/** Use worker threads for CPU-intensive tasks. */
+	workers?: {
+		/** Number of worker threads. */
+		threads: number;
+		/** Timeout in ms before idle workers are terminated. Default: 60000. */
+		idleTimeout?: number;
+	};
+}
+
+/**
+ * Runs multiple tasks in parallel with optional concurrency limit and progress tracking.
+ *
+ * All tasks run within a scope and are cancelled together on parent cancellation.
  * Returns a tuple of Results where each position corresponds to the factory
  * at the same index. This preserves individual return types for type-safe destructuring.
  *
+ * Features:
+ * - Type-safe parallel execution with individual result types
+ * - Optional concurrency limiting
+ * - Progress tracking via callback
+ * - Configurable error handling (fail fast or continue on error)
+ * - Worker thread support for CPU-intensive tasks
+ * - Automatic cancellation propagation
+ * - Structured concurrency - all tasks cancelled together on failure
+ *
+ * @typeParam T - Tuple type of factory functions
  * @param factories - Array of factory functions that receive AbortSignal and create promises
- * @param options - Optional configuration including concurrency limit, progress callback, and error handling
+ * @param options - Optional configuration for parallel execution
+ * @param options.concurrency - Maximum number of concurrent tasks. 0 or undefined means unlimited
+ * @param options.signal - AbortSignal to cancel all running tasks
+ * @param options.onProgress - Callback invoked after each task completes. Receives completed count, total count, and the result tuple
+ * @param options.continueOnError - If true, continue running tasks even if some fail. Default: false
+ * @param options.workers - Worker thread configuration for CPU-intensive tasks
+ * @param options.workers.threads - Number of worker threads to use
+ * @param options.workers.idleTimeout - Timeout in ms before idle workers are terminated. Default: 60000
  * @returns A Promise that resolves to a tuple of Results (one per factory)
  *
  * @example
  * ```typescript
+ * import { parallel } from 'go-go-scope';
+ *
  * // With type inference - each result is typed individually
- * const [userResult, ordersResult] = await parallel([
+ * const [userResult, ordersResult, settingsResult] = await parallel([
  *   (signal) => fetchUser(1, { signal }),      // Result<Error, User>
  *   (signal) => fetchOrders({ signal }),       // Result<Error, Order[]>
- * ])
+ *   (signal) => fetchSettings({ signal }),     // Result<Error, Settings>
+ * ]);
  *
- * const [userErr, user] = userResult
- * const [ordersErr, orders] = ordersResult
+ * // Destructure each result
+ * const [userErr, user] = userResult;
+ * const [ordersErr, orders] = ordersResult;
+ * const [settingsErr, settings] = settingsResult;
+ *
+ * if (!userErr && !ordersErr && !settingsErr) {
+ *   console.log('All data loaded:', { user, orders, settings });
+ * }
  * ```
+ *
+ * @example
+ * ```typescript
+ * // With concurrency limit
+ * const results = await parallel(
+ *   urls.map(url => (signal) => fetch(url, { signal }).then(r => r.json())),
+ *   { concurrency: 5 } // Only 5 requests at a time
+ * );
+ *
+ * // Process results
+ * for (const [err, data] of results) {
+ *   if (!err) {
+ *     console.log('Fetched:', data);
+ *   }
+ * }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // With progress tracking
+ * const results = await parallel(
+ *   largeDataset.map(item => async (signal) => {
+ *     return await processItem(item, { signal });
+ *   }),
+ *   {
+ *     concurrency: 3,
+ *     onProgress: (completed, total, result) => {
+ *       const percentage = Math.round((completed / total) * 100);
+ *       console.log(`Progress: ${percentage}% (${completed}/${total})`);
+ *
+ *       if (result[0]) {
+ *         console.log('Task failed:', result[0].message);
+ *       }
+ *     }
+ *   }
+ * );
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Continue on error - get results even if some fail
+ * const [r1, r2, r3, r4] = await parallel([
+ *   () => fetch('/api/a'),  // Might succeed
+ *   () => fetch('/api/b'),  // Might fail
+ *   () => fetch('/api/c'),  // Might succeed
+ *   () => fetch('/api/d'),  // Might fail
+ * ], { continueOnError: true });
+ *
+ * // r1[0] is error if failed, undefined if succeeded
+ * // r1[1] is data if succeeded, undefined if failed
+ * console.log('A result:', r1[0] ? 'failed' : r1[1]);
+ * console.log('B result:', r2[0] ? 'failed' : r2[1]);
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // With cancellation
+ * const controller = new AbortController();
+ *
+ * const promise = parallel(
+ *   longRunningTasks.map(t => signal => t.execute({ signal })),
+ *   { signal: controller.signal }
+ * );
+ *
+ * // Cancel after 5 seconds
+ * setTimeout(() => controller.abort('Timeout'), 5000);
+ *
+ * try {
+ *   const results = await promise;
+ * } catch (e) {
+ *   console.log('Parallel execution was cancelled');
+ * }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // With worker threads for CPU-intensive tasks
+ * const [hash1, hash2, hash3] = await parallel([
+ *   () => computeHash(data1),  // CPU-intensive
+ *   () => computeHash(data2),
+ *   () => computeHash(data3),
+ * ], {
+ *   workers: {
+ *     threads: 3,           // Use 3 worker threads
+ *     idleTimeout: 30000    // Keep workers alive for 30s
+ *   }
+ * });
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Error handling - fail fast (default)
+ * try {
+ *   const results = await parallel([
+ *     () => fetch('/api/a'),
+ *     () => fetch('/api/b'),  // If this fails immediately...
+ *     () => fetch('/api/c'),
+ *   ]);
+ * } catch (error) {
+ *   // Other tasks are cancelled, error is thrown
+ *   console.log('A task failed:', error);
+ * }
+ * ```
+ *
+ * @see {@link race} - For racing tasks (first to complete wins)
+ * @see {@link Scope#parallel} - For scoped parallel execution
  */
 export async function parallel<
 	T extends readonly ((signal: AbortSignal) => Promise<unknown>)[],
@@ -225,7 +397,21 @@ export async function parallel<
 
 /**
  * Execute factories in worker threads.
- * This is for CPU-intensive synchronous functions that need to run in parallel.
+ *
+ * This is for CPU-intensive synchronous functions that need to run in parallel
+ * without blocking the main thread. The factory functions are serialized and
+ * executed in separate worker threads.
+ *
+ * @internal
+ * @typeParam T - Tuple type of factory functions
+ * @param factories - Array of factory functions
+ * @param options - Worker thread configuration
+ * @param options.workers - Number of worker threads to create
+ * @param options.workerIdleTimeout - Timeout in ms before idle workers are terminated
+ * @param options.onProgress - Callback invoked after each task completes
+ * @param options.continueOnError - If true, continue running tasks even if some fail
+ * @param options.signal - AbortSignal to cancel all running tasks
+ * @returns Promise resolving to tuple of Results
  */
 async function parallelWithWorkers<
 	T extends readonly ((signal: AbortSignal) => Promise<unknown>)[],

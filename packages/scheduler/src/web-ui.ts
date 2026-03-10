@@ -19,39 +19,41 @@ import type {
  * Web UI server options
  */
 export interface WebUIOptions {
-	/** Port to listen on */
+	/** Port to listen on (e.g., 8080) */
 	port: number;
-	/** Host to bind to */
+	/** Host to bind to (e.g., '0.0.0.0' for all interfaces, 'localhost' for local only) */
 	host: string;
-	/** Optional API key for authentication */
+	/** Optional API key for authentication (if provided, requires Bearer token) */
 	apiKey?: string;
-	/** Base path for the UI */
+	/** Base path for the UI (e.g., '/' or '/scheduler') */
 	path: string;
-	/** Storage backend */
+	/** Storage backend for retrieving schedules and jobs */
 	storage: JobStorage;
-	/** Get schedule stats function */
+	/** Get schedule stats function (receives schedule name, returns stats) */
 	getScheduleStats: (name: string) => Promise<ScheduleStats>;
-	/** Create schedule function */
+	/** Create schedule function (receives name and options, returns schedule) */
 	createSchedule: (
 		name: string,
 		options: CreateScheduleOptions,
 	) => Promise<Schedule>;
-	/** Update schedule function */
+	/** Update schedule function (receives name and options, returns updated schedule) */
 	updateSchedule: (
 		name: string,
 		options: UpdateScheduleOptions,
 	) => Promise<Schedule>;
-	/** Delete schedule function */
+	/** Delete schedule function (receives schedule name) */
 	deleteSchedule: (name: string) => Promise<void>;
-	/** Pause schedule function */
+	/** Pause schedule function (receives schedule name) */
 	pauseSchedule: (name: string) => Promise<void>;
-	/** Resume schedule function */
+	/** Resume schedule function (receives schedule name) */
 	resumeSchedule: (name: string) => Promise<void>;
-	/** Get jobs for a schedule */
+	/** Get jobs for a schedule (receives schedule name and optional limit, returns jobs) */
 	getScheduleJobs: (name: string, limit?: number) => Promise<Job[]>;
-	/** Logger */
+	/** Optional logger for web UI events */
 	logger?: {
+		/** Log info message with optional metadata */
 		info: (msg: string, meta?: Record<string, unknown>) => void;
+		/** Log error message with optional metadata */
 		error: (msg: string, meta?: Record<string, unknown>) => void;
 	};
 }
@@ -822,7 +824,23 @@ function parseBody(req: IncomingMessage): Promise<Record<string, unknown>> {
 }
 
 /**
- * Create web UI server
+ * Create web UI server.
+ *
+ * @param options - Web UI configuration options
+ * @param options.port - Port to listen on (e.g., 8080)
+ * @param options.host - Host to bind to (e.g., '0.0.0.0')
+ * @param options.apiKey - Optional API key for authentication
+ * @param options.path - Base path for the UI (default: '/')
+ * @param options.storage - Storage backend for schedules and jobs
+ * @param options.getScheduleStats - Function to get schedule statistics
+ * @param options.createSchedule - Function to create a new schedule
+ * @param options.updateSchedule - Function to update an existing schedule
+ * @param options.deleteSchedule - Function to delete a schedule
+ * @param options.pauseSchedule - Function to pause a schedule
+ * @param options.resumeSchedule - Function to resume a schedule
+ * @param options.getScheduleJobs - Function to get jobs for a schedule
+ * @param options.logger - Optional logger for web UI events
+ * @returns HTTP server instance
  */
 export async function createWebUI(options: WebUIOptions): Promise<Server> {
 	const { createServer } = await import("node:http");
@@ -993,7 +1011,10 @@ export async function createWebUI(options: WebUIOptions): Promise<Server> {
 }
 
 /**
- * Stop web UI server
+ * Stop web UI server.
+ *
+ * @param server - HTTP server instance to stop
+ * @returns Promise that resolves when server is closed
  */
 export async function stopWebUI(server: Server): Promise<void> {
 	return new Promise((resolve) => {

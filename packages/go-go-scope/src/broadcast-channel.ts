@@ -7,32 +7,78 @@
 
 /**
  * A BroadcastChannel for pub/sub patterns.
- * All consumers receive every message (unlike regular Channel where messages
- * are distributed to one consumer each).
+ *
+ * All consumers receive every message (unlike regular {@link Channel} where messages
+ * are distributed to one consumer each). This is useful for event broadcasting,
+ * notifications, and fan-out scenarios.
+ *
+ * Features:
+ * - Multiple subscribers receive all messages
+ * - Per-subscriber message queuing
+ * - Automatic cleanup on scope disposal
+ * - AsyncIterable support for subscribers
  *
  * @example
  * ```typescript
- * await using s = scope()
- * const broadcast = s.broadcast<string>()
+ * await using s = scope();
+ * const broadcast = s.broadcast<string>();
  *
  * // Subscribe multiple consumers
  * s.task(async () => {
  *   for await (const msg of broadcast.subscribe()) {
- *     console.log('Consumer 1:', msg)
+ *     console.log('Consumer 1:', msg);
  *   }
- * })
+ * });
  *
  * s.task(async () => {
  *   for await (const msg of broadcast.subscribe()) {
- *     console.log('Consumer 2:', msg)
+ *     console.log('Consumer 2:', msg);
  *   }
- * })
+ * });
  *
  * // Publish messages (all consumers receive each message)
- * await broadcast.send('hello')
- * await broadcast.send('world')
- * broadcast.close()
+ * await broadcast.send('hello');
+ * await broadcast.send('world');
+ * broadcast.close();
  * ```
+ *
+ * @example
+ * ```typescript
+ * // Real-world: System notifications
+ * await using s = scope();
+ * const notifications = s.broadcast<{
+ *   type: 'info' | 'warning' | 'error';
+ *   message: string;
+ * }>();
+ *
+ * // Logger subscriber
+ * s.task(async () => {
+ *   for await (const notif of notifications.subscribe()) {
+ *     console.log(`[${notif.type.toUpperCase()}] ${notif.message}`);
+ *   }
+ * });
+ *
+ * // Analytics subscriber
+ * s.task(async () => {
+ *   for await (const notif of notifications.subscribe()) {
+ *     await trackEvent('notification', { type: notif.type });
+ *   }
+ * });
+ *
+ * // UI subscriber
+ * s.task(async () => {
+ *   for await (const notif of notifications.subscribe()) {
+ *     showToast(notif.type, notif.message);
+ *   }
+ * });
+ *
+ * // Publish from anywhere
+ * await notifications.send({ type: 'info', message: 'System ready' });
+ * await notifications.send({ type: 'warning', message: 'Low memory' });
+ * ```
+ *
+ * @see {@link Channel} for point-to-point communication
+ * @see {@link Scope.broadcast} for creating broadcast channels
  */
 /* #__PURE__ */
 export class BroadcastChannel<T> implements AsyncDisposable {
@@ -45,6 +91,11 @@ export class BroadcastChannel<T> implements AsyncDisposable {
 	private aborted = false;
 	private abortReason: unknown;
 
+	/**
+	 * Creates a new BroadcastChannel.
+	 *
+	 * @param parentSignal - Optional AbortSignal from parent scope for automatic cleanup
+	 */
 	constructor(parentSignal?: AbortSignal) {
 		if (parentSignal) {
 			parentSignal.addEventListener(
@@ -61,13 +112,35 @@ export class BroadcastChannel<T> implements AsyncDisposable {
 
 	/**
 	 * Subscribe to the broadcast channel.
-	 * Returns an async iterable that receives all messages.
+	 *
+	 * Returns an async iterable that receives all messages published to the channel.
+	 * Each subscriber maintains its own queue, so slow consumers don't block others.
+	 *
+	 * @returns AsyncIterable that yields all broadcast messages
+	 * @throws {Error} If the channel is already closed
 	 *
 	 * @example
 	 * ```typescript
+	 * await using s = scope();
+	 * const broadcast = s.broadcast<string>();
+	 *
+	 * // Subscribe and consume messages
 	 * for await (const msg of broadcast.subscribe()) {
-	 *   console.log(msg)
+	 *   console.log('Received:', msg);
 	 * }
+	 * ```
+	 *
+	 * @example
+	 * ```typescript
+	 * // Using break to stop subscribing
+	 * s.task(async () => {
+	 *   let count = 0;
+	 *   for await (const msg of broadcast.subscribe()) {
+	 *     console.log(msg);
+	 *     if (++count >= 10) break; // Stop after 10 messages
+	 *   }
+	 *   // Subscriber is automatically cleaned up
+	 * });
 	 * ```
 	 */
 	subscribe(): AsyncIterable<T> {
@@ -120,8 +193,35 @@ export class BroadcastChannel<T> implements AsyncDisposable {
 
 	/**
 	 * Send a value to all subscribers.
+	 *
 	 * Resolves when all subscribers have received the message.
-	 * Returns false if the channel is closed.
+	 * If a subscriber is not actively waiting, the message is queued for them.
+	 *
+	 * @param value - The value to broadcast to all subscribers
+	 * @returns Promise that resolves to true if sent successfully, false if channel is closed
+	 * @throws {unknown} If the scope is aborted
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope();
+	 * const events = s.broadcast<{ type: string; data: unknown }>();
+	 *
+	 * // Multiple subscribers
+	 * s.task(async () => {
+	 *   for await (const event of events.subscribe()) {
+	 *     console.log('Handler 1:', event.type);
+	 *   }
+	 * });
+	 *
+	 * s.task(async () => {
+	 *   for await (const event of events.subscribe()) {
+	 *     console.log('Handler 2:', event.type);
+	 *   }
+	 * });
+	 *
+	 * // Both handlers receive this message
+	 * await events.send({ type: 'user.login', data: { userId: 123 } });
+	 * ```
 	 */
 	async send(value: T): Promise<boolean> {
 		if (this.closed) {
@@ -152,6 +252,21 @@ export class BroadcastChannel<T> implements AsyncDisposable {
 
 	/**
 	 * Get the number of active subscribers.
+	 *
+	 * @returns Number of subscribers that haven't been closed
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope();
+	 * const broadcast = s.broadcast<string>();
+	 *
+	 * console.log(broadcast.subscriberCount); // 0
+	 *
+	 * const sub1 = broadcast.subscribe();
+	 * const sub2 = broadcast.subscribe();
+	 *
+	 * console.log(broadcast.subscriberCount); // 2
+	 * ```
 	 */
 	get subscriberCount(): number {
 		return this.subscribers.filter((s) => !s.closed).length;
@@ -159,6 +274,8 @@ export class BroadcastChannel<T> implements AsyncDisposable {
 
 	/**
 	 * Check if the channel is closed.
+	 *
+	 * @returns true if the channel has been closed
 	 */
 	get isClosed(): boolean {
 		return this.closed;
@@ -166,7 +283,30 @@ export class BroadcastChannel<T> implements AsyncDisposable {
 
 	/**
 	 * Close the channel. No more messages can be sent.
-	 * Existing subscribers will drain their queues then end.
+	 *
+	 * Existing subscribers will drain their queued messages, then
+	 * their iterators will complete (done: true).
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope();
+	 * const broadcast = s.broadcast<string>();
+	 *
+	 * const sub = broadcast.subscribe();
+	 *
+	 * await broadcast.send('message 1');
+	 * await broadcast.send('message 2');
+	 *
+	 * broadcast.close();
+	 *
+	 * // Subscriber can still drain queued messages
+	 * for await (const msg of sub) {
+	 *   console.log(msg); // 'message 1', 'message 2'
+	 * }
+	 *
+	 * // After this, sends will return false
+	 * const result = await broadcast.send('message 3'); // false
+	 * ```
 	 */
 	close(): void {
 		if (this.closed) return;
@@ -184,6 +324,10 @@ export class BroadcastChannel<T> implements AsyncDisposable {
 
 	/**
 	 * Dispose the channel, aborting all pending operations.
+	 *
+	 * This immediately terminates all subscribers and clears all queues.
+	 *
+	 * @returns Promise that resolves when disposal is complete
 	 */
 	async [Symbol.asyncDispose](): Promise<void> {
 		this.close();

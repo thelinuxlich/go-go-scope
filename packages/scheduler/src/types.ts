@@ -161,14 +161,23 @@ export interface ScheduleStats {
  * Options for updating a schedule
  */
 export interface UpdateScheduleOptions {
+	/** Cron expression for recurring execution (e.g., '0 9 * * *' for daily at 9am) */
 	cron?: string;
+	/** Interval in milliseconds (alternative to cron, e.g., 60000 for 1 minute) */
 	interval?: number;
+	/** Timezone for execution (IANA format, e.g., 'America/New_York', 'UTC') */
 	timezone?: string;
+	/** Default payload for jobs (merged with trigger payload) */
 	defaultPayload?: JobPayload;
+	/** Maximum retry attempts before marking job as failed (default: 3) */
 	max?: number;
+	/** Delay between retries in milliseconds (default: 1000) */
 	retryDelay?: number;
+	/** Job timeout in milliseconds (default: 30000) */
 	timeout?: number;
+	/** Allow concurrent execution of multiple jobs from this schedule (default: false) */
 	concurrent?: boolean;
+	/** Random jitter in milliseconds to prevent thundering herd (default: 0) */
 	jitter?: number;
 }
 
@@ -221,25 +230,25 @@ export interface ScheduleJobResult {
  * Options for creating a schedule (admin only)
  */
 export interface CreateScheduleOptions {
-	/** Cron expression for recurring execution */
+	/** Cron expression for recurring execution (e.g., '0 9 * * *' for daily at 9am) */
 	cron?: string;
-	/** Interval in milliseconds (alternative to cron) */
+	/** Interval in milliseconds (alternative to cron, e.g., 60000 for 1 minute) */
 	interval?: number;
-	/** Timezone for execution */
+	/** Timezone for execution (IANA format, e.g., 'America/New_York', 'UTC') */
 	timezone?: string;
 	/** End date for the schedule - no new jobs after this date */
 	endDate?: Date;
-	/** Default payload for jobs */
+	/** Default payload for jobs (merged with trigger payload) */
 	defaultPayload?: JobPayload;
-	/** Maximum retry attempts (default: 3) */
+	/** Maximum retry attempts before marking job as failed (default: 3) */
 	max?: number;
-	/** Delay between retries in ms (default: 1000) */
+	/** Delay between retries in milliseconds (default: 1000) */
 	retryDelay?: number;
-	/** Job timeout in ms (default: 30000) */
+	/** Job timeout in milliseconds (default: 30000) */
 	timeout?: number;
-	/** Allow concurrent execution (default: false) */
+	/** Allow concurrent execution of multiple jobs from this schedule (default: false) */
 	concurrent?: boolean;
-	/** Random jitter in ms (default: 0) */
+	/** Random jitter in milliseconds to prevent thundering herd (default: 0) */
 	jitter?: number;
 }
 
@@ -666,7 +675,7 @@ export interface DeadLetterQueueOptions {
 	max?: number;
 	/** Separate storage for DLQ jobs (defaults to main storage) */
 	storage?: JobStorage;
-	/** Callback invoked when a job is moved to the DLQ */
+	/** Callback invoked when a job is moved to the DLQ (receives job and final error) */
 	onDeadLetter?: (job: DeadLetterJob, error: Error) => void | Promise<void>;
 }
 
@@ -683,15 +692,15 @@ export interface JobResult {
  * Job lifecycle hooks
  */
 export interface SchedulerHooks {
-	/** Called before a job starts executing */
+	/** Called before a job starts executing (receives job and schedule) */
 	beforeJob?: (job: Job, schedule: Schedule) => void | Promise<void>;
-	/** Called after a job completes (success or failure) */
+	/** Called after a job completes (success or failure) (receives job, schedule, and result) */
 	afterJob?: (
 		job: Job,
 		schedule: Schedule,
 		result: JobResult,
 	) => void | Promise<void>;
-	/** Called when a job fails (including retries) */
+	/** Called when a job fails (including retries) (receives job, schedule, error, and willRetry flag) */
 	onJobError?: (
 		job: Job,
 		schedule: Schedule,
@@ -754,9 +763,9 @@ export interface SchedulerOptions {
 	 * If not provided, a new scope will be created automatically.
 	 */
 	scope?: Scope<Record<string, unknown>>;
-	/** Storage backend (default: InMemoryJobStorage) */
+	/** Storage backend for jobs and schedules (default: InMemoryJobStorage) */
 	storage?: JobStorage;
-	/** Poll interval in milliseconds (default: 1000) */
+	/** Poll interval in milliseconds for checking due jobs (default: 1000) */
 	checkInterval?: number;
 	/** Auto-start scheduler on creation (default: true) */
 	autoStart?: boolean;
@@ -774,7 +783,7 @@ export interface SchedulerOptions {
 	 */
 	staleThreshold?: number;
 	/**
-	 * How to handle stale jobs (default: RUN)
+	 * How to handle stale jobs (default: StaleJobBehavior.RUN)
 	 * - RUN: Execute stale jobs anyway
 	 * - SKIP: Skip stale jobs (mark as completed without running)
 	 * - FAIL: Mark stale jobs as failed permanently
@@ -791,8 +800,11 @@ export interface SchedulerOptions {
 	 * When provided, the scheduler will create spans for job execution.
 	 */
 	tracer?: {
+		/** Start a new span with the given name */
 		startSpan(name: string): {
+			/** Set an attribute on the span */
 			setAttribute(key: string, value: unknown): void;
+			/** End the span */
 			end(): void;
 		};
 	};
@@ -801,9 +813,13 @@ export interface SchedulerOptions {
 	 * When provided, the scheduler will log job lifecycle events.
 	 */
 	logger?: {
+		/** Log a debug message with optional metadata */
 		debug: (msg: string, meta?: Record<string, unknown>) => void;
+		/** Log an info message with optional metadata */
 		info: (msg: string, meta?: Record<string, unknown>) => void;
+		/** Log a warning message with optional metadata */
 		warn: (msg: string, meta?: Record<string, unknown>) => void;
+		/** Log an error message with optional metadata */
 		error: (msg: string, meta?: Record<string, unknown>) => void;
 	};
 	/**
@@ -821,7 +837,7 @@ export interface SchedulerOptions {
 	 */
 	deadlockThreshold?: number;
 	/**
-	 * Callback invoked when a potential deadlock is detected.
+	 * Callback invoked when a potential deadlock is detected (receives job and duration in ms).
 	 */
 	onDeadlock?: (job: Job, duration: number) => void | Promise<void>;
 	/**
@@ -845,11 +861,11 @@ export interface SchedulerOptions {
 	 */
 	leaderElectionTimeout?: number;
 	/**
-	 * Callback invoked when this admin becomes the leader.
+	 * Callback invoked when this admin instance becomes the leader.
 	 */
 	onBecomeLeader?: () => void | Promise<void>;
 	/**
-	 * Callback invoked when this admin steps down from leader role.
+	 * Callback invoked when this admin instance steps down from leader role.
 	 */
 	onStepDown?: () => void | Promise<void>;
 	/**
@@ -884,7 +900,7 @@ export interface SchedulerOptions {
 	workerPool?: {
 		/** Number of worker threads (default: CPU count - 1) */
 		size?: number;
-		/** Idle timeout in ms before workers terminate (default: 60000) */
+		/** Idle timeout in milliseconds before workers terminate (default: 60000) */
 		idleTimeout?: number;
 	};
 }
@@ -949,9 +965,9 @@ export type SchedulesOf<T> = T extends Scheduler<infer S> ? S : never;
  * Options for triggering a schedule
  */
 export interface TriggerOptions {
-	/** Delay before running in milliseconds */
+	/** Delay before running in milliseconds (default: 0 - immediate) */
 	delay?: number;
-	/** Override schedule's default payload */
+	/** Override schedule's default payload (merged with schedule payload) */
 	payload?: JobPayload;
 }
 
@@ -959,9 +975,9 @@ export interface TriggerOptions {
  * Options for scheduling a job
  */
 export interface ScheduleJobOptions {
-	/** Delay before running in milliseconds */
+	/** Delay before running in milliseconds (default: 0 - immediate) */
 	delay?: number;
-	/** Job priority (higher = runs first) */
+	/** Job priority (higher = runs first, default: 0) */
 	priority?: number;
 }
 

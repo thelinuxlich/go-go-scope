@@ -546,10 +546,20 @@ export class Scheduler<
 	 * ⚠️ **Admin only**: This method can only be called by admin instances.
 	 * Workers must use `onSchedule()` to register handlers for schedules.
 	 *
-	 * @param name Unique schedule name
-	 * @param options Schedule configuration
+	 * @param name - Unique schedule name (used as identifier)
+	 * @param options - Schedule configuration options
+	 * @param options.cron - Cron expression for recurring execution (e.g., '0 9 * * *' for daily at 9am)
+	 * @param options.interval - Interval in milliseconds (alternative to cron, e.g., 60000 for 1 minute)
+	 * @param options.timezone - Timezone for execution (IANA format, e.g., 'America/New_York', 'UTC')
+	 * @param options.endDate - End date for the schedule - no new jobs after this date
+	 * @param options.defaultPayload - Default payload for jobs (merged with trigger payload)
+	 * @param options.max - Maximum retry attempts before marking job as failed (default: 3)
+	 * @param options.retryDelay - Delay between retries in milliseconds (default: 1000)
+	 * @param options.timeout - Job timeout in milliseconds (default: 30000)
+	 * @param options.concurrent - Allow concurrent execution of multiple jobs from this schedule (default: false)
+	 * @param options.jitter - Random jitter in milliseconds to prevent thundering herd (default: 0)
 	 * @returns The created schedule
-	 * @throws Error if called by a worker instance
+	 * @throws Error if schedule already exists or if called by a worker instance
 	 */
 	async createSchedule<Name extends string>(
 		name: Name,
@@ -672,8 +682,17 @@ export class Scheduler<
 	 *
 	 * ⚠️ **Admin only**: This method can only be called by admin instances.
 	 *
-	 * @param name Schedule name
-	 * @param options Update options
+	 * @param name - Schedule name to update
+	 * @param options - Update options (only provided fields are updated)
+	 * @param options.cron - Cron expression for recurring execution (e.g., '0 9 * * *')
+	 * @param options.interval - Interval in milliseconds (alternative to cron)
+	 * @param options.timezone - Timezone for execution (IANA format, e.g., 'America/New_York')
+	 * @param options.defaultPayload - Default payload for jobs
+	 * @param options.max - Maximum retry attempts (default: 3)
+	 * @param options.retryDelay - Delay between retries in milliseconds (default: 1000)
+	 * @param options.timeout - Job timeout in milliseconds (default: 30000)
+	 * @param options.concurrent - Allow concurrent execution (default: false)
+	 * @param options.jitter - Random jitter in milliseconds (default: 0)
 	 * @returns Updated schedule
 	 * @throws Error if schedule not found or called by worker
 	 */
@@ -865,9 +884,11 @@ export class Scheduler<
 	 *
 	 * ⚠️ **Admin only**: This method can only be called by admin instances.
 	 *
-	 * @param name Schedule name (must be a key of Schedules type parameter)
-	 * @param payload Optional typed payload override
-	 * @param options Optional scheduling options
+	 * @param name - Schedule name (must be a key of Schedules type parameter)
+	 * @param payload - Optional typed payload override (merged with schedule's default payload)
+	 * @param options - Optional scheduling options
+	 * @param options.delay - Delay before running in milliseconds (default: 0 - immediate)
+	 * @param options.priority - Job priority (higher = runs first, default: 0)
 	 * @returns The scheduled job result
 	 */
 	async triggerSchedule<Name extends keyof Schedules>(
@@ -905,8 +926,10 @@ export class Scheduler<
 	 * The handler will be called when jobs for this schedule become available.
 	 * Schedules can be created before or after handlers are registered.
 	 *
-	 * @param scheduleName Name of the schedule to handle (must be a key of Schedules type parameter)
-	 * @param handler Handler function with typed payload
+	 * @param name - Name of the schedule to handle (must be a key of Schedules type parameter)
+	 * @param handler - Handler function with typed payload (receives job and scope)
+	 * @param options - Optional handler registration options
+	 * @param options.worker - Execute jobs in worker threads for CPU-intensive tasks (default: false)
 	 *
 	 * @example
 	 * ```typescript
@@ -966,9 +989,11 @@ export class Scheduler<
 	 *
 	 * ⚠️ **Admin only**: Workers execute jobs based on loaded schedules.
 	 *
-	 * @param scheduleName Name of the schedule (must be a key of Schedules type parameter)
-	 * @param payload Typed job payload data
-	 * @param options Scheduling options
+	 * @param scheduleName - Name of the schedule (must be a key of Schedules type parameter)
+	 * @param payload - Typed job payload data (default: empty object)
+	 * @param options - Scheduling options
+	 * @param options.delay - Delay before running in milliseconds (default: 0 - immediate)
+	 * @param options.priority - Job priority (higher = runs first, default: 0)
 	 */
 	async scheduleJob<Name extends keyof Schedules>(
 		scheduleName: Name extends string ? Name : never,
@@ -1758,7 +1783,12 @@ export class Scheduler<
 	}
 
 	/**
-	 * Export metrics in various formats
+	 * Export metrics in various formats.
+	 *
+	 * @param options - Export options
+	 * @param options.format - Export format: 'json', 'prometheus', or 'otel' (default: 'json')
+	 * @param options.prefix - Prefix for metric names in Prometheus format (default: 'scheduler')
+	 * @returns Metrics string in the requested format
 	 */
 	async exportMetrics(options: MetricsExportOptions = {}): Promise<string> {
 		const metrics = await this.collectMetrics();

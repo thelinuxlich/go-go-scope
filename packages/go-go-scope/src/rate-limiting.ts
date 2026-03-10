@@ -1,5 +1,24 @@
 /**
  * Rate limiting utilities for go-go-scope - Debounce and throttle
+ *
+ * @module go-go-scope/rate-limiting
+ *
+ * @description
+ * Provides debounce and throttle utilities for rate-limiting function execution.
+ * These utilities are bound to a scope and automatically cleaned up when the
+ * scope is disposed.
+ *
+ * Features:
+ * - Debounce: Delay execution until after a period of inactivity
+ * - Throttle: Limit execution to once per time interval
+ * - Leading/trailing edge execution options
+ * - Automatic cleanup on scope disposal
+ * - Promise-based results
+ *
+ * @see {@link debounce} For debouncing function calls
+ * @see {@link throttle} For throttling function calls
+ * @see {@link Scope.debounce} Factory method on scope
+ * @see {@link Scope.throttle} Factory method on scope
  */
 
 import type {
@@ -12,23 +31,61 @@ import type {
 /**
  * Create a debounced function that delays invoking the provided function
  * until after `wait` milliseconds have elapsed since the last time it was invoked.
- * Automatically cancelled when the scope is disposed.
+ *
+ * The debounced function returns a Promise that resolves with the result
+ * of the function execution. If the scope is disposed before execution,
+ * the promise resolves with an error.
+ *
+ * @template T Return type of the debounced function
+ * @template Args Argument types of the debounced function
  *
  * @param scope - The scope to bind the debounced function to
  * @param fn - The function to debounce
- * @param options - Debounce options
- * @returns A debounced function that returns a Promise
+ * @param options - Debounce configuration options
+ * @param options.wait - Milliseconds to wait before execution (default: 300)
+ * @param options.leading - Execute on the leading edge before wait (default: false)
+ * @param options.trailing - Execute on the trailing edge after wait (default: true)
+ * @returns {(...args: Args) => Promise<Result<unknown, T>>} A debounced function that returns a Promise
+ *
+ * @see {@link Scope.debounce} Factory method on scope
+ * @see {@link throttle} For throttling instead of debouncing
+ * @see {@link DebounceOptions} Options interface
  *
  * @example
  * ```typescript
- * await using s = scope()
+ * import { scope } from "go-go-scope";
  *
+ * await using s = scope();
+ *
+ * // Basic debounce - execute 300ms after last call
  * const search = debounce(s, async (query: string) => {
- *   return await fetchSearchResults(query)
- * }, { wait: 300 })
+ *   const results = await fetchSearchResults(query);
+ *   return results;
+ * }, { wait: 300 });
  *
- * // Will only execute after 300ms of no calls
- * const [err, results] = await search("hello")
+ * // User typing triggers multiple calls
+ * await search("h");      // Will be cancelled
+ * await search("he");     // Will be cancelled
+ * await search("hel");    // Will be cancelled
+ * await search("hello");  // Executes after 300ms
+ *
+ * // Leading edge - execute immediately, then debounce
+ * const save = debounce(s, async (data: string) => {
+ *   await saveToServer(data);
+ * }, { wait: 1000, leading: true, trailing: false });
+ *
+ * // Trailing edge only (default)
+ * const log = debounce(s, async (message: string) => {
+ *   await writeToLog(message);
+ * }, { wait: 500, trailing: true });
+ *
+ * // Use with Result tuple
+ * const [err, results] = await search("query");
+ * if (err) {
+ *   console.error("Search failed:", err);
+ * } else {
+ *   console.log("Results:", results);
+ * }
  * ```
  */
 /* #__PURE__ */
@@ -122,24 +179,68 @@ export function debounce<T, Args extends unknown[]>(
 /**
  * Create a throttled function that only invokes the provided function
  * at most once per every `interval` milliseconds.
- * Automatically cancelled when the scope is disposed.
+ *
+ * The throttled function returns a Promise that resolves with the result
+ * of the function execution. If throttled, returns a pending promise that
+ * resolves when the next execution occurs (if trailing is enabled).
+ *
+ * @template T Return type of the throttled function
+ * @template Args Argument types of the throttled function
  *
  * @param scope - The scope to bind the throttled function to
  * @param fn - The function to throttle
- * @param options - Throttle options
- * @returns A throttled function that returns a Promise
+ * @param options - Throttle configuration options
+ * @param options.interval - Minimum time between executions in milliseconds (default: 300)
+ * @param options.leading - Execute on the leading edge (default: true)
+ * @param options.trailing - Execute on the trailing edge (default: false)
+ * @returns {(...args: Args) => Promise<Result<unknown, T>>} A throttled function that returns a Promise
+ *
+ * @see {@link Scope.throttle} Factory method on scope
+ * @see {@link debounce} For debouncing instead of throttling
+ * @see {@link ThrottleOptions} Options interface
  *
  * @example
  * ```typescript
- * await using s = scope()
+ * import { scope } from "go-go-scope";
  *
+ * await using s = scope();
+ *
+ * // Basic throttle - execute at most once per second
  * const save = throttle(s, async (data: string) => {
- *   await saveToServer(data)
- * }, { interval: 1000 })
+ *   await saveToServer(data);
+ *   return { saved: true };
+ * }, { interval: 1000 });
  *
- * // Will execute at most once per second
- * await save("data1")
- * await save("data2") // Throttled, returns same promise
+ * // Multiple calls within 1 second
+ * const r1 = await save("data1");  // Executes immediately
+ * const r2 = await save("data2");  // Throttled, returns undefined
+ * const r3 = await save("data3");  // Throttled, returns undefined
+ * // After 1 second, can execute again
+ *
+ * // With trailing execution
+ * const log = throttle(s, async (event: Event) => {
+ *   await sendAnalytics(event);
+ * }, { interval: 5000, leading: true, trailing: true });
+ *
+ * // Leading: false, Trailing: true
+ * const update = throttle(s, async (state: State) => {
+ *   await updateDatabase(state);
+ * }, { interval: 1000, leading: false, trailing: true });
+ *
+ * await update(state1);  // Schedules execution after 1s
+ * await update(state2);  // Reschedules with new state
+ * // Executes with state2 after 1s of inactivity
+ *
+ * // Scroll handler - limit to 60fps equivalent
+ * const handleScroll = throttle(s, async () => {
+ *   await updateScrollPosition();
+ * }, { interval: 16, leading: true });  // ~60fps
+ *
+ * // Use with Result tuple
+ * const [err, result] = await save("important data");
+ * if (err) {
+ *   console.error("Save failed:", err);
+ * }
  * ```
  */
 /* #__PURE__ */

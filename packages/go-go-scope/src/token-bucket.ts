@@ -1,15 +1,55 @@
 /**
  * Token Bucket Rate Limiter for go-go-scope
  *
- * Supports both local (in-memory) and distributed (via persistence) rate limiting.
+ * @module go-go-scope/token-bucket
+ *
+ * @description
+ * Implements the token bucket algorithm for rate limiting. Supports both local
+ * (in-memory) and distributed (via persistence) rate limiting.
+ *
  * The token bucket algorithm allows bursts up to capacity while maintaining
- * a steady rate over time.
+ * a steady rate over time. Tokens are added at a fixed refill rate up to the
+ * maximum capacity.
+ *
+ * Features:
+ * - Local in-memory rate limiting
+ * - Distributed rate limiting via cache providers (Redis, etc.)
+ * - Burst capacity support
+ * - Blocking and non-blocking acquire methods
+ * - Timeout-based acquire with fallback
+ * - State inspection and reset capabilities
+ *
+ * @see {@link Scope.tokenBucket} For creating token buckets via scope
+ * @see {@link TokenBucketOptions} Configuration options
  */
 
 import type { CacheProvider } from "./persistence/types.js";
 
 /**
- * Options for creating a token bucket
+ * Options for creating a token bucket rate limiter.
+ *
+ * @interface
+ *
+ * @see {@link createTokenBucket} Factory function
+ * @see {@link TokenBucket} The token bucket class
+ *
+ * @example
+ * ```typescript
+ * // Local rate limiting
+ * const options: TokenBucketOptions = {
+ *   capacity: 100,
+ *   refillRate: 10,  // 10 tokens per second
+ *   initialTokens: 100
+ * };
+ *
+ * // Distributed rate limiting
+ * const distributedOptions: TokenBucketOptions = {
+ *   capacity: 1000,
+ *   refillRate: 100,
+ *   cache: redisCacheProvider,
+ *   key: 'api-rate-limit:user-123'
+ * };
+ * ```
  */
 export interface TokenBucketOptions {
 	/** Maximum number of tokens in the bucket (burst capacity) */
@@ -25,7 +65,9 @@ export interface TokenBucketOptions {
 }
 
 /**
- * Token bucket state for persistence
+ * Token bucket state for persistence.
+ *
+ * @internal
  */
 interface TokenBucketState {
 	tokens: number;
@@ -36,9 +78,16 @@ interface TokenBucketState {
  * A token bucket rate limiter.
  *
  * Use for rate limiting API calls, requests, or any operation that needs
- * to be limited to a certain rate over time.
+ * to be limited to a certain rate over time. The token bucket allows
+ * bursts up to capacity while maintaining a steady refill rate.
  *
  * Supports both local (in-memory) and distributed (via persistence) modes.
+ * In distributed mode, the token state is stored in a cache provider
+ * (e.g., Redis) allowing rate limiting across multiple processes.
+ *
+ * @see {@link createTokenBucket} Factory function
+ * @see {@link Scope.tokenBucket} Factory on scope
+ * @see {@link TokenBucketOptions} Configuration options
  *
  * @example
  * ```typescript
@@ -69,6 +118,21 @@ export class TokenBucket {
 	private readonly cache?: CacheProvider;
 	private readonly key?: string;
 
+	/**
+	 * Creates a new TokenBucket instance.
+	 *
+	 * @param options - Configuration options for the token bucket
+	 * @param options.capacity - Maximum number of tokens in the bucket (burst capacity)
+	 * @param options.refillRate - Rate at which tokens are added (tokens per second)
+	 * @param options.initialTokens - Initial number of tokens (defaults to capacity)
+	 * @param options.cache - Optional cache provider for distributed rate limiting
+	 * @param options.key - Key for distributed rate limiting (required if cache is provided)
+	 *
+	 * @throws {Error} If cache is provided but key is missing
+	 *
+	 * @see {@link createTokenBucket} Use this factory function instead
+	 * @see {@link Scope.tokenBucket} Or use the scope factory method
+	 */
 	constructor(options: TokenBucketOptions) {
 		this.capacity = options.capacity;
 		this.refillRate = options.refillRate;
@@ -83,7 +147,24 @@ export class TokenBucket {
 	}
 
 	/**
-	 * Get current number of tokens (refills first)
+	 * Get the current number of tokens available.
+	 *
+	 * Automatically refills tokens based on elapsed time since last check.
+	 * In distributed mode, retrieves state from the cache provider.
+	 *
+	 * @returns {Promise<number>} Current token count (0 to capacity)
+	 *
+	 * @see {@link TokenBucket.getState} For full state including capacity and rate
+	 *
+	 * @example
+	 * ```typescript
+	 * const tokens = await bucket.getTokens();
+	 * console.log(`Available tokens: ${tokens}/${bucket.capacity}`);
+	 *
+	 * if (tokens >= 5) {
+	 *   // We have enough tokens for a batch operation
+	 * }
+	 * ```
 	 */
 	async getTokens(): Promise<number> {
 		if (this.cache && this.key) {
@@ -95,7 +176,31 @@ export class TokenBucket {
 
 	/**
 	 * Try to consume tokens without blocking.
+	 *
 	 * Returns true if tokens were consumed, false otherwise.
+	 * Does not wait for tokens to become available.
+	 *
+	 * @param tokens - Number of tokens to consume (default: 1)
+	 * @returns {Promise<boolean>} True if tokens were consumed
+	 *
+	 * @see {@link TokenBucket.acquire} For blocking until tokens are available
+	 * @see {@link TokenBucket.acquireWithTimeout} For blocking with timeout
+	 *
+	 * @example
+	 * ```typescript
+	 * // Check if we can make a request without blocking
+	 * if (await bucket.tryConsume(1)) {
+	 *   await makeApiCall();
+	 * } else {
+	 *   // Rate limited - skip or queue for later
+	 *   console.log('Rate limited, skipping request');
+	 * }
+	 *
+	 * // Consume multiple tokens for a batch operation
+	 * if (await bucket.tryConsume(10)) {
+	 *   await processBatch(10);
+	 * }
+	 * ```
 	 */
 	async tryConsume(tokens = 1): Promise<boolean> {
 		if (this.cache && this.key) {
@@ -105,8 +210,32 @@ export class TokenBucket {
 	}
 
 	/**
-	 * Acquire tokens and execute the function.
-	 * Blocks until tokens are available.
+	 * Acquire tokens and execute a function.
+	 *
+	 * Blocks until the required tokens are available, then executes
+	 * the provided function. The tokens are consumed before the
+	 * function executes.
+	 *
+	 * @template T Return type of the function
+	 * @param tokens - Number of tokens to acquire
+	 * @param fn - Function to execute after acquiring tokens
+	 * @returns {Promise<T>} Result of the function
+	 *
+	 * @see {@link TokenBucket.acquireWithTimeout} For timeout-based acquire
+	 * @see {@link TokenBucket.tryConsume} For non-blocking consume
+	 *
+	 * @example
+	 * ```typescript
+	 * // Execute an API call with rate limiting
+	 * const result = await bucket.acquire(1, async () => {
+	 *   return await fetchUserData(userId);
+	 * });
+	 *
+	 * // Batch processing with higher token cost
+	 * await bucket.acquire(5, async () => {
+	 *   await processBatch(items);
+	 * });
+	 * ```
 	 */
 	async acquire<T>(tokens: number, fn: () => Promise<T>): Promise<T> {
 		await this.waitForTokens(tokens);
@@ -115,7 +244,34 @@ export class TokenBucket {
 
 	/**
 	 * Acquire tokens with a timeout.
-	 * Returns undefined if timeout is reached.
+	 *
+	 * Attempts to acquire tokens within the specified timeout.
+	 * Returns undefined if timeout is reached before tokens are available.
+	 *
+	 * @template T Return type of the function
+	 * @param tokens - Number of tokens to acquire
+	 * @param timeoutMs - Timeout in milliseconds
+	 * @param fn - Function to execute after acquiring tokens
+	 * @returns {Promise<T | undefined>} Result of the function, or undefined if timeout
+	 *
+	 * @see {@link TokenBucket.acquire} For blocking without timeout
+	 * @see {@link TokenBucket.tryConsume} For immediate non-blocking attempt
+	 *
+	 * @example
+	 * ```typescript
+	 * // Try to acquire with 1 second timeout
+	 * const result = await bucket.acquireWithTimeout(
+	 *   1,
+	 *   1000,
+	 *   async () => await fetchData()
+	 * );
+	 *
+	 * if (result === undefined) {
+	 *   console.log('Request timed out due to rate limiting');
+	 * } else {
+	 *   console.log('Data received:', result);
+	 * }
+	 * ```
 	 */
 	async acquireWithTimeout<T>(
 		tokens: number,
@@ -129,6 +285,30 @@ export class TokenBucket {
 
 	/**
 	 * Reset the bucket to full capacity.
+	 *
+	 * Sets tokens to capacity and updates the last refill time.
+	 * In distributed mode, updates the state in the cache.
+	 *
+	 * @returns {Promise<void>} Resolves when reset is complete
+	 *
+	 * @see {@link TokenBucket.getTokens} For checking current tokens
+	 *
+	 * @example
+	 * ```typescript
+	 * // Reset after a rate limit error from upstream
+	 * try {
+	 *   await makeApiCall();
+	 * } catch (err) {
+	 *   if (isRateLimitError(err)) {
+	 *     // Reset our bucket to sync with upstream
+	 *     await bucket.reset();
+	 *   }
+	 * }
+	 *
+	 * // Manual reset for testing
+	 * await bucket.reset();
+	 * expect(await bucket.getTokens()).toBe(100);
+	 * ```
 	 */
 	async reset(): Promise<void> {
 		if (this.cache && this.key) {
@@ -140,7 +320,29 @@ export class TokenBucket {
 	}
 
 	/**
-	 * Get current bucket state.
+	 * Get the current bucket state.
+	 *
+	 * Returns the current token count along with capacity and refill rate.
+	 * Tokens are refilled before returning the state.
+	 *
+	 * @returns {Promise<Object>} Current bucket state
+	 * @returns {number} returns.tokens Current token count
+	 * @returns {number} returns.capacity Maximum bucket capacity
+	 * @returns {number} returns.refillRate Tokens added per second
+	 *
+	 * @see {@link TokenBucket.getTokens} For just the token count
+	 *
+	 * @example
+	 * ```typescript
+	 * const state = await bucket.getState();
+	 * console.log(`Tokens: ${state.tokens}/${state.capacity}`);
+	 * console.log(`Refill rate: ${state.refillRate}/sec`);
+	 *
+	 * const usagePercent = (state.tokens / state.capacity) * 100;
+	 * if (usagePercent < 10) {
+	 *   console.warn('Token bucket nearly empty!');
+	 * }
+	 * ```
 	 */
 	async getState(): Promise<{
 		tokens: number;
@@ -155,6 +357,11 @@ export class TokenBucket {
 		};
 	}
 
+	/**
+	 * Refill tokens based on elapsed time.
+	 *
+	 * @internal
+	 */
 	private refill(): void {
 		const now = Date.now();
 		const elapsedMs = now - this.lastRefill;
@@ -164,6 +371,11 @@ export class TokenBucket {
 		this.lastRefill = now;
 	}
 
+	/**
+	 * Try to consume tokens locally.
+	 *
+	 * @internal
+	 */
 	private tryConsumeLocal(tokens: number): boolean {
 		this.refill();
 		if (this.tokens >= tokens) {
@@ -173,6 +385,11 @@ export class TokenBucket {
 		return false;
 	}
 
+	/**
+	 * Wait for tokens to become available.
+	 *
+	 * @internal Blocks until tokens are available
+	 */
 	private async waitForTokens(tokens: number): Promise<void> {
 		while (!(await this.tryConsume(tokens))) {
 			// Wait for tokens to refill
@@ -184,6 +401,12 @@ export class TokenBucket {
 		}
 	}
 
+	/**
+	 * Wait for tokens with timeout.
+	 *
+	 * @internal
+	 * @returns True if tokens were acquired, false if timeout
+	 */
 	private async waitForTokensWithTimeout(
 		tokens: number,
 		timeoutMs: number,
@@ -205,6 +428,11 @@ export class TokenBucket {
 
 	// Distributed implementation using cache provider
 
+	/**
+	 * Get tokens from distributed cache.
+	 *
+	 * @internal
+	 */
 	private async getDistributedTokens(): Promise<number> {
 		if (!this.cache || !this.key) return this.tokens;
 
@@ -223,6 +451,11 @@ export class TokenBucket {
 		return Math.min(this.capacity, state.tokens + tokensToAdd);
 	}
 
+	/**
+	 * Try to consume tokens in distributed mode.
+	 *
+	 * @internal
+	 */
 	private async tryConsumeDistributed(tokens: number): Promise<boolean> {
 		if (!this.cache || !this.key) return false;
 
@@ -242,6 +475,11 @@ export class TokenBucket {
 		return false;
 	}
 
+	/**
+	 * Reset bucket in distributed mode.
+	 *
+	 * @internal
+	 */
 	private async resetDistributed(): Promise<void> {
 		if (!this.cache || !this.key) return;
 
@@ -256,21 +494,50 @@ export class TokenBucket {
 /**
  * Create a token bucket rate limiter.
  *
+ * Factory function for creating TokenBucket instances. Supports both local
+ * (in-memory) and distributed (via cache provider) rate limiting.
+ *
+ * @param options - Configuration options for the token bucket
+ * @param options.capacity - Maximum number of tokens in the bucket (burst capacity)
+ * @param options.refillRate - Rate at which tokens are added (tokens per second)
+ * @param options.initialTokens - Initial number of tokens (defaults to capacity)
+ * @param options.cache - Optional cache provider for distributed rate limiting
+ * @param options.key - Key for distributed rate limiting (required if cache is provided)
+ * @returns {TokenBucket} A new token bucket instance
+ *
+ * @throws {Error} If cache is provided without a key
+ *
+ * @see {@link TokenBucket} The token bucket class
+ * @see {@link Scope.tokenBucket} Factory method on scope
+ * @see {@link TokenBucketOptions} Configuration options
+ *
  * @example
  * ```typescript
- * // Local rate limiter
- * const bucket = createTokenBucket({
+ * // Local rate limiter - 100 requests per second burst
+ * const localBucket = createTokenBucket({
  *   capacity: 100,
  *   refillRate: 10  // 10 tokens per second
- * })
+ * });
  *
- * // Distributed rate limiter
- * const bucket = createTokenBucket({
- *   capacity: 100,
- *   refillRate: 10,
- *   persistence: redisAdapter,
- *   key: 'api-rate-limit'
- * })
+ * // Distributed rate limiter using Redis
+ * const distributedBucket = createTokenBucket({
+ *   capacity: 1000,
+ *   refillRate: 100,
+ *   cache: redisAdapter,
+ *   key: 'api-rate-limit:endpoint-users'
+ * });
+ *
+ * // Use the bucket
+ * await localBucket.acquire(1, async () => {
+ *   await processRequest();
+ * });
+ *
+ * // Check without blocking
+ * if (await localBucket.tryConsume(1)) {
+ *   await processRequest();
+ * } else {
+ *   console.log('Rate limited');
+ * }
  * ```
  */
 export function createTokenBucket(options: TokenBucketOptions): TokenBucket {

@@ -59,15 +59,15 @@ return 1
  * Options for persistence-based job storage
  */
 export interface PersistenceJobStorageOptions {
-	/** Lock provider for distributed locking */
+	/** Lock provider for distributed locking (required for job execution coordination) */
 	lockProvider: LockProvider;
-	/** Key prefix for all storage keys */
+	/** Key prefix for all storage keys (default: 'scheduler:') */
 	keyPrefix?: string;
-	/** Default lock TTL in milliseconds */
+	/** Default lock TTL in milliseconds (default: 30000) */
 	lockTTL?: number;
-	/** Optional: Function to serialize job data */
+	/** Optional function to serialize job data to string (default: JSON.stringify) */
 	serialize?: (data: unknown) => string;
-	/** Optional: Function to deserialize job data */
+	/** Optional function to deserialize job data from string (default: JSON.parse) */
 	deserialize?: (data: string) => unknown;
 }
 
@@ -77,15 +77,25 @@ export interface PersistenceJobStorageOptions {
  */
 export class RedisJobStorage implements JobStorage {
 	private redis: {
+		/** Set hash field value */
 		hset(key: string, field: string, value: string): Promise<void>;
+		/** Get hash field value */
 		hget(key: string, field: string): Promise<string | null>;
+		/** Delete hash field */
 		hdel(key: string, field: string): Promise<void>;
+		/** Get all hash fields and values */
 		hgetall(key: string): Promise<Record<string, string>>;
+		/** Add members to set */
 		sadd(key: string, ...members: string[]): Promise<void>;
+		/** Remove members from set */
 		srem(key: string, ...members: string[]): Promise<void>;
+		/** Get all set members */
 		smembers(key: string): Promise<string[]>;
+		/** Add member to sorted set with score */
 		zadd(key: string, score: number, member: string): Promise<void>;
+		/** Remove member from sorted set */
 		zrem(key: string, member: string): Promise<void>;
+		/** Get members from sorted set within score range */
 		zrangebyscore(key: string, min: number, max: number): Promise<string[]>;
 		/** Execute Lua script (for atomic check-and-schedule) */
 		eval?(
@@ -99,6 +109,14 @@ export class RedisJobStorage implements JobStorage {
 	private lockProvider: LockProvider;
 	private keyPrefix: string;
 
+	/**
+	 * Create a new Redis-based job storage.
+	 *
+	 * @param redis - Redis client with hash, set, and sorted set operations
+	 * @param lockProvider - Lock provider for distributed job locking
+	 * @param options - Optional configuration
+	 * @param options.keyPrefix - Key prefix for all storage keys (default: 'scheduler:')
+	 */
 	constructor(
 		redis: RedisJobStorage["redis"],
 		lockProvider: LockProvider,
@@ -435,13 +453,24 @@ export class RedisJobStorage implements JobStorage {
  */
 export class SQLJobStorage implements JobStorage {
 	private db: {
+		/** Execute a query and return results */
 		query(sql: string, params?: unknown[]): Promise<{ rows: unknown[] }>;
+		/** Execute a statement without returning results */
 		exec(sql: string, params?: unknown[]): Promise<void>;
 	};
 	private lockProvider: LockProvider;
 	private dialect: "postgres" | "mysql" | "sqlite";
 	private keyPrefix: string;
 
+	/**
+	 * Create a new SQL-based job storage.
+	 *
+	 * @param db - Database client with query and exec methods
+	 * @param lockProvider - Lock provider for distributed job locking
+	 * @param dialect - SQL dialect: 'postgres', 'mysql', or 'sqlite'
+	 * @param options - Optional configuration
+	 * @param options.keyPrefix - Table prefix for all storage tables (default: 'scheduler:')
+	 */
 	constructor(
 		db: SQLJobStorage["db"],
 		lockProvider: LockProvider,

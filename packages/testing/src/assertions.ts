@@ -1,48 +1,140 @@
 /**
- * Assertion helpers for testing go-go-scope tasks
+ * Assertion helpers for testing go-go-scope tasks.
+ *
+ * Provides fluent assertion API and helper functions for verifying task behavior
+ * in tests. Compatible with Vitest, Jest, and other test frameworks.
+ *
+ * @module @go-go-scope/testing/assertions
  */
 
 import type { Result, Task } from "go-go-scope";
 
 /**
- * Assertion result with helper methods
- */
-interface TaskAssertion<T> {
-	/** Assert task resolves without error */
-	toResolve: () => Promise<void>;
-	/** Assert task resolves with specific value */
-	toResolveWith: (expected: T) => Promise<void>;
-	/** Assert task resolves within timeout */
-	toResolveWithin: (timeoutMs: number) => TaskAssertion<T>;
-	/** Assert task rejects with error */
-	toReject: () => Promise<void>;
-	/** Assert task rejects with specific error message */
-	toRejectWith: (message: string | RegExp) => Promise<void>;
-	/** Assert task fails with specific error type */
-	toRejectWithType: <E extends Error>(
-		errorClass: new (...args: never[]) => E,
-	) => Promise<void>;
-	/** Get the result tuple for manual assertions */
-	result: () => Promise<Result<Error, T>>;
-}
-
-/**
- * Create assertion helpers for a task.
+ * Assertion result with fluent helper methods for task validation.
+ * Provides a chainable API for asserting various aspects of task execution.
+ *
+ * @typeparam T - The type of the successful task result
  *
  * @example
  * ```typescript
  * import { expectTask } from '@go-go-scope/testing'
+ * import { scope } from 'go-go-scope'
+ * import { describe, test, expect } from 'vitest'
  *
- * test('task succeeds', async () => {
- *   const s = scope()
- *   await expectTask(s.task(() => Promise.resolve('done')))
- *     .toResolveWith('done')
+ * describe('task assertions', () => {
+ *   test('task resolves successfully', async () => {
+ *     const s = scope()
+ *     await expectTask(s.task(() => Promise.resolve('done')))
+ *       .toResolveWith('done')
+ *   })
+ *
+ *   test('task rejects with error', async () => {
+ *     const s = scope()
+ *     await expectTask(s.task(() => Promise.reject(new Error('fail'))))
+ *       .toRejectWith('fail')
+ *   })
+ *
+ *   test('task completes within timeout', async () => {
+ *     const s = scope()
+ *     await expectTask(s.task(() => Promise.resolve('quick')))
+ *       .toResolveWithin(1000)
+ *       .toResolve()
+ *   })
  * })
+ * ```
+ */
+export interface TaskAssertion<T> {
+	/**
+	 * Assert that the task resolves without error.
+	 * @returns Promise that resolves if the task succeeds, throws if it fails
+	 */
+	toResolve: () => Promise<void>;
+	/**
+	 * Assert that the task resolves with a specific value.
+	 * @param expected - The expected result value
+	 * @returns Promise that resolves if values match, throws with diff if not
+	 */
+	toResolveWith: (expected: T) => Promise<void>;
+	/**
+	 * Assert that the task resolves within a timeout period.
+	 * @param timeoutMs - Timeout in milliseconds
+	 * @returns A new TaskAssertion that includes the timeout constraint
+	 */
+	toResolveWithin: (timeoutMs: number) => TaskAssertion<T>;
+	/**
+	 * Assert that the task rejects with an error.
+	 * @returns Promise that resolves if the task fails, throws if it succeeds
+	 */
+	toReject: () => Promise<void>;
+	/**
+	 * Assert that the task rejects with a specific error message.
+	 * @param message - Expected error message (string) or pattern (RegExp)
+	 * @returns Promise that resolves if error matches, throws with diff if not
+	 */
+	toRejectWith: (message: string | RegExp) => Promise<void>;
+	/**
+	 * Assert that the task fails with a specific error type.
+	 * @typeparam E - The expected error class type
+	 * @param errorClass - The expected error constructor
+	 * @returns Promise that resolves if error type matches, throws if not
+	 */
+	toRejectWithType: <E extends Error>(
+		errorClass: new (...args: never[]) => E,
+	) => Promise<void>;
+	/**
+	 * Get the result tuple for manual assertions.
+	 * @returns Promise resolving to the Result tuple [Error | undefined, T | undefined]
+	 */
+	result: () => Promise<Result<Error, T>>;
+}
+
+/**
+ * Creates assertion helpers for a task.
+ * Provides a fluent API for asserting task resolution, rejection, and timing.
  *
- * test('task fails', async () => {
- *   const s = scope()
- *   await expectTask(s.task(() => Promise.reject(new Error('fail'))))
- *     .toRejectWith('fail')
+ * @typeparam T - The type of the successful task result
+ * @param task - The task to assert against
+ * @returns A TaskAssertion object with chainable assertion methods
+ *
+ * @example
+ * ```typescript
+ * import { expectTask } from '@go-go-scope/testing'
+ * import { scope } from 'go-go-scope'
+ * import { describe, test, expect } from 'vitest'
+ *
+ * describe('task assertions', () => {
+ *   test('task succeeds', async () => {
+ *     const s = scope()
+ *     await expectTask(s.task(() => Promise.resolve('done')))
+ *       .toResolveWith('done')
+ *   })
+ *
+ *   test('task fails', async () => {
+ *     const s = scope()
+ *     await expectTask(s.task(() => Promise.reject(new Error('fail'))))
+ *       .toRejectWith('fail')
+ *   })
+ *
+ *   test('task times out', async () => {
+ *     const s = scope()
+ *     await expectTask(s.task(() => new Promise(() => {})))
+ *       .toResolveWithin(100)
+ *       .toReject()
+ *   })
+ *
+ *   test('custom error type', async () => {
+ *     class ValidationError extends Error {}
+ *     const s = scope()
+ *     await expectTask(s.task(() => Promise.reject(new ValidationError())))
+ *       .toRejectWithType(ValidationError)
+ *   })
+ *
+ *   test('manual result inspection', async () => {
+ *     const s = scope()
+ *     const [err, result] = await expectTask(s.task(() => Promise.resolve(42))).result()
+ *     expect(err).toBeUndefined()
+ *     expect(result).toBe(42)
+ *   })
  * })
  * ```
  */
@@ -169,16 +261,34 @@ export function expectTask<T>(task: Task<Result<Error, T>>): TaskAssertion<T> {
 }
 
 /**
- * Assert that a task resolves successfully.
+ * Asserts that a task resolves successfully.
+ * Throws an error if the task rejects, otherwise returns the result tuple.
+ *
+ * @typeparam T - The type of the successful task result
+ * @param task - The task to assert against
+ * @returns Promise resolving to the Result tuple [undefined, T]
+ * @throws Error if the task rejects
  *
  * @example
  * ```typescript
  * import { assertResolves } from '@go-go-scope/testing'
+ * import { scope } from 'go-go-scope'
+ * import { describe, test, expect } from 'vitest'
  *
- * test('task succeeds', async () => {
- *   const s = scope()
- *   const [err, result] = await assertResolves(s.task(() => Promise.resolve('done')))
- *   expect(result).toBe('done')
+ * describe('assertResolves', () => {
+ *   test('task succeeds', async () => {
+ *     const s = scope()
+ *     const [err, result] = await assertResolves(s.task(() => Promise.resolve('done')))
+ *     expect(err).toBeUndefined()
+ *     expect(result).toBe('done')
+ *   })
+ *
+ *   test('task fails - throws', async () => {
+ *     const s = scope()
+ *     await expect(
+ *       assertResolves(s.task(() => Promise.reject(new Error('fail'))))
+ *     ).rejects.toThrow('Expected task to resolve')
+ *   })
  * })
  * ```
  */
@@ -195,16 +305,45 @@ export async function assertResolves<T>(
 }
 
 /**
- * Assert that a task rejects with an error.
+ * Asserts that a task rejects with an error.
+ * Throws an error if the task resolves, otherwise returns the error.
+ *
+ * @typeparam T - The type of the successful task result (should not be returned)
+ * @param task - The task to assert against
+ * @returns Promise resolving to the Error if the task rejects
+ * @throws Error if the task resolves successfully
  *
  * @example
  * ```typescript
  * import { assertRejects } from '@go-go-scope/testing'
+ * import { scope } from 'go-go-scope'
+ * import { describe, test, expect } from 'vitest'
  *
- * test('task fails', async () => {
- *   const s = scope()
- *   const err = await assertRejects(s.task(() => Promise.reject(new Error('fail'))))
- *   expect(err.message).toBe('fail')
+ * describe('assertRejects', () => {
+ *   test('task fails', async () => {
+ *     const s = scope()
+ *     const err = await assertRejects(s.task(() => Promise.reject(new Error('fail'))))
+ *     expect(err.message).toBe('fail')
+ *   })
+ *
+ *   test('task succeeds - throws', async () => {
+ *     const s = scope()
+ *     await expect(
+ *       assertRejects(s.task(() => Promise.resolve('success')))
+ *     ).rejects.toThrow('Expected task to reject')
+ *   })
+ *
+ *   test('error inspection', async () => {
+ *     class CustomError extends Error {
+ *       constructor(public code: number) { super('custom') }
+ *     }
+ *     const s = scope()
+ *     const err = await assertRejects(
+ *       s.task(() => Promise.reject(new CustomError(404)))
+ *     )
+ *     expect(err).toBeInstanceOf(CustomError)
+ *     expect((err as CustomError).code).toBe(404)
+ *   })
  * })
  * ```
  */
@@ -219,18 +358,50 @@ export async function assertRejects<T>(
 }
 
 /**
- * Assert that a task resolves within a timeout.
+ * Asserts that a task resolves within a specified timeout period.
+ * Useful for testing performance requirements and detecting slow operations.
+ *
+ * @typeparam T - The type of the successful task result
+ * @param task - The task to assert against
+ * @param timeoutMs - Maximum allowed time in milliseconds
+ * @returns Promise resolving to the Result tuple
+ * @throws Error if the task takes longer than the timeout
  *
  * @example
  * ```typescript
  * import { assertResolvesWithin } from '@go-go-scope/testing'
+ * import { scope } from 'go-go-scope'
+ * import { describe, test, expect } from 'vitest'
  *
- * test('task is fast', async () => {
- *   const s = scope()
- *   const [err, result] = await assertResolvesWithin(
- *     s.task(() => fetchData()),
- *     1000
- *   )
+ * describe('assertResolvesWithin', () => {
+ *   test('fast operation', async () => {
+ *     const s = scope()
+ *     const [err, result] = await assertResolvesWithin(
+ *       s.task(() => Promise.resolve('quick')),
+ *       100
+ *     )
+ *     expect(result).toBe('quick')
+ *   })
+ *
+ *   test('slow operation times out', async () => {
+ *     const s = scope()
+ *     await expect(
+ *       assertResolvesWithin(
+ *         s.task(() => new Promise(r => setTimeout(r, 200))),
+ *         100
+ *       )
+ *     ).rejects.toThrow('did not resolve within')
+ *   })
+ *
+ *   test('performance requirement', async () => {
+ *     const s = scope()
+ *     // Ensure API call completes within 1 second
+ *     const [err, data] = await assertResolvesWithin(
+ *       s.task(() => fetchUserData()),
+ *       1000
+ *     )
+ *     expect(data).toBeDefined()
+ *   })
  * })
  * ```
  */

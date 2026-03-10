@@ -5,12 +5,23 @@
 import type { CircuitBreakerOptions, CircuitState } from "./types.js";
 
 /**
- * Event handler type for circuit breaker events
+ * Event handler type for circuit breaker events.
+ *
+ * @param args - Variable arguments depending on the event type
  */
 export type EventHandler = (...args: unknown[]) => void;
 
 /**
- * Circuit breaker event types
+ * Circuit breaker event types.
+ *
+ * Available events:
+ * - **'stateChange'**: Emitted when the circuit state changes (fromState, toState, failureCount)
+ * - **'open'**: Emitted when the circuit opens (failureCount)
+ * - **'close'**: Emitted when the circuit closes
+ * - **'halfOpen'**: Emitted when the circuit enters half-open state
+ * - **'success'**: Emitted when a protected call succeeds
+ * - **'failure'**: Emitted when a protected call fails
+ * - **'thresholdAdapt'**: Emitted when adaptive threshold changes (newThreshold, errorRate)
  */
 export type CircuitBreakerEvent =
 	| "stateChange"
@@ -21,15 +32,90 @@ export type CircuitBreakerEvent =
 	| "failure"
 	| "thresholdAdapt";
 
+/**
+ * Internal record for tracking request history.
+ *
+ * @internal
+ */
 interface RequestRecord {
 	success: boolean;
 	timestamp: number;
 }
 
 /**
- * Circuit Breaker implementation.
- * Created automatically when `circuitBreaker` options are passed to `scope()`.
+ * Circuit Breaker implementation for fault tolerance.
+ *
+ * The circuit breaker pattern prevents cascading failures by stopping requests
+ * to a failing service. It operates in three states:
+ *
+ * - **Closed**: Normal operation, requests pass through
+ * - **Open**: Service is failing, requests fail fast without calling the service
+ * - **Half-Open**: Testing if the service has recovered, limited requests allowed
+ *
+ * Features:
+ * - Automatic state transitions based on failure thresholds
+ * - Configurable reset timeout
+ * - Sliding window for failure tracking
+ * - Adaptive thresholds based on error rates
+ * - Event subscriptions for monitoring
+ * - Success threshold for recovery confirmation
+ *
+ * Created automatically when `circuitBreaker` options are passed to {@link scope}.
  * Can also be used standalone for custom circuit breaking logic.
+ *
+ * @example
+ * ```typescript
+ * await using s = scope({
+ *   circuitBreaker: {
+ *     failureThreshold: 5,
+ *     resetTimeout: 10000
+ *   }
+ * });
+ *
+ * // All tasks in this scope are protected by the circuit breaker
+ * const result = await s.task(async ({ signal }) => {
+ *   return await fetchData(signal);
+ * });
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Standalone usage
+ * const cb = new CircuitBreaker({
+ *   failureThreshold: 3,
+ *   resetTimeout: 5000,
+ *   successThreshold: 2 // Need 2 successes to close from half-open
+ * });
+ *
+ * try {
+ *   const data = await cb.execute(async (signal) => {
+ *     return await unreliableApi.call(signal);
+ *   });
+ * } catch (error) {
+ *   if (error.message === 'Circuit breaker is open') {
+ *     console.log('Service temporarily unavailable');
+ *   }
+ * }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Monitoring circuit state
+ * cb.on('stateChange', (from, to, failures) => {
+ *   console.log(`Circuit: ${from} -> ${to} (failures: ${failures})`);
+ * });
+ *
+ * cb.on('open', (failures) => {
+ *   alertEngineer(`Circuit opened after ${failures} failures`);
+ * });
+ *
+ * cb.on('close', () => {
+ *   console.log('Service recovered');
+ * });
+ * ```
+ *
+ * @see {@link CircuitBreakerOptions} for configuration options
+ * @see {@link Scope} for automatic circuit breaker integration
  */
 /* #__PURE__ */
 export class CircuitBreaker implements AsyncDisposable {
@@ -51,6 +137,38 @@ export class CircuitBreaker implements AsyncDisposable {
 	private eventListeners: Map<CircuitBreakerEvent, Set<EventHandler>> =
 		new Map();
 
+	/**
+	 * Creates a new CircuitBreaker.
+	 *
+	 * @param options - Configuration options for the circuit breaker
+	 * @param parentSignal - Optional AbortSignal from parent scope for cancellation support
+	 *
+	 * @example
+	 * ```typescript
+	 * // Basic configuration
+	 * const cb = new CircuitBreaker({
+	 *   failureThreshold: 5,    // Open after 5 failures
+	 *   resetTimeout: 30000     // Try again after 30 seconds
+	 * });
+	 * ```
+	 *
+	 * @example
+	 * ```typescript
+	 * // Advanced configuration with sliding window
+	 * const cb = new CircuitBreaker({
+	 *   failureThreshold: 5,
+	 *   resetTimeout: 30000,
+	 *   successThreshold: 3,    // Need 3 successes to close
+	 *   advanced: {
+	 *     slidingWindow: true,
+	 *     slidingWindowSizeMs: 60000,  // Count failures in last 60s
+	 *     adaptiveThreshold: true,      // Auto-adjust threshold
+	 *     minThreshold: 2,
+	 *     maxThreshold: 10
+	 *   }
+	 * });
+	 * ```
+	 */
 	constructor(
 		options: CircuitBreakerOptions = {},
 		private parentSignal?: AbortSignal,
@@ -73,7 +191,13 @@ export class CircuitBreaker implements AsyncDisposable {
 
 	/**
 	 * Get the current adaptive failure threshold based on error rate.
-	 * Threshold decreases as error rate increases.
+	 *
+	 * When adaptive threshold is enabled, the threshold decreases as the
+	 * error rate increases, making the circuit more sensitive during
+	 * periods of instability.
+	 *
+	 * @returns The adaptive failure threshold
+	 * @internal
 	 */
 	private getAdaptiveThreshold(): number {
 		if (!this._adaptiveThreshold) {
@@ -117,7 +241,11 @@ export class CircuitBreaker implements AsyncDisposable {
 
 	/**
 	 * Get the current failure count within the sliding window.
+	 *
 	 * If sliding window is disabled, returns the cumulative failure count.
+	 *
+	 * @returns Number of failures in the current window
+	 * @internal
 	 */
 	private getFailureCount(): number {
 		if (!this._slidingWindow) {
@@ -137,8 +265,36 @@ export class CircuitBreaker implements AsyncDisposable {
 
 	/**
 	 * Execute a function with circuit breaker protection.
-	 * @throws Error if circuit is open
-	 * @throws Error from the function if it fails
+	 *
+	 * If the circuit is open, throws immediately without calling the function.
+	 * If the circuit is half-open, allows the call but tracks success/failure.
+	 * If the circuit is closed, calls the function normally.
+	 *
+	 * @typeParam T - Return type of the function
+	 * @param fn - Function to execute with circuit breaker protection
+	 * @returns Promise that resolves to the function's return value
+	 * @throws {Error} If the circuit is open (message: 'Circuit breaker is open')
+	 * @throws {unknown} Any error thrown by the function or parent signal abort
+	 *
+	 * @example
+	 * ```typescript
+	 * const cb = new CircuitBreaker({ failureThreshold: 3 });
+	 *
+	 * try {
+	 *   const result = await cb.execute(async (signal) => {
+	 *     const response = await fetch('/api/data', { signal });
+	 *     if (!response.ok) throw new Error('API error');
+	 *     return await response.json();
+	 *   });
+	 *   console.log('Data:', result);
+	 * } catch (error) {
+	 *   if (error.message === 'Circuit breaker is open') {
+	 *     console.log('Service is down, using cached data');
+	 *   } else {
+	 *     console.log('Request failed:', error);
+	 *   }
+	 * }
+	 * ```
 	 */
 	async execute<T>(fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
 		if (this.parentSignal?.aborted) {
@@ -181,6 +337,24 @@ export class CircuitBreaker implements AsyncDisposable {
 
 	/**
 	 * Get the current state of the circuit breaker.
+	 *
+	 * This is a computed property that checks if the circuit should
+	 * transition from open to half-open based on the reset timeout.
+	 *
+	 * @returns The current circuit state: 'closed', 'open', or 'half-open'
+	 *
+	 * @example
+	 * ```typescript
+	 * const cb = new CircuitBreaker();
+	 *
+	 * console.log(cb.currentState); // 'closed'
+	 *
+	 * // After failures...
+	 * console.log(cb.currentState); // 'open'
+	 *
+	 * // After reset timeout...
+	 * console.log(cb.currentState); // 'half-open'
+	 * ```
 	 */
 	get currentState(): CircuitState {
 		if (this.state === "open") {
@@ -194,14 +368,24 @@ export class CircuitBreaker implements AsyncDisposable {
 	}
 
 	/**
-	 * Get the current failure count (within sliding window if enabled).
+	 * Get the current failure count.
+	 *
+	 * If sliding window is enabled, returns failures within the window.
+	 * Otherwise, returns the cumulative failure count.
+	 *
+	 * @returns Number of failures
 	 */
 	get failureCount(): number {
 		return this.getFailureCount();
 	}
 
 	/**
-	 * Get the current consecutive success count (in half-open state).
+	 * Get the current consecutive success count.
+	 *
+	 * This tracks successes in the half-open state. When this count
+	 * reaches the success threshold, the circuit closes.
+	 *
+	 * @returns Number of consecutive successes in half-open state
 	 */
 	get successCount(): number {
 		return this.successes;
@@ -209,6 +393,11 @@ export class CircuitBreaker implements AsyncDisposable {
 
 	/**
 	 * Get the failure threshold.
+	 *
+	 * If adaptive threshold is enabled, returns the dynamically
+	 * calculated threshold based on current error rates.
+	 *
+	 * @returns The failure threshold
 	 */
 	get failureThreshold(): number {
 		if (this._adaptiveThreshold) {
@@ -219,6 +408,8 @@ export class CircuitBreaker implements AsyncDisposable {
 
 	/**
 	 * Get the success threshold for closing from half-open state.
+	 *
+	 * @returns Number of consecutive successes needed to close the circuit
 	 */
 	get successThreshold(): number {
 		return this._successThreshold;
@@ -226,6 +417,10 @@ export class CircuitBreaker implements AsyncDisposable {
 
 	/**
 	 * Get the reset timeout in milliseconds.
+	 *
+	 * After this timeout, an open circuit transitions to half-open.
+	 *
+	 * @returns Reset timeout in milliseconds
 	 */
 	get resetTimeout(): number {
 		return this._resetTimeout;
@@ -233,6 +428,8 @@ export class CircuitBreaker implements AsyncDisposable {
 
 	/**
 	 * Check if adaptive threshold is enabled.
+	 *
+	 * @returns true if adaptive threshold is enabled
 	 */
 	get isAdaptiveEnabled(): boolean {
 		return this._adaptiveThreshold;
@@ -240,6 +437,8 @@ export class CircuitBreaker implements AsyncDisposable {
 
 	/**
 	 * Check if sliding window is enabled.
+	 *
+	 * @returns true if sliding window failure tracking is enabled
 	 */
 	get isSlidingWindowEnabled(): boolean {
 		return this._slidingWindow;
@@ -247,6 +446,11 @@ export class CircuitBreaker implements AsyncDisposable {
 
 	/**
 	 * Get the current error rate (for adaptive threshold mode).
+	 *
+	 * Returns the ratio of failures to total requests within the
+	 * error rate window. Returns 0 if no requests in window.
+	 *
+	 * @returns Error rate between 0 and 1
 	 */
 	get errorRate(): number {
 		const now = Date.now();
@@ -261,6 +465,21 @@ export class CircuitBreaker implements AsyncDisposable {
 
 	/**
 	 * Manually reset the circuit breaker to closed state.
+	 *
+	 * This clears all failure counts and transitions to the closed state.
+	 * Use this when you know the underlying service has recovered.
+	 *
+	 * @example
+	 * ```typescript
+	 * const cb = new CircuitBreaker();
+	 *
+	 * // Circuit opens due to failures
+	 * console.log(cb.currentState); // 'open'
+	 *
+	 * // Manually reset after confirming service is healthy
+	 * cb.reset();
+	 * console.log(cb.currentState); // 'closed'
+	 * ```
 	 */
 	reset(): void {
 		this.state = "closed";
@@ -272,6 +491,10 @@ export class CircuitBreaker implements AsyncDisposable {
 
 	/**
 	 * Dispose the circuit breaker.
+	 *
+	 * Resets the circuit and clears all event listeners.
+	 *
+	 * @returns Promise that resolves when disposal is complete
 	 */
 	async [Symbol.asyncDispose](): Promise<void> {
 		this.reset();
@@ -281,19 +504,43 @@ export class CircuitBreaker implements AsyncDisposable {
 	/**
 	 * Subscribe to a circuit breaker event.
 	 *
-	 * @param event - Event name: 'stateChange', 'open', 'close', 'halfOpen', 'success', 'failure', 'thresholdAdapt'
+	 * @param event - Event name to subscribe to:
+	 *   - 'stateChange': Circuit state changed
+	 *   - 'open': Circuit opened
+	 *   - 'close': Circuit closed
+	 *   - 'halfOpen': Circuit entered half-open state
+	 *   - 'success': Protected call succeeded
+	 *   - 'failure': Protected call failed
+	 *   - 'thresholdAdapt': Adaptive threshold changed
 	 * @param handler - Event handler function
-	 * @returns Unsubscribe function
+	 * @returns Unsubscribe function - call this to remove the subscription
 	 *
 	 * @example
 	 * ```typescript
-	 * const unsubscribe = cb.on('open', () => {
-	 *   console.log('Circuit opened!');
+	 * const cb = new CircuitBreaker();
+	 *
+	 * // Subscribe to state changes
+	 * const unsubscribe = cb.on('stateChange', (from, to, failures) => {
+	 *   console.log(`Circuit: ${from} -> ${to}`);
 	 * });
 	 *
 	 * // Later: unsubscribe
 	 * unsubscribe();
 	 * ```
+	 *
+	 * @example
+	 * ```typescript
+	 * // Subscribe to open event to alert on-call
+	 * cb.on('open', (failureCount) => {
+	 *   pagerDuty.trigger({
+	 *     severity: 'critical',
+	 *     message: `Circuit opened after ${failureCount} failures`
+	 *   });
+	 * });
+	 * ```
+	 *
+	 * @see {@link off} for unsubscribing without the returned function
+	 * @see {@link once} for one-time subscriptions
 	 */
 	on(event: CircuitBreakerEvent, handler: EventHandler): () => void {
 		if (!this.eventListeners.has(event)) {
@@ -310,8 +557,19 @@ export class CircuitBreaker implements AsyncDisposable {
 	/**
 	 * Unsubscribe from a circuit breaker event.
 	 *
-	 * @param event - Event name
-	 * @param handler - Handler to remove
+	 * @param event - Event name to unsubscribe from
+	 * @param handler - Handler function to remove (must be the same reference passed to on())
+	 *
+	 * @example
+	 * ```typescript
+	 * const handler = (failures) => console.log('Open!', failures);
+	 *
+	 * cb.on('open', handler);
+	 * // ... later ...
+	 * cb.off('open', handler);
+	 * ```
+	 *
+	 * @see {@link on} for subscribing with automatic unsubscribe function
 	 */
 	off(event: CircuitBreakerEvent, handler: EventHandler): void {
 		this.eventListeners.get(event)?.delete(handler);
@@ -320,8 +578,18 @@ export class CircuitBreaker implements AsyncDisposable {
 	/**
 	 * Subscribe to an event once.
 	 *
-	 * @param event - Event name
+	 * The handler is automatically removed after the first occurrence.
+	 *
+	 * @param event - Event name to subscribe to
 	 * @param handler - Event handler function
+	 *
+	 * @example
+	 * ```typescript
+	 * // Alert only on the first open
+	 * cb.once('open', (failures) => {
+	 *   console.log('Circuit opened for the first time!');
+	 * });
+	 * ```
 	 */
 	once(event: CircuitBreakerEvent, handler: EventHandler): void {
 		const onceHandler = (...args: unknown[]) => {
@@ -333,6 +601,10 @@ export class CircuitBreaker implements AsyncDisposable {
 
 	/**
 	 * Emit an event to all subscribers.
+	 *
+	 * @param event - Event to emit
+	 * @param args - Arguments to pass to handlers
+	 * @internal
 	 */
 	private emit(event: CircuitBreakerEvent, ...args: unknown[]): void {
 		// Call handlers
@@ -345,6 +617,11 @@ export class CircuitBreaker implements AsyncDisposable {
 		});
 	}
 
+	/**
+	 * Handle a successful execution.
+	 *
+	 * @internal
+	 */
 	private onSuccess(): void {
 		const previousState = this.state;
 		const now = Date.now();
@@ -388,6 +665,11 @@ export class CircuitBreaker implements AsyncDisposable {
 		this.emit("success");
 	}
 
+	/**
+	 * Handle a failed execution.
+	 *
+	 * @internal
+	 */
 	private onFailure(): void {
 		const previousState = this.state;
 		const now = Date.now();
@@ -430,6 +712,11 @@ export class CircuitBreaker implements AsyncDisposable {
 		this.emit("failure");
 	}
 
+	/**
+	 * Transition from open to half-open state.
+	 *
+	 * @internal
+	 */
 	private transitionToHalfOpen(): void {
 		const previousState = this.state;
 		this.state = "half-open";
