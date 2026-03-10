@@ -13,7 +13,7 @@
   - [createRouteConfig](#createrouteconfig)
   - [errorResponse](#errorresponse)
   - [jsonResponse](#jsonresponse)
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [NextJSRouteError](#nextjsrouteerror)
 - [Interfaces](#Interfaces)
   - [NextJSContext](#nextjscontext)
@@ -30,7 +30,7 @@
 function withScope<T extends Record<string, unknown> = Record<string, never>>(handler: APIRouteHandler<T>, options: WithScopeOptions<T> = {}): (req: NextRequest) => Promise<Response>
 ```
 
-Wrap a Next.js API route handler with a scope @example ```typescript // app/api/users/route.ts import { withScope } from '@go-go-scope/adapter-nextjs' export const GET = withScope(async (req, { scope }) => {   const [err, users] = await scope.task(() => db.query('SELECT * FROM users'))   if (err) return Response.json({ error: err.message }, { status: 500 })   return Response.json(users) }) // With custom options export const POST = withScope(   async (req, { scope }) => {     const [err, result] = await scope.task(() => createUser(req))     if (err) return Response.json({ error: err.message }, { status: 400 })     return Response.json(result, { status: 201 })   },   { timeout: 5000 } ) ```
+Wrap a Next.js API route handler with a scope
 
 **Parameters:**
 
@@ -74,7 +74,7 @@ export const POST = withScope(
 function withScopeEdge<T extends Record<string, unknown> = Record<string, never>>(handler: EdgeRouteHandler<T>, options: WithScopeOptions<T> = {}): (req: Request) => Promise<Response>
 ```
 
-Wrap a Next.js Edge route handler with a scope @example ```typescript // middleware.ts or edge route import { withScopeEdge } from '@go-go-scope/adapter-nextjs' export const config = {   runtime: 'edge', } export default withScopeEdge(async (req, { scope }) => {   const [err, result] = await scope.task(() => fetchEdgeData())   if (err) return new Response('Error', { status: 500 })   return new Response(JSON.stringify(result)) }) ```
+Wrap a Next.js Edge route handler with a scope
 
 **Parameters:**
 
@@ -115,7 +115,7 @@ function withScopeServer<T extends Record<string, unknown> = Record<string, neve
 	) => Promise<JSX.Element> | JSX.Element, options: WithScopeOptions<T> = {}): (props: Props) => Promise<JSX.Element>
 ```
 
-Server Component wrapper with scope @example ```typescript // app/users/page.tsx import { withScopeServer } from '@go-go-scope/adapter-nextjs' export default withScopeServer(async (searchParams, { scope }) => {   const [err, users] = await scope.task(() => fetchUsers())   if (err) return <Error message={err.message} />   return <UserList users={users} /> }) ```
+Server Component wrapper with scope
 
 **Parameters:**
 
@@ -155,7 +155,7 @@ function withScopeMiddleware<T extends Record<string, unknown> = Record<string, 
 	) => Promise<Response> | Response, options: WithScopeOptions<T> = {}): (req: NextRequest) => Promise<Response>
 ```
 
-Middleware wrapper with scope @example ```typescript // middleware.ts import { withScopeMiddleware } from '@go-go-scope/adapter-nextjs' import { NextResponse } from 'next/server' export default withScopeMiddleware(async (req, { scope }) => {   const [err, session] = await scope.task(() => validateSession(req))   if (err || !session) {     return NextResponse.redirect(new URL('/login', req.url))   }   return NextResponse.next() }) ```
+Middleware wrapper with scope
 
 **Parameters:**
 
@@ -195,7 +195,7 @@ export default withScopeMiddleware(async (req, { scope }) => {
 function withScopeAndServices<T extends Record<string, unknown>>(services: T, handler: APIRouteHandler<T>, options: Omit<WithScopeOptions<T>, "services"> = {}): (req: NextRequest) => Promise<Response>
 ```
 
-Higher-order function for route handlers with dependency injection @example ```typescript // With dependency injection const handler = withScopeAndServices(   { db: createDatabase() },   async (req, { scope }) => {     const db = scope.use('db')     const [err, users] = await scope.task(() => db.query('SELECT * FROM users'))     return Response.json(users)   } ) ```
+Higher-order function for route handlers with dependency injection
 
 **Parameters:**
 
@@ -231,7 +231,7 @@ const handler = withScopeAndServices(
 function createRouteConfig<T extends Record<string, unknown>>(config: WithScopeOptions<T>)
 ```
 
-Create a reusable scope configuration for API routes @example ```typescript // lib/scope.ts import { createRouteConfig } from '@go-go-scope/adapter-nextjs' import { createDatabase } from './db' export const routeConfig = createRouteConfig({   timeout: 10000,   services: { db: createDatabase() },   onError: (err) => Response.json({ error: err.message }, { status: 500 }) }) // app/api/users/route.ts import { routeConfig } from '@/lib/scope' export const GET = routeConfig.wrap(async (req, { scope }) => {   const db = scope.use('db')   // ... }) ```
+Create a reusable scope configuration for API routes
 
 **Parameters:**
 
@@ -307,7 +307,7 @@ Helper to create success responses with proper typing
 
 ---
 
-## Classs
+## Classes
 
 ### NextJSRouteError
 

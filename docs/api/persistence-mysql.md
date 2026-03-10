@@ -4,7 +4,7 @@
 
 ## Table of Contents
 
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [MySQLCacheAdapter](#mysqlcacheadapter)
   - [MySQLIdempotencyAdapter](#mysqlidempotencyadapter)
   - [MySQLAdapter](#mysqladapter)
@@ -13,7 +13,7 @@
   - [MySQLCacheAdapter.stats](#mysqlcacheadapter-stats)
   - [MySQLCacheAdapter.prune](#mysqlcacheadapter-prune)
 
-## Classs
+## Classes
 
 ### MySQLCacheAdapter
 

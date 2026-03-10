@@ -39,7 +39,7 @@
 function channelToReadableStream<T>(channel: Channel<T>, options: StreamConversionOptions = {}): ReadableStream<T>
 ```
 
-Convert a go-go-scope Channel to a ReadableStream @example ```typescript const ch = s.channel<string>() const stream = channelToReadableStream(ch) const reader = stream.getReader() const { value } = await reader.read() ```
+Convert a go-go-scope Channel to a ReadableStream
 
 **Parameters:**
 
@@ -70,7 +70,7 @@ const { value } = await reader.read()
 function readableStreamToChannel<T>(scope: Scope, stream: ReadableStream<T>, options: { capacity?: number } = {}): Channel<T>
 ```
 
-Convert a ReadableStream to a go-go-scope Channel @example ```typescript const response = await fetch('/api/data') const ch = readableStreamToChannel(s, response.body!) for await (const chunk of ch) {   console.log(chunk) } ```
+Convert a ReadableStream to a go-go-scope Channel
 
 **Parameters:**
 
@@ -103,7 +103,7 @@ for await (const chunk of ch) {
 function channelToWritableStream<T>(channel: Channel<T>, options: StreamConversionOptions = {}): WritableStream<T>
 ```
 
-Convert a go-go-scope Channel to a WritableStream @example ```typescript const ch = s.channel<string>() const stream = channelToWritableStream(ch) const writer = stream.getWriter() await writer.write('hello') ```
+Convert a go-go-scope Channel to a WritableStream
 
 **Parameters:**
 
@@ -134,7 +134,7 @@ await writer.write('hello')
 function writableStreamToChannel<T>(scope: Scope, stream: WritableStream<T>): Channel<T>
 ```
 
-Convert a WritableStream to a go-go-scope Channel @example ```typescript const ws = new WebSocketStream('wss://example.com') const ch = writableStreamToChannel(s, ws.writable) await ch.send('hello') ```
+Convert a WritableStream to a go-go-scope Channel
 
 **Parameters:**
 
@@ -164,7 +164,7 @@ await ch.send('hello')
 function streamToReadableStream<T>(stream: AsyncIterable<T>, options: StreamConversionOptions = {}): ReadableStream<T>
 ```
 
-Convert a go-go-scope Stream (from @go-go-scope/stream) to a ReadableStream @example ```typescript import { stream } from '@go-go-scope/stream' const st = s.stream(data)   .map(x => x * 2)   .filter(x => x > 10) const readable = streamToReadableStream(st) ```
+Convert a go-go-scope Stream (from @go-go-scope/stream) to a ReadableStream
 
 **Parameters:**
 
@@ -199,7 +199,7 @@ const readable = streamToReadableStream(st)
 function readableStreamToStream<T>(stream: ReadableStream<T>): AsyncIterable<T> & { [Symbol.asyncDispose](): Promise<void> }
 ```
 
-Convert a ReadableStream to a go-go-scope Stream-compatible async iterable @example ```typescript const response = await fetch('/api/data') const stream = readableStreamToStream(response.body!) // Use with @go-go-scope/stream const result = await stream   .pipeThrough(new TransformStream(...))   .pipeTo(new WritableStream(...)) ```
+Convert a ReadableStream to a go-go-scope Stream-compatible async iterable
 
 **Parameters:**
 
@@ -233,7 +233,7 @@ const result = await stream
 function teeStream<T>(scope: Scope, stream: ReadableStream<T>, options: { capacity?: number } = {}): [Channel<T>, Channel<T>]
 ```
 
-Tee a ReadableStream into two channels @example ```typescript const stream = fetch('/api/data').then(r => r.body!) const [ch1, ch2] = teeStream(s, await stream) // ch1 and ch2 both receive all values ```
+Tee a ReadableStream into two channels
 
 **Parameters:**
 
@@ -264,7 +264,7 @@ const [ch1, ch2] = teeStream(s, await stream)
 function pipeStreams<T>(source: ReadableStream<T>, ...transforms: (TransformStream<T, T> | WritableStream<T>)[]): Promise<void>
 ```
 
-Create a backpressure-aware stream pipe @example ```typescript await pipeStreams(   fetch('/api/data').then(r => r.body!),   transformStream,   writableStream ) ```
+Create a backpressure-aware stream pipe
 
 **Parameters:**
 
@@ -570,7 +570,7 @@ Options for stream conversion
 interface TransformConfig
 ```
 
-Create a TransformStream from a channel transformation @example ```typescript const transform = createTransformStream<string, number>({   transform: (chunk) => chunk.length }) await readable   .pipeThrough(transform)   .pipeTo(writable) ```
+Create a TransformStream from a channel transformation
 
 **Examples:**
 
@@ -594,7 +594,7 @@ await readable
 interface DuplexStream
 ```
 
-Create a duplex stream (ReadableStream + WritableStream) from two channels @example ```typescript const { readable, writable } = createDuplexStream<string, number>(s) // Write strings const writer = writable.getWriter() await writer.write('hello') // Read numbers const reader = readable.getReader() const { value } = await reader.read() ```
+Create a duplex stream (ReadableStream + WritableStream) from two channels
 
 **Examples:**
 

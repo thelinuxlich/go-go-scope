@@ -4,7 +4,7 @@
 
 ## Table of Contents
 
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [PostgresCacheAdapter](#postgrescacheadapter)
   - [PostgresIdempotencyAdapter](#postgresidempotencyadapter)
   - [PostgresAdapter](#postgresadapter)
@@ -13,7 +13,7 @@
   - [PostgresCacheAdapter.stats](#postgrescacheadapter-stats)
   - [PostgresCacheAdapter.prune](#postgrescacheadapter-prune)
 
-## Classs
+## Classes
 
 ### PostgresCacheAdapter
 

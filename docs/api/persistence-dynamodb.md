@@ -4,11 +4,11 @@
 
 ## Table of Contents
 
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [DynamoDBIdempotencyAdapter](#dynamodbidempotencyadapter)
   - [DynamoDBAdapter](#dynamodbadapter)
 
-## Classs
+## Classes
 
 ### DynamoDBIdempotencyAdapter
 

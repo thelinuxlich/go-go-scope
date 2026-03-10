@@ -4,13 +4,13 @@
 
 ## Table of Contents
 
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [DurableObjectAdapter](#durableobjectadapter)
 - [Interfaces](#Interfaces)
   - [DurableObjectStorage](#durableobjectstorage)
   - [DurableObjectTransaction](#durableobjecttransaction)
 
-## Classs
+## Classes
 
 ### DurableObjectAdapter
 

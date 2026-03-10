@@ -4,14 +4,14 @@
 
 ## Table of Contents
 
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [RedisCacheAdapter](#rediscacheadapter)
   - [RedisIdempotencyAdapter](#redisidempotencyadapter)
   - [RedisAdapter](#redisadapter)
 - [Methods](#Methods)
   - [RedisCacheAdapter.stats](#rediscacheadapter-stats)
 
-## Classs
+## Classes
 
 ### RedisCacheAdapter
 

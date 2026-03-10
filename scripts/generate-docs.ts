@@ -70,37 +70,43 @@ function parseJSDoc(node: ts.Node, sourceFile: ts.SourceFile): Partial<DocEntry>
   const examples: string[] = [];
   const tags: Record<string, string> = {};
 
-  // Get description from JSDoc comment
+  // Get description from JSDoc comment (exclude @example blocks - handled by tags)
   const commentRanges = ts.getLeadingCommentRanges(sourceFile.text, node.getFullStart());
   if (commentRanges) {
     for (const range of commentRanges) {
       const comment = sourceFile.text.substring(range.pos, range.end);
-      // Extract description (lines not starting with @ or inside ```)
+      // Extract description only (lines not starting with @)
       const lines = comment.split("\n");
-      let inExample = false;
-      let currentExample = "";
-
+      let skipSection = false;
+      
       for (const line of lines) {
-        const trimmed = line.trim().replace(/^\/\*\*?/, "").replace(/\*\/$/, "").trim();
+        // Remove JSDoc comment markers and leading asterisks
+        let trimmed = line.trim()
+          .replace(/^\/\*\*?/, "")     // Remove /**
+          .replace(/\*\/$/, "")         // Remove */
+          .replace(/^\*\s?/, "")        // Remove leading * 
+          .trim();
 
+        // Skip empty lines and JSDoc markers
+        if (trimmed === "" || trimmed === "*/") continue;
+        
+        // Skip @example and subsequent lines until next @tag or end of comment
         if (trimmed.startsWith("@example")) {
-          inExample = true;
-          currentExample = "";
-        } else if (trimmed.startsWith("```") && inExample) {
-          if (currentExample) {
-            examples.push(currentExample.trim());
-          }
-          currentExample = "";
-          inExample = false;
-        } else if (inExample) {
-          currentExample += trimmed.replace(/^\*\s?/, "") + "\n";
-        } else if (!trimmed.startsWith("@") && trimmed !== "*/" && trimmed !== "*") {
-          description += trimmed.replace(/^\*\s?/, "") + " ";
+          skipSection = true;
+          continue;
         }
-      }
-
-      if (currentExample && inExample) {
-        examples.push(currentExample.trim());
+        
+        // End skip when we hit another @tag
+        if (skipSection && trimmed.startsWith("@")) {
+          skipSection = false;
+        }
+        
+        if (skipSection) continue;
+        
+        // Add to description (skip @tags)
+        if (!trimmed.startsWith("@")) {
+          description += trimmed + " ";
+        }
       }
     }
   }
@@ -328,7 +334,9 @@ function generatePackageMarkdown(docs: DocEntry[], packageName: string): string 
   markdown += "## Table of Contents\n\n";
   for (const [kind, items] of Object.entries(groups)) {
     if (items.length > 0) {
-      markdown += `- [${kind}s](#${kind}s)\n`;
+      // Handle pluralization properly (Class -> Classes, not Classs)
+      const pluralKind = kind === "Class" ? "Classes" : `${kind}s`;
+      markdown += `- [${pluralKind}](#${pluralKind})\n`;
       for (const item of items) {
         markdown += `  - [${item.name}](#${item.name.toLowerCase().replace(/\./g, "-")})\n`;
       }
@@ -340,7 +348,9 @@ function generatePackageMarkdown(docs: DocEntry[], packageName: string): string 
   for (const [kind, items] of Object.entries(groups)) {
     if (items.length === 0) continue;
 
-    markdown += `## ${kind}s\n\n`;
+    // Handle pluralization properly (Class -> Classes, not Classs)
+    const pluralKind = kind === "Class" ? "Classes" : `${kind}s`;
+    markdown += `## ${pluralKind}\n\n`;
 
     for (const item of items) {
       markdown += generateEntryMarkdown(item);

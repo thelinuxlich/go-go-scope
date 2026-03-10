@@ -7,7 +7,7 @@
 - [Functions](#Functions)
   - [opentelemetryPlugin](#opentelemetryplugin)
   - [exportTraceData](#exporttracedata)
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [TraceVisualizer](#tracevisualizer)
   - [MessageFlowTracker](#messageflowtracker)
   - [DeadlockDetector](#deadlockdetector)
@@ -103,7 +103,7 @@ Export trace data for visualization
 
 ---
 
-## Classs
+## Classes
 
 ### TraceVisualizer
 

@@ -7,7 +7,7 @@
 - [Functions](#Functions)
   - [exportMetrics](#exportmetrics)
   - [metricsPlugin](#metricsplugin)
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [CounterImpl](#counterimpl)
   - [GaugeImpl](#gaugeimpl)
   - [HistogramImpl](#histogramimpl)
@@ -95,7 +95,7 @@ Create the metrics plugin
 
 ---
 
-## Classs
+## Classes
 
 ### CounterImpl
 

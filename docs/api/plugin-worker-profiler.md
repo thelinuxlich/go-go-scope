@@ -6,7 +6,7 @@
 
 - [Functions](#Functions)
   - [workerProfilerPlugin](#workerprofilerplugin)
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [WorkerProfiler](#workerprofiler)
 - [Interfaces](#Interfaces)
   - [WorkerTaskProfile](#workertaskprofile)
@@ -31,7 +31,7 @@
 function workerProfilerPlugin(options: WorkerProfilerOptions = {}): ScopePlugin
 ```
 
-Create the worker profiler plugin @param options - Profiler configuration options @returns ScopePlugin for worker profiling @example ```typescript import { scope } from 'go-go-scope' import { workerProfilerPlugin } from '@go-go-scope/plugin-worker-profiler' await using s = scope({   plugins: [workerProfilerPlugin({ trackCpuTime: true, trackMemory: true })] }) // Run worker tasks... // Get profiling report const report = s.workerProfile?.() console.log(`Average duration: ${report?.statistics.avgDuration}ms`) ```
+Create the worker profiler plugin
 
 **Parameters:**
 
@@ -68,7 +68,7 @@ console.log(`Average duration: ${report?.statistics.avgDuration}ms`)
 
 ---
 
-## Classs
+## Classes
 
 ### WorkerProfiler
 

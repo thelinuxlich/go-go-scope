@@ -4,10 +4,10 @@
 
 ## Table of Contents
 
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [BunSQLiteAdapter](#bunsqliteadapter)
 
-## Classs
+## Classes
 
 ### BunSQLiteAdapter
 

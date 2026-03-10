@@ -6,7 +6,7 @@
 
 - [Functions](#Functions)
   - [Task](#task)
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [GoGoScopeService](#gogoscopeservice)
   - [GoGoRequestScopeService](#gogorequestscopeservice)
   - [GoGoScopeModule](#gogoscopemodule)
@@ -22,7 +22,7 @@
 function Task(options?: Parameters<Scope["task"]>[1])
 ```
 
-Decorator to execute a method within a task @example ```typescript @Injectable() class UserService {   @Task({ retry: 'exponential', timeout: 5000 })   async getUser(id: string) {     return fetchUser(id)   } } ```
+Decorator to execute a method within a task class UserService { async getUser(id: string) { return fetchUser(id) } } ```
 
 **Parameters:**
 
@@ -48,7 +48,7 @@ return fetchUser(id)
 
 ---
 
-## Classs
+## Classes
 
 ### GoGoScopeService
 
@@ -80,7 +80,7 @@ Request-scoped service that provides a unique scope per HTTP request
 class GoGoScopeModule
 ```
 
-NestJS module for go-go-scope integration @example ```typescript @Module({   imports: [GoGoScopeModule.forRoot({ metrics: true })],   providers: [UserService], }) class AppModule {} ```
+NestJS module for go-go-scope integration imports: [GoGoScopeModule.forRoot({ metrics: true })], providers: [UserService], }) class AppModule {} ```
 
 **Examples:**
 

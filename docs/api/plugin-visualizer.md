@@ -7,7 +7,7 @@
 - [Functions](#Functions)
   - [generateId](#generateid)
   - [visualizerPlugin](#visualizerplugin)
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [VisualizerState](#visualizerstate)
   - [VisualizerDashboard](#visualizerdashboard)
 - [Interfaces](#Interfaces)
@@ -58,7 +58,7 @@ Create the visualizer plugin
 
 ---
 
-## Classs
+## Classes
 
 ### VisualizerState
 

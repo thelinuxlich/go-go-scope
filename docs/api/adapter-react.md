@@ -31,7 +31,7 @@
 function useScope(options: UseScopeOptions = {}): Scope<Record<string, unknown>>
 ```
 
-React hook that creates a reactive scope. The scope automatically disposes when the component unmounts. @example ```tsx function MyComponent() {   const s = useScope({ name: "MyComponent" });   const handleClick = async () => {     const [err, result] = await s.task(() => fetchData());     // Handle result...   };   return <button onClick={handleClick}>Fetch</button>; } ```
+React hook that creates a reactive scope. The scope automatically disposes when the component unmounts.
 
 **Parameters:**
 
@@ -66,7 +66,7 @@ function MyComponent() {
 function useTask<T>(factory: (signal: AbortSignal) => Promise<T>, options: UseTaskOptions<T> = {}): TaskState<T>
 ```
 
-React hook for executing tasks with structured concurrency. @example ```tsx function UserProfile({ userId }: { userId: string }) {   const { data, error, isLoading } = useTask(     async () => fetchUser(userId),     { immediate: true }   );   if (isLoading) return <div>Loading...</div>;   if (error) return <div>Error: {error.message}</div>;   return <div>{data?.name}</div>; } ```
+React hook for executing tasks with structured concurrency.
 
 **Parameters:**
 
@@ -102,7 +102,7 @@ function UserProfile({ userId }: { userId: string }) {
 function useParallel<T>(factories: (() => Promise<T>)[], options: UseParallelOptions = {}): ParallelState<T>
 ```
 
-React hook for executing tasks in parallel. @example ```tsx function Dashboard() {   const factories = [     () => fetchUsers(),     () => fetchPosts(),     () => fetchComments(),   ];   const { results, isLoading, progress } = useParallel(factories, {     concurrency: 2,     immediate: true   });   if (isLoading) return <progress value={progress} max="100" />;   const [users, posts, comments] = results;   return <DashboardView {...{ users, posts, comments }} />; } ```
+React hook for executing tasks in parallel.
 
 **Parameters:**
 
@@ -145,7 +145,7 @@ function Dashboard() {
 function useChannel<T>(options: UseChannelOptions = {}): ChannelState<T>
 ```
 
-React hook for Go-style channel communication. @example ```tsx function Chat() {   const ch = useChannel<string>();   const handleSubmit = async (message: string) => {     await ch.send(message);   };   return (     <div>       <p>Latest: {ch.latest}</p>       <ul>         {ch.history.map((msg, i) => <li key={i}>{msg}</li>)}       </ul>     </div>   ); } ```
+React hook for Go-style channel communication.
 
 **Parameters:**
 
@@ -186,7 +186,7 @@ function Chat() {
 function useBroadcast<T>(): BroadcastState<T>
 ```
 
-React hook for pub/sub broadcast channels. @example ```tsx function EventBus() {   const bus = useBroadcast<string>();   useEffect(() => {     const sub = bus.subscribe((msg) => console.log(msg));     return () => sub.unsubscribe();   }, []);   return <button onClick={() => bus.broadcast("Hello!")}>Send</button>; } ```
+React hook for pub/sub broadcast channels.
 
 **Returns:** `BroadcastState<T>`
 
@@ -215,7 +215,7 @@ function EventBus() {
 function usePolling<T>(factory: () => Promise<T>, options: UsePollingOptions): PollingState<T>
 ```
 
-React hook for polling data at intervals. @example ```tsx function LiveData() {   const { data, isPolling, stop } = usePolling(     async () => fetchLatestData(),     { interval: 5000, immediate: true }   );   return (     <div>       <p>{data}</p>       {isPolling && <button onClick={stop}>Stop</button>}     </div>   ); } ```
+React hook for polling data at intervals.
 
 **Parameters:**
 
@@ -256,7 +256,7 @@ function LiveData() {
 interface UseScopeOptions
 ```
 
-// ============================================================================ // useScope Hook // ============================================================================  Options for useScope hook
+// ============================================================================ // useScope Hook // ============================================================================ Options for useScope hook
 
 *Source: [index.ts:49](packages/adapter-react/src/index.ts#L49)*
 
@@ -268,7 +268,7 @@ interface UseScopeOptions
 interface UseTaskOptions
 ```
 
-// ============================================================================ // useTask Hook // ============================================================================  Options for useTask hook
+// ============================================================================ // useTask Hook // ============================================================================ Options for useTask hook
 
 *Source: [index.ts:100](packages/adapter-react/src/index.ts#L100)*
 
@@ -292,7 +292,7 @@ State returned by useTask hook
 interface UseParallelOptions
 ```
 
-// ============================================================================ // useParallel Hook // ============================================================================  Options for useParallel hook
+// ============================================================================ // useParallel Hook // ============================================================================ Options for useParallel hook
 
 *Source: [index.ts:206](packages/adapter-react/src/index.ts#L206)*
 
@@ -316,7 +316,7 @@ State returned by useParallel hook
 interface UseChannelOptions
 ```
 
-// ============================================================================ // useChannel Hook // ============================================================================  Options for useChannel hook
+// ============================================================================ // useChannel Hook // ============================================================================ Options for useChannel hook
 
 *Source: [index.ts:324](packages/adapter-react/src/index.ts#L324)*
 
@@ -340,7 +340,7 @@ State returned by useChannel hook
 interface BroadcastState
 ```
 
-// ============================================================================ // useBroadcast Hook // ============================================================================  State returned by useBroadcast hook
+// ============================================================================ // useBroadcast Hook // ============================================================================ State returned by useBroadcast hook
 
 *Source: [index.ts:427](packages/adapter-react/src/index.ts#L427)*
 
@@ -352,7 +352,7 @@ interface BroadcastState
 interface UsePollingOptions
 ```
 
-// ============================================================================ // usePolling Hook // ============================================================================  Options for usePolling hook
+// ============================================================================ // usePolling Hook // ============================================================================ Options for usePolling hook
 
 *Source: [index.ts:507](packages/adapter-react/src/index.ts#L507)*
 

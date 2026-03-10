@@ -20,7 +20,7 @@
 function createScopeHandle<T extends Record<string, unknown>>(options: SvelteKitScopeOptions<T> = {}): Handle
 ```
 
-Create a SvelteKit handle with scope integration @example ```typescript // src/hooks.server.ts import { createScopeHandle } from '@go-go-scope/adapter-sveltekit' import { sequence } from '@sveltejs/kit/hooks' export const handle = sequence(   createScopeHandle({ timeout: 30000 }),   async ({ event, resolve }) => resolve(event) ) ```
+Create a SvelteKit handle with scope integration
 
 **Parameters:**
 
@@ -53,7 +53,7 @@ export const handle = sequence(
 function withScopeLoad<T extends Record<string, unknown>, R extends Record<string, unknown>>(loader: (event: ServerLoadEvent & { scope: Scope<T> }) => Promise<R> | R, options: Omit<SvelteKitScopeOptions<T>, "services"> = {}): (event: ServerLoadEvent) => Promise<R>
 ```
 
-Wrap a server load function with a scope @example ```typescript // src/routes/+page.server.ts import { withScopeLoad } from '@go-go-scope/adapter-sveltekit' export const load = withScopeLoad(async (event) => {   const { scope } = event.locals as { scope: Scope }   const [err, data] = await scope.task(() => fetchData())   if (err) throw error(500, err.message)   return { data } }) ```
+Wrap a server load function with a scope
 
 **Parameters:**
 
@@ -88,7 +88,7 @@ export const load = withScopeLoad(async (event) => {
 function withScopeAction<T extends Record<string, unknown>, R extends Record<string, unknown>>(action: (event: RequestEvent & { scope: Scope<T> }) => Promise<R> | R, options: Omit<SvelteKitScopeOptions<T>, "services"> = {}): (event: RequestEvent) => Promise<R>
 ```
 
-Wrap a form action with a scope @example ```typescript // src/routes/+page.server.ts import { withScopeAction } from '@go-go-scope/adapter-sveltekit' import { fail } from '@sveltejs/kit' export const actions = {   create: withScopeAction(async (event) => {     const { scope } = event.locals as { scope: Scope }     const data = await event.request.formData()     const [err, result] = await scope.task(() => createItem(data))     if (err) return fail(400, { error: err.message })     return { success: true, result }   }) } ```
+Wrap a form action with a scope
 
 **Parameters:**
 

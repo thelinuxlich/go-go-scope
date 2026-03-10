@@ -6,7 +6,7 @@
 
 - [Functions](#Functions)
   - [deadlockDetectorPlugin](#deadlockdetectorplugin)
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [DeadlockDetector](#deadlockdetector)
 - [Interfaces](#Interfaces)
   - [DeadlockDetectionOptions](#deadlockdetectionoptions)
@@ -40,7 +40,7 @@ Create the deadlock detector plugin
 
 ---
 
-## Classs
+## Classes
 
 ### DeadlockDetector
 
@@ -48,7 +48,7 @@ Create the deadlock detector plugin
 class DeadlockDetector
 ```
 
-Tracks task waiting states to detect potential deadlocks. Automatically registered with scope for cleanup.  #__PURE__
+Tracks task waiting states to detect potential deadlocks. Automatically registered with scope for cleanup. #__PURE__
 
 *Source: [index.ts:22](packages/plugin-deadlock-detector/src/index.ts#L22)*
 

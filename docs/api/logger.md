@@ -68,7 +68,7 @@ Redact sensitive fields from log arguments
 function adaptPino(pinoLogger: PinoLogger, options: AdapterOptions = {}): Logger
 ```
 
-Adapter for Pino logger @example ```typescript import pino from 'pino' import { adaptPino } from '@go-go-scope/logger' const pinoLogger = pino() const logger = adaptPino(pinoLogger, {   redact: { paths: ['password', 'token'] } }) await using s = scope({ logger }) ```
+Adapter for Pino logger
 
 **Parameters:**
 
@@ -103,7 +103,7 @@ await using s = scope({ logger })
 function adaptWinston(winstonLogger: WinstonLogger, options: AdapterOptions = {}): Logger
 ```
 
-Adapter for Winston logger @example ```typescript import winston from 'winston' import { adaptWinston } from '@go-go-scope/logger' const winstonLogger = winston.createLogger({...}) const logger = adaptWinston(winstonLogger, {   redact: { paths: ['password', 'token'] } }) await using s = scope({ logger }) ```
+Adapter for Winston logger
 
 **Parameters:**
 
@@ -138,7 +138,7 @@ await using s = scope({ logger })
 function createChildLogger(parentLogger: Logger, context: Record<string, unknown>): Logger
 ```
 
-Create a child logger with additional context @example ```typescript const childLogger = createChildLogger(parentLogger, {   scope: 'user-service',   requestId: 'abc-123' }) ```
+Create a child logger with additional context
 
 **Parameters:**
 
@@ -168,7 +168,7 @@ const childLogger = createChildLogger(parentLogger, {
 function createRedactedLogger(baseLogger: Logger, options: RedactOptions): Logger
 ```
 
-Create a logger with redaction support Wraps any logger to automatically redact sensitive fields. @example ```typescript import { createRedactedLogger } from '@go-go-scope/logger' const logger = createRedactedLogger(consoleLogger, {   paths: ['password', 'creditCard', 'ssn'],   censor: '***REDACTED***' }) logger.info('User login', { userId: 1, password: 'secret' }) // Output: User login { userId: 1, password: '***REDACTED***' } ```
+Create a logger with redaction support Wraps any logger to automatically redact sensitive fields.
 
 **Parameters:**
 

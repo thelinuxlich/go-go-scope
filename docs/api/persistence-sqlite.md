@@ -4,7 +4,7 @@
 
 ## Table of Contents
 
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [SQLiteCacheAdapter](#sqlitecacheadapter)
   - [SQLiteIdempotencyAdapter](#sqliteidempotencyadapter)
   - [SQLiteAdapter](#sqliteadapter)
@@ -15,7 +15,7 @@
   - [SQLiteCacheAdapter.stats](#sqlitecacheadapter-stats)
   - [SQLiteCacheAdapter.prune](#sqlitecacheadapter-prune)
 
-## Classs
+## Classes
 
 ### SQLiteCacheAdapter
 

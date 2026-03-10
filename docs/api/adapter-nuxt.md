@@ -17,7 +17,7 @@
 function nuxtGoGoScope(options: NuxtGoGoScopeOptions = {}): NitroAppPlugin
 ```
 
-Nuxt Nitro plugin for go-go-scope integration @example ```typescript // server/plugins/go-go-scope.ts import { nuxtGoGoScope } from '@go-go-scope/adapter-nuxt' export default defineNitroPlugin(nuxtGoGoScope({   name: 'my-nuxt-app',   timeout: 30000 })) ``` @example ```typescript // server/api/users/[id].get.ts import { scope } from 'go-go-scope' export default defineEventHandler(async (event) => {   const s = event.context.scope   const [err, user] = await s.task(     () => fetchUser(getRouterParam(event, 'id')!),     { retry: 'exponential', timeout: 5000 }   )   if (err) {     throw createError({ statusCode: 500, message: err.message })   }   return user }) ```
+Nuxt Nitro plugin for go-go-scope integration
 
 **Parameters:**
 
@@ -68,7 +68,7 @@ export default defineEventHandler(async (event) => {
 function getScope(event: { context: { scope?: Scope } }): Scope
 ```
 
-Helper to get the current scope from the event @example ```typescript export default defineEventHandler(async (event) => {   const s = getScope(event)   const [err, data] = await s.task(() => fetchData())   // ... }) ```
+Helper to get the current scope from the event
 
 **Parameters:**
 
@@ -98,7 +98,7 @@ export default defineEventHandler(async (event) => {
 function defineScopedHandler<T>(handler: (event: { context: { scope: Scope } }, scope: Scope) => Promise<T>): (event: { context: { scope?: Scope } }) => Promise<T>
 ```
 
-Helper to create a server handler with automatic scope integration @example ```typescript // server/api/users.get.ts import { defineScopedHandler } from '@go-go-scope/adapter-nuxt' export default defineScopedHandler(async (event, scope) => {   const [err, users] = await scope.task(() => fetchUsers())   if (err) throw createError({ statusCode: 500 })   return users }) ```
+Helper to create a server handler with automatic scope integration
 
 **Parameters:**
 

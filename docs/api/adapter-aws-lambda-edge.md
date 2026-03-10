@@ -27,7 +27,7 @@ function lambdaEdgeGoGoScope<T extends CloudFrontRequestResult | CloudFrontRespo
 	) => Promise<T>): (event: CloudFrontRequestEvent | CloudFrontResponseEvent, context: Context) => Promise<T>
 ```
 
-Lambda@Edge handler wrapper for go-go-scope integration @example ```typescript // src/viewer-request.ts import { lambdaEdgeGoGoScope } from '@go-go-scope/adapter-aws-lambda-edge' export const handler = lambdaEdgeGoGoScope({   name: 'my-lambda-edge',   timeout: 5000 }, async (event, scope) => {   const [err, data] = await scope.task(() => validateRequest(event))   if (err) {     return {       status: '403',       statusDescription: 'Forbidden',       body: 'Invalid request'     }   }   return event.Records[0].cf.request }) ```
+Lambda@Edge handler wrapper for go-go-scope integration
 
 **Parameters:**
 
@@ -74,7 +74,7 @@ export const handler = lambdaEdgeGoGoScope({
 function viewerRequestHandler(options: LambdaEdgeGoGoScopeOptions, handler: (request: LambdaEdgeRequest["Records"][0]["cf"]["request"], scope: Scope) => Promise<CloudFrontRequestResult>)
 ```
 
-Helper for viewer request handlers (incoming request) @example ```typescript // src/viewer-request.ts import { viewerRequestHandler } from '@go-go-scope/adapter-aws-lambda-edge' export const handler = viewerRequestHandler({   name: 'viewer-request-handler' }, async (request, scope) => {   const [err, user] = await scope.task(() => authenticate(request))   if (err || !user) {     return {       status: '302',       statusDescription: 'Found',       headers: {         location: [{ key: 'Location', value: '/login' }]       }     }   }   return request }) ```
+Helper for viewer request handlers (incoming request)
 
 **Parameters:**
 
@@ -116,7 +116,7 @@ export const handler = viewerRequestHandler({
 function originRequestHandler(options: LambdaEdgeGoGoScopeOptions, handler: (request: LambdaEdgeRequest["Records"][0]["cf"]["request"], scope: Scope) => Promise<CloudFrontRequestResult>)
 ```
 
-Helper for origin request handlers (before sending to origin) @example ```typescript // src/origin-request.ts import { originRequestHandler } from '@go-go-scope/adapter-aws-lambda-edge' export const handler = originRequestHandler({   name: 'origin-request-handler' }, async (request, scope) => {   const [err, modified] = await scope.task(() => modifyRequest(request))   if (err) return request   return modified }) ```
+Helper for origin request handlers (before sending to origin)
 
 **Parameters:**
 
@@ -153,7 +153,7 @@ function originResponseHandler(options: LambdaEdgeGoGoScopeOptions, handler: (
 	) => Promise<CloudFrontResponseResult>)
 ```
 
-Helper for origin response handlers (after receiving from origin) @example ```typescript // src/origin-response.ts import { originResponseHandler } from '@go-go-scope/adapter-aws-lambda-edge' export const handler = originResponseHandler({   name: 'origin-response-handler' }, async (response, scope) => {   const [err, processed] = await scope.task(() => processResponse(response))   if (err) return response   return processed }) ```
+Helper for origin response handlers (after receiving from origin)
 
 **Parameters:**
 
@@ -193,7 +193,7 @@ function viewerResponseHandler(options: LambdaEdgeGoGoScopeOptions, handler: (
 	) => Promise<CloudFrontResponseResult>)
 ```
 
-Helper for viewer response handlers (before sending to viewer) @example ```typescript // src/viewer-response.ts import { viewerResponseHandler } from '@go-go-scope/adapter-aws-lambda-edge' export const handler = viewerResponseHandler({   name: 'viewer-response-handler' }, async (response, scope) => {   // Add security headers   response.headers['strict-transport-security'] = [{     key: 'Strict-Transport-Security',     value: 'max-age=63072000'   }]   return response }) ```
+Helper for viewer response handlers (before sending to viewer)
 
 **Parameters:**
 

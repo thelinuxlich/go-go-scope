@@ -17,7 +17,7 @@
   - [parseBody](#parsebody)
   - [createWebUI](#createwebui)
   - [stopWebUI](#stopwebui)
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [RedisJobStorage](#redisjobstorage)
   - [SQLJobStorage](#sqljobstorage)
   - [SchedulerEventEmitter](#schedulereventemitter)
@@ -177,7 +177,7 @@ Convert a local date back to the target timezone's UTC equivalent
 function parseCron(expression: string, timezone?: string): CronExpression
 ```
 
-Parse a cron expression and return the next occurrence @param expression - Cron expression (5 fields: minute hour day month dayOfWeek) @param timezone - Optional IANA timezone (e.g., "America/New_York") @returns CronExpression object for getting next occurrence
+Parse a cron expression and return the next occurrence
 
 **Parameters:**
 
@@ -268,7 +268,7 @@ Human-readable description of a cron expression
 function createScheduler<Schedules extends ScheduleDefinitions>(options: SchedulerOptions): Scheduler<Schedules>
 ```
 
-Create a typed scheduler instance. This is a convenience factory function that creates a Scheduler with typed schedule definitions for better type inference. @example ```typescript const scheduler = createScheduler<{   'send-email': { to: string; subject: string; body: string };   'process-payment': { amount: number; currency: string }; }>({ storage }); // Now you get autocomplete for schedule names and typed payloads! scheduler.onSchedule('send-email', async (job) => {   const { to, subject, body } = job.payload; // Fully typed! }); ```
+Create a typed scheduler instance. This is a convenience factory function that creates a Scheduler with typed schedule definitions for better type inference.
 
 **Parameters:**
 
@@ -364,7 +364,7 @@ Parse request body
 function createWebUI(options: WebUIOptions): Promise<Server>
 ```
 
-Create web UI server. @param options - Web UI configuration options @param options.port - Port to listen on (e.g., 8080) @param options.host - Host to bind to (e.g., '0.0.0.0') @param options.apiKey - Optional API key for authentication @param options.path - Base path for the UI (default: '/') @param options.storage - Storage backend for schedules and jobs @param options.getScheduleStats - Function to get schedule statistics @param options.createSchedule - Function to create a new schedule @param options.updateSchedule - Function to update an existing schedule @param options.deleteSchedule - Function to delete a schedule @param options.pauseSchedule - Function to pause a schedule @param options.resumeSchedule - Function to resume a schedule @param options.getScheduleJobs - Function to get jobs for a schedule @param options.logger - Optional logger for web UI events @returns HTTP server instance
+Create web UI server.
 
 **Parameters:**
 
@@ -390,7 +390,7 @@ HTTP server instance
 function stopWebUI(server: Server): Promise<void>
 ```
 
-Stop web UI server. @param server - HTTP server instance to stop @returns Promise that resolves when server is closed
+Stop web UI server.
 
 **Parameters:**
 
@@ -410,7 +410,7 @@ Promise that resolves when server is closed
 
 ---
 
-## Classs
+## Classes
 
 ### RedisJobStorage
 
@@ -454,7 +454,7 @@ Typed event emitter for scheduler events
 class Scheduler<Schedules extends ScheduleDefinitions = Record<string, JobPayload>>
 ```
 
-Production-ready distributed job scheduler Uses mandatory Admin + Workers pattern for distributed deployments. **Storage Requirements:** - Storage MUST implement `supportsAutoScheduling()` returning `true` - Storage MUST implement `completeJobAndScheduleNext()` for recurring scheduling - This enables multiple admin instances without leader election complexity Supported storages: InMemoryJobStorage, RedisJobStorage, SQLJobStorage @template Schedules - Record mapping schedule names to their payload types @example ```typescript // Define your schedules with typed payloads type AppSchedules = {   'send-email': { to: string; subject: string; body: string };   'process-payment': { amount: number; currency: string }; }; // Create typed scheduler const scheduler = new Scheduler<AppSchedules>({ storage }); // Register typed handler - autocomplete for schedule names! scheduler.onSchedule('send-email', async (job) => {   // job.payload is fully typed   const { to, subject, body } = job.payload;   await sendEmail({ to, subject, body }); }); // Trigger with typed payload - type checking works! await scheduler.triggerSchedule('send-email', {   to: 'user@example.com',   subject: 'Hello',   body: 'World' }); ```
+Production-ready distributed job scheduler Uses mandatory Admin + Workers pattern for distributed deployments. **Storage Requirements:** - Storage MUST implement `supportsAutoScheduling()` returning `true` - Storage MUST implement `completeJobAndScheduleNext()` for recurring scheduling - This enables multiple admin instances without leader election complexity Supported storages: InMemoryJobStorage, RedisJobStorage, SQLJobStorage
 
 **Examples:**
 
@@ -507,7 +507,7 @@ In-memory job storage (single-node deployments, testing)
 class Scheduler<Schedules extends ScheduleDefinitions = Record<string, JobPayload>>
 ```
 
-Scheduler class with typed schedules @template Schedules - Record mapping schedule names to their payload types @example ```typescript type AppSchedules = {   'send-email': { to: string; subject: string; body: string };   'process-payment': { amount: number; currency: string }; }; const scheduler = new Scheduler<AppSchedules>({ storage }); // Type-safe handler registration scheduler.onSchedule('send-email', async (job) => {   // job.payload is typed as { to: string; subject: string; body: string }   const { to, subject, body } = job.payload; }); // Type-safe trigger await scheduler.triggerSchedule('send-email', {   to: 'user@example.com',   subject: 'Hello',   body: 'World' }); ```
+Scheduler class with typed schedules
 
 **Examples:**
 
@@ -886,7 +886,7 @@ Typed handler function for a schedule with specific payload type
 type ScheduleDefinitions = Record<string, JobPayload>
 ```
 
-// ============================================================================ // Type-safe schedule definitions // ============================================================================  Helper type to define schedules with typed payloads @example ```typescript type AppSchedules = {   'send-email': { to: string; subject: string; body: string };   'process-payment': { amount: number; currency: string }; }; const scheduler = new Scheduler<AppSchedules>({ storage }); ```
+// ============================================================================ // Type-safe schedule definitions // ============================================================================ Helper type to define schedules with typed payloads
 
 **Examples:**
 
@@ -921,7 +921,7 @@ Helper type to extract the payload type for a specific schedule
 type SchedulesOf = T extends Scheduler<infer S> ? S : never
 ```
 
-Helper type to extract schedule types from a scheduler instance @example ```typescript const scheduler = new Scheduler<AppSchedules>({ storage }); type MySchedules = SchedulesOf<typeof scheduler>; // MySchedules = AppSchedules ```
+Helper type to extract schedule types from a scheduler instance
 
 **Examples:**
 
@@ -1038,7 +1038,7 @@ Check for deadlocked jobs
 Scheduler.startWebUI(): Promise<void>
 ```
 
-// ============================================================================ // Web UI // ============================================================================  Start web UI server
+// ============================================================================ // Web UI // ============================================================================ Start web UI server
 
 **Returns:** `Promise<void>`
 
@@ -1118,7 +1118,7 @@ Get scheduler status
 Scheduler.createSchedule<Name extends string>(name: Name, options: CreateScheduleOptions): Promise<Schedule>
 ```
 
-Create a schedule for recurring job execution. ⚠️ **Admin only**: This method can only be called by admin instances. Workers must use `onSchedule()` to register handlers for schedules. @param name - Unique schedule name (used as identifier) @param options - Schedule configuration options @param options.cron - Cron expression for recurring execution (e.g., '0 9 * * *' for daily at 9am) @param options.interval - Interval in milliseconds (alternative to cron, e.g., 60000 for 1 minute) @param options.timezone - Timezone for execution (IANA format, e.g., 'America/New_York', 'UTC') @param options.endDate - End date for the schedule - no new jobs after this date @param options.defaultPayload - Default payload for jobs (merged with trigger payload) @param options.max - Maximum retry attempts before marking job as failed (default: 3) @param options.retryDelay - Delay between retries in milliseconds (default: 1000) @param options.timeout - Job timeout in milliseconds (default: 30000) @param options.concurrent - Allow concurrent execution of multiple jobs from this schedule (default: false) @param options.jitter - Random jitter in milliseconds to prevent thundering herd (default: 0) @returns The created schedule @throws Error if schedule already exists or if called by a worker instance
+Create a schedule for recurring job execution. ⚠️ **Admin only**: This method can only be called by admin instances. Workers must use `onSchedule()` to register handlers for schedules.
 
 **Parameters:**
 
@@ -1147,7 +1147,7 @@ The created schedule
 Scheduler.deleteSchedule(name: string): Promise<boolean>
 ```
 
-Delete a schedule by name. ⚠️ **Admin only**: This method can only be called by admin instances. @param name Schedule name to delete @returns true if deleted, false if not found @throws Error if called by a worker instance
+Delete a schedule by name. ⚠️ **Admin only**: This method can only be called by admin instances.
 
 **Parameters:**
 
@@ -1175,7 +1175,7 @@ true if deleted, false if not found
 Scheduler.listSchedules(): Promise<Schedule[]>
 ```
 
-List all schedules. @returns Array of all schedules
+List all schedules.
 
 **Returns:** `Promise<Schedule[]>`
 
@@ -1193,7 +1193,7 @@ Array of all schedules
 Scheduler.getSchedule(name: string): Promise<Schedule | null>
 ```
 
-Get a schedule by name. @param name Schedule name @returns Schedule or null if not found
+Get a schedule by name.
 
 **Parameters:**
 
@@ -1219,7 +1219,7 @@ Schedule or null if not found
 Scheduler.updateSchedule(name: string, options: UpdateScheduleOptions): Promise<Schedule>
 ```
 
-Update an existing schedule. ⚠️ **Admin only**: This method can only be called by admin instances. @param name - Schedule name to update @param options - Update options (only provided fields are updated) @param options.cron - Cron expression for recurring execution (e.g., '0 9 * * *') @param options.interval - Interval in milliseconds (alternative to cron) @param options.timezone - Timezone for execution (IANA format, e.g., 'America/New_York') @param options.defaultPayload - Default payload for jobs @param options.max - Maximum retry attempts (default: 3) @param options.retryDelay - Delay between retries in milliseconds (default: 1000) @param options.timeout - Job timeout in milliseconds (default: 30000) @param options.concurrent - Allow concurrent execution (default: false) @param options.jitter - Random jitter in milliseconds (default: 0) @returns Updated schedule @throws Error if schedule not found or called by worker
+Update an existing schedule. ⚠️ **Admin only**: This method can only be called by admin instances.
 
 **Parameters:**
 
@@ -1248,7 +1248,7 @@ Updated schedule
 Scheduler.pauseSchedule(name: string): Promise<Schedule>
 ```
 
-Pause a schedule. No new jobs will be created until resumed. ⚠️ **Admin only**: This method can only be called by admin instances. @param name Schedule name @returns Updated schedule
+Pause a schedule. No new jobs will be created until resumed. ⚠️ **Admin only**: This method can only be called by admin instances.
 
 **Parameters:**
 
@@ -1274,7 +1274,7 @@ Updated schedule
 Scheduler.resumeSchedule(name: string): Promise<Schedule>
 ```
 
-Resume a paused schedule. ⚠️ **Admin only**: This method can only be called by admin instances. @param name Schedule name @returns Updated schedule
+Resume a paused schedule. ⚠️ **Admin only**: This method can only be called by admin instances.
 
 **Parameters:**
 
@@ -1300,7 +1300,7 @@ Updated schedule
 Scheduler.disableSchedule(name: string): Promise<Schedule>
 ```
 
-Disable a schedule. Workers will skip disabled schedules. ⚠️ **Admin only**: This method can only be called by admin instances. @param name Schedule name @returns Updated schedule
+Disable a schedule. Workers will skip disabled schedules. ⚠️ **Admin only**: This method can only be called by admin instances.
 
 **Parameters:**
 
@@ -1326,7 +1326,7 @@ Updated schedule
 Scheduler.getScheduleStats(name: string): Promise<ScheduleStats>
 ```
 
-Get statistics for a schedule. @param name Schedule name @returns Schedule statistics
+Get statistics for a schedule.
 
 **Parameters:**
 
@@ -1352,7 +1352,7 @@ Schedule statistics
 Scheduler.triggerSchedule<Name extends keyof Schedules>(name: Name extends string ? Name : never, payload?: Schedules[Name], options?: ScheduleJobOptions): Promise<Result<Error, ScheduleJobResult>>
 ```
 
-Trigger a schedule to run immediately. Creates a job that will execute as soon as a worker picks it up. ⚠️ **Admin only**: This method can only be called by admin instances. @param name - Schedule name (must be a key of Schedules type parameter) @param payload - Optional typed payload override (merged with schedule's default payload) @param options - Optional scheduling options @param options.delay - Delay before running in milliseconds (default: 0 - immediate) @param options.priority - Job priority (higher = runs first, default: 0) @returns The scheduled job result
+Trigger a schedule to run immediately. Creates a job that will execute as soon as a worker picks it up. ⚠️ **Admin only**: This method can only be called by admin instances.
 
 **Parameters:**
 
@@ -1380,7 +1380,7 @@ The scheduled job result
 Scheduler.getAllScheduleStats(): Promise<ScheduleStats[]>
 ```
 
-Get all schedules with their statistics. @returns Array of schedule statistics
+Get all schedules with their statistics.
 
 **Returns:** `Promise<ScheduleStats[]>`
 
@@ -1398,7 +1398,7 @@ Array of schedule statistics
 Scheduler.onSchedule<Name extends keyof Schedules>(name: Name extends string ? Name : never, handler: TypedScheduleHandler<Schedules[Name]>, options?: OnScheduleOptions): void
 ```
 
-Register a typed handler for a schedule. **Workers use this** to register handlers for schedules they want to process. The handler will be called when jobs for this schedule become available. Schedules can be created before or after handlers are registered. @param name - Name of the schedule to handle (must be a key of Schedules type parameter) @param handler - Handler function with typed payload (receives job and scope) @param options - Optional handler registration options @param options.worker - Execute jobs in worker threads for CPU-intensive tasks (default: false) @example ```typescript // Register handler BEFORE schedule is created scheduler.onSchedule("daily-report", async (job, scope) => {   // job.payload is fully typed based on Schedules type parameter   const { to, subject } = job.payload; }); worker.start(); // Later, admin creates the schedule await admin.createSchedule("daily-report", { cron: "0 9 * * *" }); ```
+Register a typed handler for a schedule. **Workers use this** to register handlers for schedules they want to process. The handler will be called when jobs for this schedule become available. Schedules can be created before or after handlers are registered.
 
 **Parameters:**
 
@@ -1437,7 +1437,7 @@ await admin.createSchedule("daily-report", { cron: "0 9 * * *" });
 Scheduler.offSchedule(scheduleName: string): boolean
 ```
 
-Remove a handler for a schedule. @param scheduleName Name of the schedule to remove handler for @returns true if handler was removed, false if not found
+Remove a handler for a schedule.
 
 **Parameters:**
 
@@ -1463,7 +1463,7 @@ true if handler was removed, false if not found
 Scheduler.scheduleJob<Name extends keyof Schedules>(scheduleName: Name extends string ? Name : never, payload: Schedules[Name] = {} as Schedules[Name], options: ScheduleJobOptions = {}): Promise<Result<Error, ScheduleJobResult>>
 ```
 
-Schedule a one-time job (admin only). ⚠️ **Admin only**: Workers execute jobs based on loaded schedules. @param scheduleName - Name of the schedule (must be a key of Schedules type parameter) @param payload - Typed job payload data (default: empty object) @param options - Scheduling options @param options.delay - Delay before running in milliseconds (default: 0 - immediate) @param options.priority - Job priority (higher = runs first, default: 0)
+Schedule a one-time job (admin only). ⚠️ **Admin only**: Workers execute jobs based on loaded schedules.
 
 **Parameters:**
 
@@ -1743,7 +1743,7 @@ Collect current metrics from the scheduler
 Scheduler.exportMetrics(options: MetricsExportOptions = {}): Promise<string>
 ```
 
-Export metrics in various formats. @param options - Export options @param options.format - Export format: 'json', 'prometheus', or 'otel' (default: 'json') @param options.prefix - Prefix for metric names in Prometheus format (default: 'scheduler') @returns Metrics string in the requested format
+Export metrics in various formats.
 
 **Parameters:**
 
@@ -1864,7 +1864,7 @@ Clear old job profiles (call periodically to prevent memory growth)
 Scheduler.onSchedule<Name extends keyof Schedules>(name: Name extends string ? Name : never, handler: TypedScheduleHandler<Schedules[Name]>): void
 ```
 
-Register a typed handler for a schedule. The handler will be called when jobs for this schedule become available. @param name - Schedule name (must be a key of Schedules) @param handler - Handler function with typed payload
+Register a typed handler for a schedule. The handler will be called when jobs for this schedule become available.
 
 **Parameters:**
 
@@ -1887,7 +1887,7 @@ Register a typed handler for a schedule. The handler will be called when jobs fo
 Scheduler.triggerSchedule<Name extends keyof Schedules>(name: Name extends string ? Name : never, payload?: Schedules[Name], options?: ScheduleJobOptions): Promise<import("go-go-scope").Result<Error, ScheduleJobResult>>
 ```
 
-Trigger a schedule to run immediately. Creates a job that will execute as soon as a worker picks it up. @param name - Schedule name (must be a key of Schedules) @param payload - Typed payload for the job @param options - Optional trigger options
+Trigger a schedule to run immediately. Creates a job that will execute as soon as a worker picks it up.
 
 **Parameters:**
 
@@ -1911,7 +1911,7 @@ Trigger a schedule to run immediately. Creates a job that will execute as soon a
 Scheduler.scheduleJob<Name extends keyof Schedules>(scheduleName: Name extends string ? Name : never, payload?: Schedules[Name], options?: ScheduleJobOptions): Promise<import("go-go-scope").Result<Error, ScheduleJobResult>>
 ```
 
-Schedule a one-time job. @param scheduleName - Schedule name (must be a key of Schedules) @param payload - Typed payload for the job @param options - Optional scheduling options
+Schedule a one-time job.
 
 **Parameters:**
 
@@ -1935,7 +1935,7 @@ Schedule a one-time job. @param scheduleName - Schedule name (must be a key of S
 Scheduler.createSchedule<Name extends string>(name: Name, options: CreateScheduleOptions): Promise<Schedule>
 ```
 
-Create a schedule for recurring job execution. @param name - Unique schedule name @param options - Schedule configuration
+Create a schedule for recurring job execution.
 
 **Parameters:**
 

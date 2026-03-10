@@ -4,12 +4,12 @@
 
 ## Table of Contents
 
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [DenoKVAdapter](#denokvadapter)
 - [Types](#Types)
   - [DenoKVKey](#denokvkey)
 
-## Classs
+## Classes
 
 ### DenoKVAdapter
 

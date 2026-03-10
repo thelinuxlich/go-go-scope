@@ -17,7 +17,7 @@
 function goGoScope(options: ElysiaGoGoScopeOptions = {})
 ```
 
-// Note: Elysia's Context is a type alias, not an interface, // so we cannot use module augmentation. The scope is injected // via the .derive() method in the plugin.  Elysia plugin for go-go-scope integration @example ```typescript import { Elysia } from 'elysia' import { goGoScope } from '@go-go-scope/adapter-elysia' const app = new Elysia()   .use(goGoScope({ metrics: true }))   .get('/users/:id', async ({ scope, params }) => {     const [err, user] = await scope.task(       () => fetchUser(params.id),       { retry: 'exponential' }     )     if (err) {       return { error: err.message }     }     return user   }) ```
+// Note: Elysia's Context is a type alias, not an interface, // so we cannot use module augmentation. The scope is injected // via the .derive() method in the plugin. Elysia plugin for go-go-scope integration
 
 **Parameters:**
 

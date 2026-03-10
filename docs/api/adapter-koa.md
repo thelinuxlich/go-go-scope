@@ -18,7 +18,7 @@
 function koaGoGoScope(options: KoaGoGoScopeOptions = {}): Middleware
 ```
 
-Koa middleware for go-go-scope integration @example ```typescript import Koa from 'koa' import { koaGoGoScope } from '@go-go-scope/adapter-koa' const app = new Koa() app.use(koaGoGoScope({ name: 'my-api', metrics: true })) app.use(async (ctx) => {   const scope = ctx.state.scope   const [err, user] = await scope.task(     () => fetchUser(ctx.params.id),     { retry: 'exponential' }   )   if (err) {     ctx.status = 500     ctx.body = { error: err.message }     return   }   ctx.body = user }) ```
+Koa middleware for go-go-scope integration
 
 **Parameters:**
 
@@ -103,7 +103,7 @@ Get the root application scope from Koa context
 function closeKoaScope(): Promise<void>
 ```
 
-Graceful shutdown helper for Koa applications Disposes the root scope when the server is closing @example ```typescript process.on('SIGTERM', async () => {   await closeKoaScope()   server.close() }) ```
+Graceful shutdown helper for Koa applications Disposes the root scope when the server is closing
 
 **Returns:** `Promise<void>`
 

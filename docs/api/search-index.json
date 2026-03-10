@@ -3,63 +3,63 @@
     "name": "astroGoGoScope",
     "kind": "function",
     "package": "adapter-astro",
-    "description": "Astro middleware for go-go-scope integration @example ```typescript // src/middleware.ts import { astroGoGoScope } from '@go-go-scope/adapter-astro' export const onRequest = astroGoGoScope({   name: '",
+    "description": "Astro middleware for go-go-scope integration",
     "file": "packages/adapter-astro/src/index.ts"
   },
   {
     "name": "getScope",
     "kind": "function",
     "package": "adapter-astro",
-    "description": "Helper to get the current scope from the API context @example ```typescript export const GET: APIRoute = async (context) => {   const s = getScope(context)   const [err, data] = await s.task(() => fet",
+    "description": "Helper to get the current scope from the API context",
     "file": "packages/adapter-astro/src/index.ts"
   },
   {
     "name": "defineScopedRoute",
     "kind": "function",
     "package": "adapter-astro",
-    "description": "Helper to create an API route with automatic scope integration @example ```typescript // src/pages/api/users.ts import { defineScopedRoute } from '@go-go-scope/adapter-astro' import type { APIRoute } ",
+    "description": "Helper to create an API route with automatic scope integration",
     "file": "packages/adapter-astro/src/index.ts"
   },
   {
     "name": "getServerScope",
     "kind": "function",
     "package": "adapter-astro",
-    "description": "Server-side rendering helper for Astro pages Provides scope access during SSR @example ```typescript // src/pages/users.astro --- import { getServerScope } from '@go-go-scope/adapter-astro' const s = ",
+    "description": "Server-side rendering helper for Astro pages Provides scope access during SSR",
     "file": "packages/adapter-astro/src/index.ts"
   },
   {
     "name": "lambdaEdgeGoGoScope",
     "kind": "function",
     "package": "adapter-aws-lambda-edge",
-    "description": "Lambda@Edge handler wrapper for go-go-scope integration @example ```typescript // src/viewer-request.ts import { lambdaEdgeGoGoScope } from '@go-go-scope/adapter-aws-lambda-edge' export const handler ",
+    "description": "Lambda@Edge handler wrapper for go-go-scope integration",
     "file": "packages/adapter-aws-lambda-edge/src/index.ts"
   },
   {
     "name": "viewerRequestHandler",
     "kind": "function",
     "package": "adapter-aws-lambda-edge",
-    "description": "Helper for viewer request handlers (incoming request) @example ```typescript // src/viewer-request.ts import { viewerRequestHandler } from '@go-go-scope/adapter-aws-lambda-edge' export const handler =",
+    "description": "Helper for viewer request handlers (incoming request)",
     "file": "packages/adapter-aws-lambda-edge/src/index.ts"
   },
   {
     "name": "originRequestHandler",
     "kind": "function",
     "package": "adapter-aws-lambda-edge",
-    "description": "Helper for origin request handlers (before sending to origin) @example ```typescript // src/origin-request.ts import { originRequestHandler } from '@go-go-scope/adapter-aws-lambda-edge' export const h",
+    "description": "Helper for origin request handlers (before sending to origin)",
     "file": "packages/adapter-aws-lambda-edge/src/index.ts"
   },
   {
     "name": "originResponseHandler",
     "kind": "function",
     "package": "adapter-aws-lambda-edge",
-    "description": "Helper for origin response handlers (after receiving from origin) @example ```typescript // src/origin-response.ts import { originResponseHandler } from '@go-go-scope/adapter-aws-lambda-edge' export c",
+    "description": "Helper for origin response handlers (after receiving from origin)",
     "file": "packages/adapter-aws-lambda-edge/src/index.ts"
   },
   {
     "name": "viewerResponseHandler",
     "kind": "function",
     "package": "adapter-aws-lambda-edge",
-    "description": "Helper for viewer response handlers (before sending to viewer) @example ```typescript // src/viewer-response.ts import { viewerResponseHandler } from '@go-go-scope/adapter-aws-lambda-edge' export cons",
+    "description": "Helper for viewer response handlers (before sending to viewer)",
     "file": "packages/adapter-aws-lambda-edge/src/index.ts"
   },
   {
@@ -94,35 +94,35 @@
     "name": "cloudflareWorkersGoGoScope",
     "kind": "function",
     "package": "adapter-cloudflare-workers",
-    "description": "Cloudflare Workers middleware for go-go-scope integration @example ```typescript // src/index.ts import { cloudflareWorkersGoGoScope, getScope } from '@go-go-scope/adapter-cloudflare-workers' const mi",
+    "description": "Cloudflare Workers middleware for go-go-scope integration",
     "file": "packages/adapter-cloudflare-workers/src/index.ts"
   },
   {
     "name": "getScope",
     "kind": "function",
     "package": "adapter-cloudflare-workers",
-    "description": "Helper to get the current scope from the request context Note: In Cloudflare Workers, pass scope explicitly or use closure @example ```typescript export default {   async fetch(request: Request, env: ",
+    "description": "Helper to get the current scope from the request context Note: In Cloudflare Workers, pass scope explicitly or use closure",
     "file": "packages/adapter-cloudflare-workers/src/index.ts"
   },
   {
     "name": "defineScopedHandler",
     "kind": "function",
     "package": "adapter-cloudflare-workers",
-    "description": "Helper to create a handler with automatic scope integration @example ```typescript // src/handlers/api.ts import { defineScopedHandler } from '@go-go-scope/adapter-cloudflare-workers' export const han",
+    "description": "Helper to create a handler with automatic scope integration",
     "file": "packages/adapter-cloudflare-workers/src/index.ts"
   },
   {
     "name": "withDurableObjectScope",
     "kind": "function",
     "package": "adapter-cloudflare-workers",
-    "description": "Durable Objects integration helper Provides scoped execution within Durable Objects @example ```typescript // src/durable-object.ts import { DurableObject } from 'cloudflare:workers' import { withDura",
+    "description": "Durable Objects integration helper Provides scoped execution within Durable Objects",
     "file": "packages/adapter-cloudflare-workers/src/index.ts"
   },
   {
     "name": "goGoScope",
     "kind": "function",
     "package": "adapter-elysia",
-    "description": "// Note: Elysia's Context is a type alias, not an interface, // so we cannot use module augmentation. The scope is injected // via the .derive() method in the plugin.  Elysia plugin for go-go-scope in",
+    "description": "// Note: Elysia's Context is a type alias, not an interface, // so we cannot use module augmentation. The scope is injected // via the .derive() method in the plugin. Elysia plugin for go-go-scope int",
     "file": "packages/adapter-elysia/src/index.ts"
   },
   {
@@ -143,56 +143,56 @@
     "name": "goGoScope",
     "kind": "function",
     "package": "adapter-express",
-    "description": "Express middleware for go-go-scope integration @example ```typescript import express from 'express' import { goGoScope } from '@go-go-scope/adapter-express' const app = express() app.use(goGoScope(app",
+    "description": "Express middleware for go-go-scope integration",
     "file": "packages/adapter-express/src/index.ts"
   },
   {
     "name": "closeScope",
     "kind": "function",
     "package": "adapter-express",
-    "description": "Graceful shutdown helper for Express applications Disposes the root scope when the server is closing @example ```typescript process.on('SIGTERM', async () => {   await closeScope(app)   server.close()",
+    "description": "Graceful shutdown helper for Express applications Disposes the root scope when the server is closing",
     "file": "packages/adapter-express/src/index.ts"
   },
   {
     "name": "freshGoGoScope",
     "kind": "function",
     "package": "adapter-fresh",
-    "description": "Fresh middleware for go-go-scope integration @example ```typescript // routes/_middleware.ts import { freshGoGoScope } from '@go-go-scope/adapter-fresh' export const handler = freshGoGoScope({   name:",
+    "description": "Fresh middleware for go-go-scope integration",
     "file": "packages/adapter-fresh/src/index.ts"
   },
   {
     "name": "defineRouteHandler",
     "kind": "function",
     "package": "adapter-fresh",
-    "description": "Helper to define a route handler with automatic scope integration @example ```typescript // routes/api/users.ts import { defineRouteHandler } from '@go-go-scope/adapter-fresh' export const handler = d",
+    "description": "Helper to define a route handler with automatic scope integration",
     "file": "packages/adapter-fresh/src/index.ts"
   },
   {
     "name": "getScope",
     "kind": "function",
     "package": "adapter-fresh",
-    "description": "Helper to get the current scope from Fresh context @example ```typescript // routes/api/data.ts import { getScope } from '@go-go-scope/adapter-fresh' export const handler = {   async GET(req, ctx) {  ",
+    "description": "Helper to get the current scope from Fresh context",
     "file": "packages/adapter-fresh/src/index.ts"
   },
   {
     "name": "withIslandScope",
     "kind": "function",
     "package": "adapter-fresh",
-    "description": "Helper for Fresh Islands with scope integration @example ```typescript // islands/Counter.tsx import { withIslandScope } from '@go-go-scope/adapter-fresh' export const handler = withIslandScope(async ",
+    "description": "Helper for Fresh Islands with scope integration",
     "file": "packages/adapter-fresh/src/index.ts"
   },
   {
     "name": "createSafeHandler",
     "kind": "function",
     "package": "adapter-fresh",
-    "description": "Helper for Fresh handlers with automatic error handling @example ```typescript // routes/api/users.ts import { createSafeHandler } from '@go-go-scope/adapter-fresh' export const handler = createSafeHa",
+    "description": "Helper for Fresh handlers with automatic error handling",
     "file": "packages/adapter-fresh/src/index.ts"
   },
   {
     "name": "createJsonHandler",
     "kind": "function",
     "package": "adapter-fresh",
-    "description": "Helper to create a JSON API response handler @example ```typescript // routes/api/users.ts import { createJsonHandler } from '@go-go-scope/adapter-fresh' export const handler = createJsonHandler({   a",
+    "description": "Helper to create a JSON API response handler",
     "file": "packages/adapter-fresh/src/index.ts"
   },
   {
@@ -213,14 +213,14 @@
     "name": "closeHapiScope",
     "kind": "function",
     "package": "adapter-hapi",
-    "description": "Graceful shutdown helper for Hapi applications Disposes the root scope when the server is closing @example ```typescript process.on('SIGTERM', async () => {   await closeHapiScope(server)   await serv",
+    "description": "Graceful shutdown helper for Hapi applications Disposes the root scope when the server is closing",
     "file": "packages/adapter-hapi/src/index.ts"
   },
   {
     "name": "goGoScope",
     "kind": "function",
     "package": "adapter-hono",
-    "description": "Hono middleware for go-go-scope integration @example ```typescript import { Hono } from 'hono' import { goGoScope, getScope } from '@go-go-scope/adapter-hono' const app = new Hono() app.use(goGoScope(",
+    "description": "Hono middleware for go-go-scope integration",
     "file": "packages/adapter-hono/src/index.ts"
   },
   {
@@ -241,7 +241,7 @@
     "name": "koaGoGoScope",
     "kind": "function",
     "package": "adapter-koa",
-    "description": "Koa middleware for go-go-scope integration @example ```typescript import Koa from 'koa' import { koaGoGoScope } from '@go-go-scope/adapter-koa' const app = new Koa() app.use(koaGoGoScope({ name: 'my-a",
+    "description": "Koa middleware for go-go-scope integration",
     "file": "packages/adapter-koa/src/index.ts"
   },
   {
@@ -262,7 +262,7 @@
     "name": "closeKoaScope",
     "kind": "function",
     "package": "adapter-koa",
-    "description": "Graceful shutdown helper for Koa applications Disposes the root scope when the server is closing @example ```typescript process.on('SIGTERM', async () => {   await closeKoaScope()   server.close() }) ",
+    "description": "Graceful shutdown helper for Koa applications Disposes the root scope when the server is closing",
     "file": "packages/adapter-koa/src/index.ts"
   },
   {
@@ -297,14 +297,14 @@
     "name": "Task",
     "kind": "function",
     "package": "adapter-nestjs",
-    "description": "Decorator to execute a method within a task @example ```typescript @Injectable() class UserService {   @Task({ retry: 'exponential', timeout: 5000 })   async getUser(id: string) {     return fetchUser",
+    "description": "Decorator to execute a method within a task class UserService { async getUser(id: string) { return fetchUser(id) } } ```",
     "file": "packages/adapter-nestjs/src/index.ts"
   },
   {
     "name": "GoGoScopeModule",
     "kind": "class",
     "package": "adapter-nestjs",
-    "description": "NestJS module for go-go-scope integration @example ```typescript @Module({   imports: [GoGoScopeModule.forRoot({ metrics: true })],   providers: [UserService], }) class AppModule {} ```",
+    "description": "NestJS module for go-go-scope integration imports: [GoGoScopeModule.forRoot({ metrics: true })], providers: [UserService], }) class AppModule {} ```",
     "file": "packages/adapter-nestjs/src/index.ts"
   },
   {
@@ -339,42 +339,42 @@
     "name": "withScope",
     "kind": "function",
     "package": "adapter-nextjs",
-    "description": "Wrap a Next.js API route handler with a scope @example ```typescript // app/api/users/route.ts import { withScope } from '@go-go-scope/adapter-nextjs' export const GET = withScope(async (req, { scope ",
+    "description": "Wrap a Next.js API route handler with a scope",
     "file": "packages/adapter-nextjs/src/index.ts"
   },
   {
     "name": "withScopeEdge",
     "kind": "function",
     "package": "adapter-nextjs",
-    "description": "Wrap a Next.js Edge route handler with a scope @example ```typescript // middleware.ts or edge route import { withScopeEdge } from '@go-go-scope/adapter-nextjs' export const config = {   runtime: 'edg",
+    "description": "Wrap a Next.js Edge route handler with a scope",
     "file": "packages/adapter-nextjs/src/index.ts"
   },
   {
     "name": "withScopeServer",
     "kind": "function",
     "package": "adapter-nextjs",
-    "description": "Server Component wrapper with scope @example ```typescript // app/users/page.tsx import { withScopeServer } from '@go-go-scope/adapter-nextjs' export default withScopeServer(async (searchParams, { sco",
+    "description": "Server Component wrapper with scope",
     "file": "packages/adapter-nextjs/src/index.ts"
   },
   {
     "name": "withScopeMiddleware",
     "kind": "function",
     "package": "adapter-nextjs",
-    "description": "Middleware wrapper with scope @example ```typescript // middleware.ts import { withScopeMiddleware } from '@go-go-scope/adapter-nextjs' import { NextResponse } from 'next/server' export default withSc",
+    "description": "Middleware wrapper with scope",
     "file": "packages/adapter-nextjs/src/index.ts"
   },
   {
     "name": "withScopeAndServices",
     "kind": "function",
     "package": "adapter-nextjs",
-    "description": "Higher-order function for route handlers with dependency injection @example ```typescript // With dependency injection const handler = withScopeAndServices(   { db: createDatabase() },   async (req, {",
+    "description": "Higher-order function for route handlers with dependency injection",
     "file": "packages/adapter-nextjs/src/index.ts"
   },
   {
     "name": "createRouteConfig",
     "kind": "function",
     "package": "adapter-nextjs",
-    "description": "Create a reusable scope configuration for API routes @example ```typescript // lib/scope.ts import { createRouteConfig } from '@go-go-scope/adapter-nextjs' import { createDatabase } from './db' export",
+    "description": "Create a reusable scope configuration for API routes",
     "file": "packages/adapter-nextjs/src/index.ts"
   },
   {
@@ -402,42 +402,42 @@
     "name": "nuxtGoGoScope",
     "kind": "function",
     "package": "adapter-nuxt",
-    "description": "Nuxt Nitro plugin for go-go-scope integration @example ```typescript // server/plugins/go-go-scope.ts import { nuxtGoGoScope } from '@go-go-scope/adapter-nuxt' export default defineNitroPlugin(nuxtGoG",
+    "description": "Nuxt Nitro plugin for go-go-scope integration",
     "file": "packages/adapter-nuxt/src/index.ts"
   },
   {
     "name": "getScope",
     "kind": "function",
     "package": "adapter-nuxt",
-    "description": "Helper to get the current scope from the event @example ```typescript export default defineEventHandler(async (event) => {   const s = getScope(event)   const [err, data] = await s.task(() => fetchDat",
+    "description": "Helper to get the current scope from the event",
     "file": "packages/adapter-nuxt/src/index.ts"
   },
   {
     "name": "defineScopedHandler",
     "kind": "function",
     "package": "adapter-nuxt",
-    "description": "Helper to create a server handler with automatic scope integration @example ```typescript // server/api/users.get.ts import { defineScopedHandler } from '@go-go-scope/adapter-nuxt' export default defi",
+    "description": "Helper to create a server handler with automatic scope integration",
     "file": "packages/adapter-nuxt/src/index.ts"
   },
   {
     "name": "UseScopeOptions",
     "kind": "interface",
     "package": "adapter-react",
-    "description": "// ============================================================================ // useScope Hook // ============================================================================  Options for useScope h",
+    "description": "// ============================================================================ // useScope Hook // ============================================================================ Options for useScope ho",
     "file": "packages/adapter-react/src/index.ts"
   },
   {
     "name": "useScope",
     "kind": "function",
     "package": "adapter-react",
-    "description": "React hook that creates a reactive scope. The scope automatically disposes when the component unmounts. @example ```tsx function MyComponent() {   const s = useScope({ name: \"MyComponent\" });   const ",
+    "description": "React hook that creates a reactive scope. The scope automatically disposes when the component unmounts.",
     "file": "packages/adapter-react/src/index.ts"
   },
   {
     "name": "UseTaskOptions",
     "kind": "interface",
     "package": "adapter-react",
-    "description": "// ============================================================================ // useTask Hook // ============================================================================  Options for useTask hoo",
+    "description": "// ============================================================================ // useTask Hook // ============================================================================ Options for useTask hook",
     "file": "packages/adapter-react/src/index.ts"
   },
   {
@@ -451,14 +451,14 @@
     "name": "useTask",
     "kind": "function",
     "package": "adapter-react",
-    "description": "React hook for executing tasks with structured concurrency. @example ```tsx function UserProfile({ userId }: { userId: string }) {   const { data, error, isLoading } = useTask(     async () => fetchUs",
+    "description": "React hook for executing tasks with structured concurrency.",
     "file": "packages/adapter-react/src/index.ts"
   },
   {
     "name": "UseParallelOptions",
     "kind": "interface",
     "package": "adapter-react",
-    "description": "// ============================================================================ // useParallel Hook // ============================================================================  Options for usePara",
+    "description": "// ============================================================================ // useParallel Hook // ============================================================================ Options for useParal",
     "file": "packages/adapter-react/src/index.ts"
   },
   {
@@ -472,14 +472,14 @@
     "name": "useParallel",
     "kind": "function",
     "package": "adapter-react",
-    "description": "React hook for executing tasks in parallel. @example ```tsx function Dashboard() {   const factories = [     () => fetchUsers(),     () => fetchPosts(),     () => fetchComments(),   ];   const { resul",
+    "description": "React hook for executing tasks in parallel.",
     "file": "packages/adapter-react/src/index.ts"
   },
   {
     "name": "UseChannelOptions",
     "kind": "interface",
     "package": "adapter-react",
-    "description": "// ============================================================================ // useChannel Hook // ============================================================================  Options for useChann",
+    "description": "// ============================================================================ // useChannel Hook // ============================================================================ Options for useChanne",
     "file": "packages/adapter-react/src/index.ts"
   },
   {
@@ -493,28 +493,28 @@
     "name": "useChannel",
     "kind": "function",
     "package": "adapter-react",
-    "description": "React hook for Go-style channel communication. @example ```tsx function Chat() {   const ch = useChannel<string>();   const handleSubmit = async (message: string) => {     await ch.send(message);   };",
+    "description": "React hook for Go-style channel communication.",
     "file": "packages/adapter-react/src/index.ts"
   },
   {
     "name": "BroadcastState",
     "kind": "interface",
     "package": "adapter-react",
-    "description": "// ============================================================================ // useBroadcast Hook // ============================================================================  State returned by ",
+    "description": "// ============================================================================ // useBroadcast Hook // ============================================================================ State returned by u",
     "file": "packages/adapter-react/src/index.ts"
   },
   {
     "name": "useBroadcast",
     "kind": "function",
     "package": "adapter-react",
-    "description": "React hook for pub/sub broadcast channels. @example ```tsx function EventBus() {   const bus = useBroadcast<string>();   useEffect(() => {     const sub = bus.subscribe((msg) => console.log(msg));    ",
+    "description": "React hook for pub/sub broadcast channels.",
     "file": "packages/adapter-react/src/index.ts"
   },
   {
     "name": "UsePollingOptions",
     "kind": "interface",
     "package": "adapter-react",
-    "description": "// ============================================================================ // usePolling Hook // ============================================================================  Options for usePolli",
+    "description": "// ============================================================================ // usePolling Hook // ============================================================================ Options for usePollin",
     "file": "packages/adapter-react/src/index.ts"
   },
   {
@@ -528,7 +528,7 @@
     "name": "usePolling",
     "kind": "function",
     "package": "adapter-react",
-    "description": "React hook for polling data at intervals. @example ```tsx function LiveData() {   const { data, isPolling, stop } = usePolling(     async () => fetchLatestData(),     { interval: 5000, immediate: true",
+    "description": "React hook for polling data at intervals.",
     "file": "packages/adapter-react/src/index.ts"
   },
   {
@@ -549,56 +549,56 @@
     "name": "withScopeLoader",
     "kind": "function",
     "package": "adapter-remix",
-    "description": "Wrap a Remix loader with scope @example ```typescript // app/routes/users.tsx import { withScopeLoader } from '@go-go-scope/adapter-remix' import { json } from '@remix-run/node' export const loader = ",
+    "description": "Wrap a Remix loader with scope",
     "file": "packages/adapter-remix/src/index.ts"
   },
   {
     "name": "withScopeAction",
     "kind": "function",
     "package": "adapter-remix",
-    "description": "Wrap a Remix action with scope @example ```typescript // app/routes/users.tsx import { withScopeAction } from '@go-go-scope/adapter-remix' import { json } from '@remix-run/node' export const action = ",
+    "description": "Wrap a Remix action with scope",
     "file": "packages/adapter-remix/src/index.ts"
   },
   {
     "name": "createRemixScope",
     "kind": "function",
     "package": "adapter-remix",
-    "description": "Create reusable scope configuration for loaders/actions @example ```typescript // app/lib/scope.ts import { createRemixScope } from '@go-go-scope/adapter-remix' import { db } from './db' export const ",
+    "description": "Create reusable scope configuration for loaders/actions",
     "file": "packages/adapter-remix/src/index.ts"
   },
   {
     "name": "solidStartGoGoScope",
     "kind": "function",
     "package": "adapter-solid-start",
-    "description": "SolidStart middleware for go-go-scope integration @example ```typescript // src/middleware.ts import { createMiddleware } from '@solidjs/start/middleware' import { solidStartGoGoScope } from '@go-go-s",
+    "description": "SolidStart middleware for go-go-scope integration",
     "file": "packages/adapter-solid-start/src/index.ts"
   },
   {
     "name": "getScope",
     "kind": "function",
     "package": "adapter-solid-start",
-    "description": "Helper to get the current scope from the fetch event @example ```typescript const GET = async (event: APIEvent) => {   const s = getScope(event)   const [err, data] = await s.task(() => fetchData())  ",
+    "description": "Helper to get the current scope from the fetch event",
     "file": "packages/adapter-solid-start/src/index.ts"
   },
   {
     "name": "defineScopedHandler",
     "kind": "function",
     "package": "adapter-solid-start",
-    "description": "Helper to create an API handler with automatic scope integration @example ```typescript import { defineScopedHandler } from '@go-go-scope/adapter-solid-start' import type { APIEvent } from '@solidjs/s",
+    "description": "Helper to create an API handler with automatic scope integration",
     "file": "packages/adapter-solid-start/src/index.ts"
   },
   {
     "name": "withScope",
     "kind": "function",
     "package": "adapter-solid-start",
-    "description": "Server function wrapper with scope access For use with SolidStart's createServerData$, createServerAction$, etc. @example ```typescript // src/lib/users.ts import { createServerAction$ } from '@solidj",
+    "description": "Server function wrapper with scope access For use with SolidStart's createServerData$, createServerAction$, etc.",
     "file": "packages/adapter-solid-start/src/index.ts"
   },
   {
     "name": "CreateScopeOptions",
     "kind": "interface",
     "package": "adapter-svelte",
-    "description": "// ============================================================================ // Core - Scope // ============================================================================  Options for creating a ",
+    "description": "// ============================================================================ // Core - Scope // ============================================================================ Options for creating a s",
     "file": "packages/adapter-svelte/src/index.ts"
   },
   {
@@ -612,14 +612,14 @@
     "name": "createScope",
     "kind": "function",
     "package": "adapter-svelte",
-    "description": "Create a reactive scope that automatically disposes on component destroy. @example ```svelte <script>   const s = createScope({ name: \"my-component\" });   // Scope is automatically disposed when compo",
+    "description": "Create a reactive scope that automatically disposes on component destroy.",
     "file": "packages/adapter-svelte/src/index.ts"
   },
   {
     "name": "CreateTaskOptions",
     "kind": "interface",
     "package": "adapter-svelte",
-    "description": "// ============================================================================ // Task Store // ============================================================================  Options for creating a ta",
+    "description": "// ============================================================================ // Task Store // ============================================================================ Options for creating a tas",
     "file": "packages/adapter-svelte/src/index.ts"
   },
   {
@@ -633,14 +633,14 @@
     "name": "createTask",
     "kind": "function",
     "package": "adapter-svelte",
-    "description": "Create a reactive task that integrates with Svelte's store system. Returns a store-like object that can be used with `$` prefix. @example ```svelte <script>   const task = createTask(     async () => ",
+    "description": "Create a reactive task that integrates with Svelte's store system. Returns a store-like object that can be used with `$` prefix.",
     "file": "packages/adapter-svelte/src/index.ts"
   },
   {
     "name": "CreateParallelOptions",
     "kind": "interface",
     "package": "adapter-svelte",
-    "description": "// ============================================================================ // Parallel Tasks Store // ============================================================================  Options for par",
+    "description": "// ============================================================================ // Parallel Tasks Store // ============================================================================ Options for para",
     "file": "packages/adapter-svelte/src/index.ts"
   },
   {
@@ -654,14 +654,14 @@
     "name": "createParallel",
     "kind": "function",
     "package": "adapter-svelte",
-    "description": "Create reactive parallel task execution. @example ```svelte <script>   const parallel = createParallel(     urls.map(url => () => fetch(url).then(r => r.json())),     { concurrency: 3, immediate: true",
+    "description": "Create reactive parallel task execution.",
     "file": "packages/adapter-svelte/src/index.ts"
   },
   {
     "name": "CreateChannelOptions",
     "kind": "interface",
     "package": "adapter-svelte",
-    "description": "// ============================================================================ // Channel Store // ============================================================================  Options for creating a",
+    "description": "// ============================================================================ // Channel Store // ============================================================================ Options for creating a ",
     "file": "packages/adapter-svelte/src/index.ts"
   },
   {
@@ -675,28 +675,28 @@
     "name": "createChannel",
     "kind": "function",
     "package": "adapter-svelte",
-    "description": "Create a reactive channel for Go-style communication. @example ```svelte <script>   const ch = createChannel<string>();   async function sendMessage() {     await ch.send(\"Hello!\");   } </script> <p>L",
+    "description": "Create a reactive channel for Go-style communication.",
     "file": "packages/adapter-svelte/src/index.ts"
   },
   {
     "name": "BroadcastState",
     "kind": "interface",
     "package": "adapter-svelte",
-    "description": "// ============================================================================ // Broadcast Store // ============================================================================  Reactive broadcast s",
+    "description": "// ============================================================================ // Broadcast Store // ============================================================================ Reactive broadcast st",
     "file": "packages/adapter-svelte/src/index.ts"
   },
   {
     "name": "createBroadcast",
     "kind": "function",
     "package": "adapter-svelte",
-    "description": "Create a reactive broadcast channel. @example ```svelte <script>   const bus = createBroadcast<string>();   // Subscribe   bus.subscribe(msg => console.log(msg));   function send() {     bus.broadcast",
+    "description": "Create a reactive broadcast channel.",
     "file": "packages/adapter-svelte/src/index.ts"
   },
   {
     "name": "CreatePollingOptions",
     "kind": "interface",
     "package": "adapter-svelte",
-    "description": "// ============================================================================ // Polling Store // ============================================================================  Options for polling",
+    "description": "// ============================================================================ // Polling Store // ============================================================================ Options for polling",
     "file": "packages/adapter-svelte/src/index.ts"
   },
   {
@@ -710,7 +710,7 @@
     "name": "createPolling",
     "kind": "function",
     "package": "adapter-svelte",
-    "description": "Create a reactive polling mechanism. @example ```svelte <script>   const poller = createPolling(     async () => fetchLatestData(),     { interval: 5000, immediate: true }   ); </script> {#if $poller.",
+    "description": "Create a reactive polling mechanism.",
     "file": "packages/adapter-svelte/src/index.ts"
   },
   {
@@ -738,63 +738,63 @@
     "name": "createScopeHandle",
     "kind": "function",
     "package": "adapter-sveltekit",
-    "description": "Create a SvelteKit handle with scope integration @example ```typescript // src/hooks.server.ts import { createScopeHandle } from '@go-go-scope/adapter-sveltekit' import { sequence } from '@sveltejs/ki",
+    "description": "Create a SvelteKit handle with scope integration",
     "file": "packages/adapter-sveltekit/src/index.ts"
   },
   {
     "name": "withScopeLoad",
     "kind": "function",
     "package": "adapter-sveltekit",
-    "description": "Wrap a server load function with a scope @example ```typescript // src/routes/+page.server.ts import { withScopeLoad } from '@go-go-scope/adapter-sveltekit' export const load = withScopeLoad(async (ev",
+    "description": "Wrap a server load function with a scope",
     "file": "packages/adapter-sveltekit/src/index.ts"
   },
   {
     "name": "withScopeAction",
     "kind": "function",
     "package": "adapter-sveltekit",
-    "description": "Wrap a form action with a scope @example ```typescript // src/routes/+page.server.ts import { withScopeAction } from '@go-go-scope/adapter-sveltekit' import { fail } from '@sveltejs/kit' export const ",
+    "description": "Wrap a form action with a scope",
     "file": "packages/adapter-sveltekit/src/index.ts"
   },
   {
     "name": "vercelEdgeGoGoScope",
     "kind": "function",
     "package": "adapter-vercel-edge",
-    "description": "Vercel Edge middleware for go-go-scope integration @example ```typescript // middleware.ts import { vercelEdgeGoGoScope } from '@go-go-scope/adapter-vercel-edge' import { NextResponse } from 'next/ser",
+    "description": "Vercel Edge middleware for go-go-scope integration",
     "file": "packages/adapter-vercel-edge/src/index.ts"
   },
   {
     "name": "nextEdgeHandler",
     "kind": "function",
     "package": "adapter-vercel-edge",
-    "description": "Helper for Next.js Edge API Routes @example ```typescript // app/api/users/route.ts import { nextEdgeHandler } from '@go-go-scope/adapter-vercel-edge' import { NextResponse } from 'next/server' export",
+    "description": "Helper for Next.js Edge API Routes",
     "file": "packages/adapter-vercel-edge/src/index.ts"
   },
   {
     "name": "getScope",
     "kind": "function",
     "package": "adapter-vercel-edge",
-    "description": "Helper to get the current scope from the request context @example ```typescript import { getScope } from '@go-go-scope/adapter-vercel-edge' export const handler = async (request: Request) => {   const",
+    "description": "Helper to get the current scope from the request context",
     "file": "packages/adapter-vercel-edge/src/index.ts"
   },
   {
     "name": "getEdgeConfig",
     "kind": "function",
     "package": "adapter-vercel-edge",
-    "description": "Edge Config integration helper Fetches config with automatic retry and caching @example ```typescript import { getEdgeConfig } from '@go-go-scope/adapter-vercel-edge' export const GET = nextEdgeHandle",
+    "description": "Edge Config integration helper Fetches config with automatic retry and caching",
     "file": "packages/adapter-vercel-edge/src/index.ts"
   },
   {
     "name": "kvGet",
     "kind": "function",
     "package": "adapter-vercel-edge",
-    "description": "KV integration helper for Vercel KV @example ```typescript import { kvGet, kvSet } from '@go-go-scope/adapter-vercel-edge' export const GET = nextEdgeHandler(async (request, scope) => {   const [err, ",
+    "description": "KV integration helper for Vercel KV",
     "file": "packages/adapter-vercel-edge/src/index.ts"
   },
   {
     "name": "RateLimitOptions",
     "kind": "interface",
     "package": "adapter-vercel-edge",
-    "description": "Rate limiting helper for Edge functions @example ```typescript import { rateLimit } from '@go-go-scope/adapter-vercel-edge' export const GET = nextEdgeHandler(async (request, scope) => {   const [err,",
+    "description": "Rate limiting helper for Edge functions",
     "file": "packages/adapter-vercel-edge/src/index.ts"
   },
   {
@@ -878,7 +878,7 @@
     "name": "AsyncIteratorFromOptions",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Async iterator helpers for go-go-scope Provides utilities for working with async iterables   Options for async iterable operations",
+    "description": "Async iterator helpers for go-go-scope Provides utilities for working with async iterables Options for async iterable operations",
     "file": "packages/go-go-scope/src/async-iterable.ts"
   },
   {
@@ -1004,7 +1004,7 @@
     "name": "Batch",
     "kind": "class",
     "package": "go-go-scope",
-    "description": "Batch collector that accumulates items and processes them in batches. Automatically flushes when batch is full or timeout is reached. @example ```typescript await using s = scope() const batcher = s.b",
+    "description": "Batch collector that accumulates items and processes them in batches. Automatically flushes when batch is full or timeout is reached.",
     "file": "packages/go-go-scope/src/batch.ts"
   },
   {
@@ -1039,28 +1039,28 @@
     "name": "BroadcastChannel",
     "kind": "class",
     "package": "go-go-scope",
-    "description": "BroadcastChannel class for go-go-scope - Pub/sub pattern Unlike regular Channel where each message goes to one consumer, BroadcastChannel sends each message to ALL active consumers.   A BroadcastChann",
+    "description": "BroadcastChannel class for go-go-scope - Pub/sub pattern Unlike regular Channel where each message goes to one consumer, BroadcastChannel sends each message to ALL active consumers. A BroadcastChannel",
     "file": "packages/go-go-scope/src/broadcast-channel.ts"
   },
   {
     "name": "BroadcastChannel.subscribe",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Subscribe to the broadcast channel. Returns an async iterable that receives all messages published to the channel. Each subscriber maintains its own queue, so slow consumers don't block others. @retur",
+    "description": "Subscribe to the broadcast channel. Returns an async iterable that receives all messages published to the channel. Each subscriber maintains its own queue, so slow consumers don't block others.",
     "file": "packages/go-go-scope/src/broadcast-channel.ts"
   },
   {
     "name": "BroadcastChannel.send",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Send a value to all subscribers. Resolves when all subscribers have received the message. If a subscriber is not actively waiting, the message is queued for them. @param value - The value to broadcast",
+    "description": "Send a value to all subscribers. Resolves when all subscribers have received the message. If a subscriber is not actively waiting, the message is queued for them.",
     "file": "packages/go-go-scope/src/broadcast-channel.ts"
   },
   {
     "name": "BroadcastChannel.close",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Close the channel. No more messages can be sent. Existing subscribers will drain their queued messages, then their iterators will complete (done: true). @example ```typescript await using s = scope();",
+    "description": "Close the channel. No more messages can be sent. Existing subscribers will drain their queued messages, then their iterators will complete (done: true).",
     "file": "packages/go-go-scope/src/broadcast-channel.ts"
   },
   {
@@ -1074,63 +1074,63 @@
     "name": "InMemoryCache.get",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Retrieves a value from the cache. Returns `null` if: - The key doesn't exist - The entry has expired (entry is also deleted) Updates the last accessed time for LRU tracking on successful retrieval. @t",
+    "description": "Retrieves a value from the cache. Returns `null` if: - The key doesn't exist - The entry has expired (entry is also deleted) Updates the last accessed time for LRU tracking on successful retrieval.",
     "file": "packages/go-go-scope/src/cache.ts"
   },
   {
     "name": "InMemoryCache.set",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Stores a value in the cache with optional TTL. If the cache is at capacity and the key doesn't exist, the least recently used entry is evicted before insertion. @typeParam T - The type of the value to",
+    "description": "Stores a value in the cache with optional TTL. If the cache is at capacity and the key doesn't exist, the least recently used entry is evicted before insertion.",
     "file": "packages/go-go-scope/src/cache.ts"
   },
   {
     "name": "InMemoryCache.delete",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Deletes a key from the cache. @param key - The cache key to delete @returns Promise that resolves when the key is deleted @example ```typescript await cache.delete(\"user:123\"); ```",
+    "description": "Deletes a key from the cache.",
     "file": "packages/go-go-scope/src/cache.ts"
   },
   {
     "name": "InMemoryCache.has",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Checks if a key exists in the cache and has not expired. Expired entries are automatically removed and return `false`. @param key - The cache key to check @returns `true` if the key exists and is not ",
+    "description": "Checks if a key exists in the cache and has not expired. Expired entries are automatically removed and return `false`.",
     "file": "packages/go-go-scope/src/cache.ts"
   },
   {
     "name": "InMemoryCache.clear",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Clears all entries from the cache and resets statistics. @returns Promise that resolves when the cache is cleared @example ```typescript await cache.clear(); console.log(cache.size); // 0 ```",
+    "description": "Clears all entries from the cache and resets statistics.",
     "file": "packages/go-go-scope/src/cache.ts"
   },
   {
     "name": "InMemoryCache.keys",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Returns all keys matching an optional pattern. Pattern matching supports `*` as a wildcard that matches any characters. If no pattern is provided, all keys are returned. @param pattern - Optional glob",
+    "description": "Returns all keys matching an optional pattern. Pattern matching supports `*` as a wildcard that matches any characters. If no pattern is provided, all keys are returned.",
     "file": "packages/go-go-scope/src/cache.ts"
   },
   {
     "name": "InMemoryCache.stats",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Gets cache statistics including hits, misses, size, and hit ratio. @returns Cache statistics object @returns CacheStats.hits - Number of successful cache lookups @returns CacheStats.misses - Number of",
+    "description": "Gets cache statistics including hits, misses, size, and hit ratio.",
     "file": "packages/go-go-scope/src/cache.ts"
   },
   {
     "name": "InMemoryCache.prune",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Removes all expired entries from the cache. This can be called periodically to free up memory from expired entries that haven't been accessed yet. @returns The number of entries removed @example ```ty",
+    "description": "Removes all expired entries from the cache. This can be called periodically to free up memory from expired entries that haven't been accessed yet.",
     "file": "packages/go-go-scope/src/cache.ts"
   },
   {
     "name": "InMemoryCache.evictLRU",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Evicts the least recently used entry when the cache is at capacity. @internal",
+    "description": "Evicts the least recently used entry when the cache is at capacity.",
     "file": "packages/go-go-scope/src/cache.ts"
   },
   {
@@ -1144,21 +1144,21 @@
     "name": "onAbort",
     "kind": "function",
     "package": "go-go-scope",
-    "description": "Registers a callback to be invoked when the signal is aborted. Returns a disposable that can be used to unregister the callback. The callback is automatically unregistered after it's invoked (once). @",
+    "description": "Registers a callback to be invoked when the signal is aborted. Returns a disposable that can be used to unregister the callback. The callback is automatically unregistered after it's invoked (once). #",
     "file": "packages/go-go-scope/src/cancellation.ts"
   },
   {
     "name": "abortPromise",
     "kind": "function",
     "package": "go-go-scope",
-    "description": "Creates a promise that rejects when the signal is aborted. Useful for racing operations against cancellation. @param signal - The AbortSignal to watch @returns A promise that rejects with the abort re",
+    "description": "Creates a promise that rejects when the signal is aborted. Useful for racing operations against cancellation. #__PURE__",
     "file": "packages/go-go-scope/src/cancellation.ts"
   },
   {
     "name": "whenAborted",
     "kind": "function",
     "package": "go-go-scope",
-    "description": "Waits for a signal to be aborted. Returns immediately if already aborted. @param signal - The AbortSignal to wait for @returns Promise that resolves when aborted @example ```typescript await s.task(as",
+    "description": "Waits for a signal to be aborted. Returns immediately if already aborted. #__PURE__",
     "file": "packages/go-go-scope/src/cancellation.ts"
   },
   {
@@ -1172,28 +1172,28 @@
     "name": "Channel.cleanupSampleBuffer",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Clean up expired sample buffer entries. @internal",
+    "description": "Clean up expired sample buffer entries.",
     "file": "packages/go-go-scope/src/channel.ts"
   },
   {
     "name": "Channel.scheduleNotifications",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Process pending notifications in a batch. Reduces event loop pressure by batching resolve calls. @internal",
+    "description": "Process pending notifications in a batch. Reduces event loop pressure by batching resolve calls.",
     "file": "packages/go-go-scope/src/channel.ts"
   },
   {
     "name": "Channel.processNotifications",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Process pending send and receive notifications. @internal",
+    "description": "Process pending send and receive notifications.",
     "file": "packages/go-go-scope/src/channel.ts"
   },
   {
     "name": "Channel.dequeueInternal",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Internal dequeue that handles different backpressure strategies. @internal",
+    "description": "Internal dequeue that handles different backpressure strategies.",
     "file": "packages/go-go-scope/src/channel.ts"
   },
   {
@@ -1207,21 +1207,21 @@
     "name": "Channel.receive",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Receive a value from the channel. @returns Promise that resolves to the received value, or undefined if channel is closed and empty @throws {unknown} If the scope is aborted @example ```typescript awa",
+    "description": "Receive a value from the channel.",
     "file": "packages/go-go-scope/src/channel.ts"
   },
   {
     "name": "Channel.close",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Close the channel. No more sends allowed. Consumers will drain the buffer then receive undefined. @example ```typescript await using s = scope(); const ch = s.channel<string>(10); await ch.send('messa",
+    "description": "Close the channel. No more sends allowed. Consumers will drain the buffer then receive undefined.",
     "file": "packages/go-go-scope/src/channel.ts"
   },
   {
     "name": "Channel.drainQueues",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Drain all pending queues on close/abort. @internal",
+    "description": "Drain all pending queues on close/abort.",
     "file": "packages/go-go-scope/src/channel.ts"
   },
   {
@@ -1263,49 +1263,49 @@
     "name": "InMemoryCheckpointProvider.save",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Saves a checkpoint for a task. @typeParam T - The type of checkpoint data @param checkpoint - The checkpoint to save @returns Promise that resolves when the checkpoint is saved @example ```typescript ",
+    "description": "Saves a checkpoint for a task.",
     "file": "packages/go-go-scope/src/checkpoint.ts"
   },
   {
     "name": "InMemoryCheckpointProvider.loadLatest",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Loads the most recent checkpoint for a task. @typeParam T - The expected type of checkpoint data @param taskId - The task ID to look up @returns The latest checkpoint or undefined if none exists @exam",
+    "description": "Loads the most recent checkpoint for a task.",
     "file": "packages/go-go-scope/src/checkpoint.ts"
   },
   {
     "name": "InMemoryCheckpointProvider.load",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Loads a specific checkpoint by its ID. @typeParam T - The expected type of checkpoint data @param checkpointId - The unique checkpoint ID @returns The checkpoint or undefined if not found @example ```",
+    "description": "Loads a specific checkpoint by its ID.",
     "file": "packages/go-go-scope/src/checkpoint.ts"
   },
   {
     "name": "InMemoryCheckpointProvider.list",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Lists all checkpoints for a task, sorted by sequence. @param taskId - The task ID to look up @returns Array of checkpoints for the task @example ```typescript const checkpoints = await provider.list('",
+    "description": "Lists all checkpoints for a task, sorted by sequence.",
     "file": "packages/go-go-scope/src/checkpoint.ts"
   },
   {
     "name": "InMemoryCheckpointProvider.cleanup",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Removes old checkpoints, keeping only the most recent ones. @param taskId - The task ID to clean up @param keepCount - Number of most recent checkpoints to keep @returns Promise that resolves when cle",
+    "description": "Removes old checkpoints, keeping only the most recent ones.",
     "file": "packages/go-go-scope/src/checkpoint.ts"
   },
   {
     "name": "InMemoryCheckpointProvider.deleteAll",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Deletes all checkpoints for a task. @param taskId - The task ID to delete @returns Promise that resolves when all checkpoints are deleted @example ```typescript // After task completes successfully, c",
+    "description": "Deletes all checkpoints for a task.",
     "file": "packages/go-go-scope/src/checkpoint.ts"
   },
   {
     "name": "EventHandler",
     "kind": "type",
     "package": "go-go-scope",
-    "description": "Event handler type for circuit breaker events. @param args - Variable arguments depending on the event type",
+    "description": "Event handler type for circuit breaker events.",
     "file": "packages/go-go-scope/src/circuit-breaker.ts"
   },
   {
@@ -1333,7 +1333,7 @@
     "name": "CircuitBreaker.getFailureCount",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Get the current failure count within the sliding window. If sliding window is disabled, returns the cumulative failure count. @returns Number of failures in the current window @internal",
+    "description": "Get the current failure count within the sliding window. If sliding window is disabled, returns the cumulative failure count.",
     "file": "packages/go-go-scope/src/circuit-breaker.ts"
   },
   {
@@ -1347,56 +1347,56 @@
     "name": "CircuitBreaker.reset",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Manually reset the circuit breaker to closed state. This clears all failure counts and transitions to the closed state. Use this when you know the underlying service has recovered. @example ```typescr",
+    "description": "Manually reset the circuit breaker to closed state. This clears all failure counts and transitions to the closed state. Use this when you know the underlying service has recovered.",
     "file": "packages/go-go-scope/src/circuit-breaker.ts"
   },
   {
     "name": "CircuitBreaker.on",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Subscribe to a circuit breaker event. @param event - Event name to subscribe to:   - 'stateChange': Circuit state changed   - 'open': Circuit opened   - 'close': Circuit closed   - 'halfOpen': Circuit",
+    "description": "Subscribe to a circuit breaker event. - 'stateChange': Circuit state changed - 'open': Circuit opened - 'close': Circuit closed - 'halfOpen': Circuit entered half-open state - 'success': Protected cal",
     "file": "packages/go-go-scope/src/circuit-breaker.ts"
   },
   {
     "name": "CircuitBreaker.off",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Unsubscribe from a circuit breaker event. @param event - Event name to unsubscribe from @param handler - Handler function to remove (must be the same reference passed to on()) @example ```typescript c",
+    "description": "Unsubscribe from a circuit breaker event.",
     "file": "packages/go-go-scope/src/circuit-breaker.ts"
   },
   {
     "name": "CircuitBreaker.once",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Subscribe to an event once. The handler is automatically removed after the first occurrence. @param event - Event name to subscribe to @param handler - Event handler function @example ```typescript //",
+    "description": "Subscribe to an event once. The handler is automatically removed after the first occurrence.",
     "file": "packages/go-go-scope/src/circuit-breaker.ts"
   },
   {
     "name": "CircuitBreaker.emit",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Emit an event to all subscribers. @param event - Event to emit @param args - Arguments to pass to handlers @internal",
+    "description": "Emit an event to all subscribers.",
     "file": "packages/go-go-scope/src/circuit-breaker.ts"
   },
   {
     "name": "CircuitBreaker.onSuccess",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Handle a successful execution. @internal",
+    "description": "Handle a successful execution.",
     "file": "packages/go-go-scope/src/circuit-breaker.ts"
   },
   {
     "name": "CircuitBreaker.onFailure",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Handle a failed execution. @internal",
+    "description": "Handle a failed execution.",
     "file": "packages/go-go-scope/src/circuit-breaker.ts"
   },
   {
     "name": "CircuitBreaker.transitionToHalfOpen",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Transition from open to half-open state. @internal",
+    "description": "Transition from open to half-open state.",
     "file": "packages/go-go-scope/src/circuit-breaker.ts"
   },
   {
@@ -1445,49 +1445,49 @@
     "name": "ScopedEventEmitter.on",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Subscribe to an event. @param event - Event name @param handler - Event handler @returns Unsubscribe function @example ```typescript const unsubscribe = emitter.on(\"data\", (chunk) => {   console.log(c",
+    "description": "Subscribe to an event.",
     "file": "packages/go-go-scope/src/event-emitter.ts"
   },
   {
     "name": "ScopedEventEmitter.once",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Subscribe to an event once. The handler is automatically removed after first call. @param event - Event name @param handler - Event handler @example ```typescript emitter.once(\"ready\", () => {   conso",
+    "description": "Subscribe to an event once. The handler is automatically removed after first call.",
     "file": "packages/go-go-scope/src/event-emitter.ts"
   },
   {
     "name": "ScopedEventEmitter.off",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Unsubscribe from an event. @param event - Event name @param handler - Handler to remove",
+    "description": "Unsubscribe from an event.",
     "file": "packages/go-go-scope/src/event-emitter.ts"
   },
   {
     "name": "ScopedEventEmitter.emit",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Emit an event to all subscribers. @param event - Event name @param args - Arguments to pass to handlers @returns Number of handlers called @example ```typescript emitter.emit(\"data\", \"Hello\", 123); ``",
+    "description": "Emit an event to all subscribers.",
     "file": "packages/go-go-scope/src/event-emitter.ts"
   },
   {
     "name": "ScopedEventEmitter.emitAsync",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Emit an event asynchronously (await all handlers). @param event - Event name @param args - Arguments to pass to handlers @returns Number of handlers called",
+    "description": "Emit an event asynchronously (await all handlers).",
     "file": "packages/go-go-scope/src/event-emitter.ts"
   },
   {
     "name": "ScopedEventEmitter.listenerCount",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Get the number of listeners for an event. @param event - Event name",
+    "description": "Get the number of listeners for an event.",
     "file": "packages/go-go-scope/src/event-emitter.ts"
   },
   {
     "name": "ScopedEventEmitter.hasListeners",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Check if there are any listeners for an event. @param event - Event name",
+    "description": "Check if there are any listeners for an event.",
     "file": "packages/go-go-scope/src/event-emitter.ts"
   },
   {
@@ -1501,7 +1501,7 @@
     "name": "ScopedEventEmitter.removeAllListeners",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Remove all listeners for an event. @param event - Event name (if not provided, removes all listeners)",
+    "description": "Remove all listeners for an event.",
     "file": "packages/go-go-scope/src/event-emitter.ts"
   },
   {
@@ -1515,7 +1515,7 @@
     "name": "createEventEmitter",
     "kind": "function",
     "package": "go-go-scope",
-    "description": "Create a scoped EventEmitter. @param scope - Parent scope for automatic cleanup @returns ScopedEventEmitter instance @example ```typescript import { scope, createEventEmitter } from \"go-go-scope\"; awa",
+    "description": "Create a scoped EventEmitter.",
     "file": "packages/go-go-scope/src/event-emitter.ts"
   },
   {
@@ -1704,7 +1704,7 @@
     "name": "GracefulShutdownOptions",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Options for graceful shutdown configuration. @interface @see {@link GracefulShutdownController} Where these options are used @see {@link setupGracefulShutdown} Factory function accepting these options",
+    "description": "Options for graceful shutdown configuration.",
     "file": "packages/go-go-scope/src/graceful-shutdown.ts"
   },
   {
@@ -1718,28 +1718,28 @@
     "name": "GracefulShutdownController.shutdown",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Manually trigger shutdown. Can be called programmatically to initiate shutdown without receiving a signal. If shutdown is already in progress, returns the existing shutdown promise. @param signal - Th",
+    "description": "Manually trigger shutdown. Can be called programmatically to initiate shutdown without receiving a signal. If shutdown is already in progress, returns the existing shutdown promise.",
     "file": "packages/go-go-scope/src/graceful-shutdown.ts"
   },
   {
     "name": "GracefulShutdownController.cleanup",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Remove signal handlers. Stops listening for shutdown signals. Useful for cleanup in tests or when you want to disable the controller without shutting down. @see {@link GracefulShutdownController.shutd",
+    "description": "Remove signal handlers. Stops listening for shutdown signals. Useful for cleanup in tests or when you want to disable the controller without shutting down.",
     "file": "packages/go-go-scope/src/graceful-shutdown.ts"
   },
   {
     "name": "GracefulShutdownController.setupSignalHandlers",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Setup signal handlers for configured signals. @internal",
+    "description": "Setup signal handlers for configured signals.",
     "file": "packages/go-go-scope/src/graceful-shutdown.ts"
   },
   {
     "name": "GracefulShutdownController.setupScopeIntegration",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Add shutdownRequested property to scope for easy access. @internal",
+    "description": "Add shutdownRequested property to scope for easy access.",
     "file": "packages/go-go-scope/src/graceful-shutdown.ts"
   },
   {
@@ -1767,35 +1767,35 @@
     "name": "InMemoryIdempotencyProvider.get",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Gets a cached value by key if it exists and hasn't expired. @typeParam T - The expected type of the cached value @param key - The idempotency key @returns Object with value and optional expiry timesta",
+    "description": "Gets a cached value by key if it exists and hasn't expired.",
     "file": "packages/go-go-scope/src/idempotency.ts"
   },
   {
     "name": "InMemoryIdempotencyProvider.set",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Stores a value with an optional TTL. @typeParam T - The type of the value to cache @param key - The idempotency key @param value - The result value to cache @param ttl - Time-to-live in milliseconds (",
+    "description": "Stores a value with an optional TTL.",
     "file": "packages/go-go-scope/src/idempotency.ts"
   },
   {
     "name": "InMemoryIdempotencyProvider.delete",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Deletes a cached value by key. @param key - The idempotency key to delete @returns Promise that resolves when the key is deleted @example ```typescript // Manually invalidate a cached result await pro",
+    "description": "Deletes a cached value by key.",
     "file": "packages/go-go-scope/src/idempotency.ts"
   },
   {
     "name": "InMemoryIdempotencyProvider.clear",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Clears all cached idempotency entries. @returns Promise that resolves when all entries are cleared @example ```typescript // Clear all cached results await provider.clear(); console.log(provider.size)",
+    "description": "Clears all cached idempotency entries.",
     "file": "packages/go-go-scope/src/idempotency.ts"
   },
   {
     "name": "InMemoryIdempotencyProvider.cleanup",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Removes expired entries from the cache. This can be called periodically to free up memory. Expired entries are also removed automatically on access. @returns Number of expired entries removed @example",
+    "description": "Removes expired entries from the cache. This can be called periodically to free up memory. Expired entries are also removed automatically on access.",
     "file": "packages/go-go-scope/src/idempotency.ts"
   },
   {
@@ -1830,7 +1830,7 @@
     "name": "LockGuard.release",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Releases the lock manually. This can be called explicitly to release the lock before the guard goes out of scope. Throws an error if the lock has already been released. @returns Promise that resolves ",
+    "description": "Releases the lock manually. This can be called explicitly to release the lock before the guard goes out of scope. Throws an error if the lock has already been released.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
@@ -1865,154 +1865,154 @@
     "name": "Lock.tryAcquire",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Tries to acquire the lock immediately without waiting. Returns `null` if the lock is not available. Only available for in-memory exclusive locks (not read-write or distributed). @returns A LockGuard i",
+    "description": "Tries to acquire the lock immediately without waiting. Returns `null` if the lock is not available. Only available for in-memory exclusive locks (not read-write or distributed).",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.tryRead",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Tries to acquire a read lock immediately (read-write mode only). Returns `null` if a writer is active or waiting with higher priority. Only available for in-memory locks. @returns A LockGuard if acqui",
+    "description": "Tries to acquire a read lock immediately (read-write mode only). Returns `null` if a writer is active or waiting with higher priority. Only available for in-memory locks.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.tryWrite",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Tries to acquire a write lock immediately (read-write mode only). Returns `null` if any readers or writers are active, or if there are pending requests. Only available for in-memory locks. @returns A ",
+    "description": "Tries to acquire a write lock immediately (read-write mode only). Returns `null` if any readers or writers are active, or if there are pending requests. Only available for in-memory locks.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.acquireInMemoryExclusive",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "// ============================================================================ // In-Memory Implementation // ============================================================================  Acquires an",
+    "description": "// ============================================================================ // In-Memory Implementation // ============================================================================ Acquires an ",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.acquireInMemoryRead",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Acquires a read lock using in-memory coordination. @internal",
+    "description": "Acquires a read lock using in-memory coordination.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.acquireInMemoryWrite",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Acquires a write lock using in-memory coordination. @internal",
+    "description": "Acquires a write lock using in-memory coordination.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.acquireDistributedExclusive",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "// ============================================================================ // Distributed Implementation // ============================================================================  Acquires ",
+    "description": "// ============================================================================ // Distributed Implementation // ============================================================================ Acquires a",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.tryAcquireDistributedExclusive",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Attempts to acquire an exclusive distributed lock. @internal",
+    "description": "Attempts to acquire an exclusive distributed lock.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.acquireDistributedRead",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Acquires a distributed read lock. @internal",
+    "description": "Acquires a distributed read lock.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.tryAcquireDistributedRead",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Attempts to acquire a distributed read lock. @internal",
+    "description": "Attempts to acquire a distributed read lock.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.acquireDistributedWrite",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Acquires a distributed write lock. @internal",
+    "description": "Acquires a distributed write lock.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.tryAcquireDistributedWrite",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Attempts to acquire a distributed write lock. @internal",
+    "description": "Attempts to acquire a distributed write lock.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.processQueue",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "// ============================================================================ // Queue Processing // ============================================================================  Processes the lock ",
+    "description": "// ============================================================================ // Queue Processing // ============================================================================ Processes the lock r",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.releaseExclusive",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "// ============================================================================ // Release Methods // ============================================================================  Releases an exclusiv",
+    "description": "// ============================================================================ // Release Methods // ============================================================================ Releases an exclusive",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.releaseRead",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Releases a read lock and processes the queue. @internal",
+    "description": "Releases a read lock and processes the queue.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.releaseWrite",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Releases a write lock and processes the queue. @internal",
+    "description": "Releases a write lock and processes the queue.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.scheduleDistributedExtend",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "// ============================================================================ // Distributed Helpers // ============================================================================  Schedules automa",
+    "description": "// ============================================================================ // Distributed Helpers // ============================================================================ Schedules automat",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.clearDistributedExtend",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Clears the distributed lock extension timeout. @internal",
+    "description": "Clears the distributed lock extension timeout.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.removeRequest",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "// ============================================================================ // Utility // ============================================================================  Removes a request from the q",
+    "description": "// ============================================================================ // Utility // ============================================================================ Removes a request from the qu",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.clearTimeout",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Clears the timeout for a request. @internal",
+    "description": "Clears the timeout for a request.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "Lock.sleep",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Sleeps for the specified duration. @internal",
+    "description": "Sleeps for the specified duration.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
     "name": "createLock",
     "kind": "function",
     "package": "go-go-scope",
-    "description": "Creates a new {@link Lock} instance. This is a convenience factory function. See {@link Lock} for detailed usage. @param signal - AbortSignal for cancellation (optional) @param options - Lock configur",
+    "description": "Creates a new {@link Lock} instance. This is a convenience factory function. See {@link Lock} for detailed usage.",
     "file": "packages/go-go-scope/src/lock.ts"
   },
   {
@@ -2033,7 +2033,7 @@
     "name": "CorrelationContext",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Correlation context for logging. Contains identifiers that link related operations together across async boundaries and service calls. @example ```typescript import { CorrelationContext } from \"go-go-",
+    "description": "Correlation context for logging. Contains identifiers that link related operations together across async boundaries and service calls.",
     "file": "packages/go-go-scope/src/log-correlation.ts"
   },
   {
@@ -2047,70 +2047,70 @@
     "name": "CorrelatedLogger.formatMessage",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Formats a message with correlation ID prefixes. @param message - The original message @returns The formatted message with correlation prefixes @private",
+    "description": "Formats a message with correlation ID prefixes.",
     "file": "packages/go-go-scope/src/log-correlation.ts"
   },
   {
     "name": "CorrelatedLogger.formatStructured",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Returns the correlation context as a structured object. @returns Object containing traceId, spanId, scopeName, and optionally parentSpanId @private",
+    "description": "Returns the correlation context as a structured object.",
     "file": "packages/go-go-scope/src/log-correlation.ts"
   },
   {
     "name": "CorrelatedLogger.debug",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Log a debug message with correlation context. @param message - The message to log @param args - Additional arguments to log",
+    "description": "Log a debug message with correlation context.",
     "file": "packages/go-go-scope/src/log-correlation.ts"
   },
   {
     "name": "CorrelatedLogger.info",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Log an info message with correlation context. @param message - The message to log @param args - Additional arguments to log",
+    "description": "Log an info message with correlation context.",
     "file": "packages/go-go-scope/src/log-correlation.ts"
   },
   {
     "name": "CorrelatedLogger.warn",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Log a warning message with correlation context. @param message - The message to log @param args - Additional arguments to log",
+    "description": "Log a warning message with correlation context.",
     "file": "packages/go-go-scope/src/log-correlation.ts"
   },
   {
     "name": "CorrelatedLogger.error",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Log an error message with correlation context. @param message - The message to log @param args - Additional arguments to log",
+    "description": "Log an error message with correlation context.",
     "file": "packages/go-go-scope/src/log-correlation.ts"
   },
   {
     "name": "CorrelatedLogger.getCorrelationContext",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Get the correlation context. Returns a copy of the correlation data for inspection or propagation. @returns A copy of the correlation context @example ```typescript import { CorrelatedLogger } from \"g",
+    "description": "Get the correlation context. Returns a copy of the correlation data for inspection or propagation.",
     "file": "packages/go-go-scope/src/log-correlation.ts"
   },
   {
     "name": "createCorrelatedLogger",
     "kind": "function",
     "package": "go-go-scope",
-    "description": "Create a correlated logger wrapper. Factory function to create a CorrelatedLogger instance. @param delegate - The underlying logger to wrap @param correlation - The correlation context to include in a",
+    "description": "Create a correlated logger wrapper. Factory function to create a CorrelatedLogger instance.",
     "file": "packages/go-go-scope/src/log-correlation.ts"
   },
   {
     "name": "isCorrelatedLogger",
     "kind": "function",
     "package": "go-go-scope",
-    "description": "Check if a logger is a CorrelatedLogger. Type guard function to check the logger type at runtime. @param logger - The logger to check @returns True if the logger is a CorrelatedLogger, false otherwise",
+    "description": "Check if a logger is a CorrelatedLogger. Type guard function to check the logger type at runtime.",
     "file": "packages/go-go-scope/src/log-correlation.ts"
   },
   {
     "name": "getCorrelationContext",
     "kind": "function",
     "package": "go-go-scope",
-    "description": "Extract correlation context from a logger if available. Safely retrieves the correlation context from any logger. @param logger - The logger to extract context from @returns The correlation context if",
+    "description": "Extract correlation context from a logger if available. Safely retrieves the correlation context from any logger.",
     "file": "packages/go-go-scope/src/log-correlation.ts"
   },
   {
@@ -2124,35 +2124,35 @@
     "name": "ConsoleLogger.debug",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Logs a debug message. Only outputs if the logger's level is set to 'debug'. @param message - The message to log @param args - Additional arguments to log",
+    "description": "Logs a debug message. Only outputs if the logger's level is set to 'debug'.",
     "file": "packages/go-go-scope/src/logger.ts"
   },
   {
     "name": "ConsoleLogger.info",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Logs an info message. Only outputs if the logger's level is 'debug' or 'info'. @param message - The message to log @param args - Additional arguments to log",
+    "description": "Logs an info message. Only outputs if the logger's level is 'debug' or 'info'.",
     "file": "packages/go-go-scope/src/logger.ts"
   },
   {
     "name": "ConsoleLogger.warn",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Logs a warning message. Only outputs if the logger's level is 'debug', 'info', or 'warn'. @param message - The message to log @param args - Additional arguments to log",
+    "description": "Logs a warning message. Only outputs if the logger's level is 'debug', 'info', or 'warn'.",
     "file": "packages/go-go-scope/src/logger.ts"
   },
   {
     "name": "ConsoleLogger.error",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Logs an error message. Always outputs regardless of log level (errors have highest priority). @param message - The message to log @param args - Additional arguments to log",
+    "description": "Logs an error message. Always outputs regardless of log level (errors have highest priority).",
     "file": "packages/go-go-scope/src/logger.ts"
   },
   {
     "name": "NoOpLogger",
     "kind": "class",
     "package": "go-go-scope",
-    "description": "No-op logger for when logging is disabled. All logging methods do nothing, providing zero-overhead logging in performance-critical paths or production environments where logging is not needed. @exampl",
+    "description": "No-op logger for when logging is disabled. All logging methods do nothing, providing zero-overhead logging in performance-critical paths or production environments where logging is not needed. #__PURE",
     "file": "packages/go-go-scope/src/logger.ts"
   },
   {
@@ -2278,7 +2278,7 @@
     "name": "ParallelOptions",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Options for configuring parallel execution behavior. @example ```typescript const options = {   concurrency: 3,           // Run max 3 tasks at once   continueOnError: true,    // Continue even if som",
+    "description": "Options for configuring parallel execution behavior.",
     "file": "packages/go-go-scope/src/parallel.ts"
   },
   {
@@ -2376,7 +2376,7 @@
     "name": "BenchmarkResult",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Results from a benchmark execution. Contains timing statistics and performance metrics from running a function multiple times to measure its performance characteristics. @example ```typescript const r",
+    "description": "Results from a benchmark execution. Contains timing statistics and performance metrics from running a function multiple times to measure its performance characteristics.",
     "file": "packages/go-go-scope/src/performance.ts"
   },
   {
@@ -2432,7 +2432,7 @@
     "name": "LockProvider",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Persistence provider interfaces for go-go-scope These interfaces allow features like distributed locks and circuit breaker state to work across multiple processes/servers.   Distributed lock provider ",
+    "description": "Persistence provider interfaces for go-go-scope These interfaces allow features like distributed locks and circuit breaker state to work across multiple processes/servers. Distributed lock provider in",
     "file": "packages/go-go-scope/src/persistence/types.ts"
   },
   {
@@ -2551,7 +2551,7 @@
     "name": "PrioritizedItem",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Priority Channel implementation for go-go-scope @module go-go-scope/priority-channel @description A channel that delivers items based on priority rather than FIFO order. Uses a binary heap for efficie",
+    "description": "Priority Channel implementation for go-go-scope A channel that delivers items based on priority rather than FIFO order. Uses a binary heap for efficient O(log n) insertions and extractions. Features: ",
     "file": "packages/go-go-scope/src/priority-channel.ts"
   },
   {
@@ -2565,7 +2565,7 @@
     "name": "PriorityChannelOptions",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Options for creating a priority channel. @template T The type of items in the channel @see {@link PriorityChannel} The channel class @see {@link Scope.priorityChannel} Factory on scope @example ```typ",
+    "description": "Options for creating a priority channel.",
     "file": "packages/go-go-scope/src/priority-channel.ts"
   },
   {
@@ -2579,70 +2579,70 @@
     "name": "PriorityChannel.send",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Send a value to the channel. If the buffer has space, the value is inserted immediately. If the buffer is full, blocks until space is available. @param value - The value to send @returns {Promise<void",
+    "description": "Send a value to the channel. If the buffer has space, the value is inserted immediately. If the buffer is full, blocks until space is available.",
     "file": "packages/go-go-scope/src/priority-channel.ts"
   },
   {
     "name": "PriorityChannel.trySend",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Try to send a value without blocking. Returns true if the value was sent, false if the buffer is full. @param value - The value to send @returns {boolean} True if sent, false if buffer full @see {@lin",
+    "description": "Try to send a value without blocking. Returns true if the value was sent, false if the buffer is full.",
     "file": "packages/go-go-scope/src/priority-channel.ts"
   },
   {
     "name": "PriorityChannel.sendOrDrop",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Send a value or drop it if the buffer is full. If the buffer has space, inserts the value. If the buffer is full, calls the onDrop callback if configured. @param value - The value to send @see {@link ",
+    "description": "Send a value or drop it if the buffer is full. If the buffer has space, inserts the value. If the buffer is full, calls the onDrop callback if configured.",
     "file": "packages/go-go-scope/src/priority-channel.ts"
   },
   {
     "name": "PriorityChannel.receive",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Receive the highest priority value from the channel. Returns the highest priority item immediately if available. If the buffer is empty, blocks until an item is sent or the channel is closed. @returns",
+    "description": "Receive the highest priority value from the channel. Returns the highest priority item immediately if available. If the buffer is empty, blocks until an item is sent or the channel is closed.",
     "file": "packages/go-go-scope/src/priority-channel.ts"
   },
   {
     "name": "PriorityChannel.tryReceive",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Try to receive without blocking. Returns the highest priority value immediately if available, or undefined if the buffer is empty. @returns {T | undefined} The highest priority item, or undefined if e",
+    "description": "Try to receive without blocking. Returns the highest priority value immediately if available, or undefined if the buffer is empty.",
     "file": "packages/go-go-scope/src/priority-channel.ts"
   },
   {
     "name": "PriorityChannel.peek",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Peek at the highest priority value without removing it. @returns {T | undefined} The highest priority item, or undefined if empty @see {@link PriorityChannel.receive} For removing items @see {@link Pr",
+    "description": "Peek at the highest priority value without removing it.",
     "file": "packages/go-go-scope/src/priority-channel.ts"
   },
   {
     "name": "PriorityChannel.close",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Close the channel. No more sends are allowed after closing. Pending receives will get remaining values. Waiting senders will be rejected. @see {@link PriorityChannel.isClosed} Check if closed @see {@l",
+    "description": "Close the channel. No more sends are allowed after closing. Pending receives will get remaining values. Waiting senders will be rejected.",
     "file": "packages/go-go-scope/src/priority-channel.ts"
   },
   {
     "name": "PriorityChannel.notifyReceivers",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Notify waiting receivers that items are available. @internal",
+    "description": "Notify waiting receivers that items are available.",
     "file": "packages/go-go-scope/src/priority-channel.ts"
   },
   {
     "name": "PriorityChannel.processWaitingSenders",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Process waiting senders when space becomes available. @internal",
+    "description": "Process waiting senders when space becomes available.",
     "file": "packages/go-go-scope/src/priority-channel.ts"
   },
   {
     "name": "PriorityChannel.drainQueues",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Drain all queues on abort. @internal",
+    "description": "Drain all queues on abort.",
     "file": "packages/go-go-scope/src/priority-channel.ts"
   },
   {
@@ -2670,7 +2670,7 @@
     "name": "HealthCheckResult",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Health check result for a resource. Returned by the health check function to indicate whether a resource is healthy and can continue to be used. @interface @example ```typescript const healthCheck = a",
+    "description": "Health check result for a resource. Returned by the health check function to indicate whether a resource is healthy and can continue to be used.",
     "file": "packages/go-go-scope/src/resource-pool.ts"
   },
   {
@@ -2684,7 +2684,7 @@
     "name": "ResourcePool.initialize",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Initialize the pool with minimum resources. Called automatically on first acquire if not already initialized. Pre-warms the pool by creating resources up to the configured minimum. @returns {Promise<v",
+    "description": "Initialize the pool with minimum resources. Called automatically on first acquire if not already initialized. Pre-warms the pool by creating resources up to the configured minimum.",
     "file": "packages/go-go-scope/src/resource-pool.ts"
   },
   {
@@ -2719,14 +2719,14 @@
     "name": "ResourcePool.startHealthChecks",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Start periodic health checks. @internal Called by constructor when healthCheckInterval is configured",
+    "description": "Start periodic health checks.",
     "file": "packages/go-go-scope/src/resource-pool.ts"
   },
   {
     "name": "ResourcePool.removeResource",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Remove a resource from the pool and destroy it. @internal",
+    "description": "Remove a resource from the pool and destroy it.",
     "file": "packages/go-go-scope/src/resource-pool.ts"
   },
   {
@@ -2747,7 +2747,7 @@
     "name": "linear",
     "kind": "function",
     "package": "go-go-scope",
-    "description": "Linear increasing delay. Returns a delay function that increases linearly with each attempt. The delay for attempt n is: baseDelay + increment * (n - 1) @param baseDelay - Base delay in milliseconds f",
+    "description": "Linear increasing delay. Returns a delay function that increases linearly with each attempt. The delay for attempt n is: baseDelay + increment * (n - 1) #__PURE__",
     "file": "packages/go-go-scope/src/retry-strategies.ts"
   },
   {
@@ -2782,7 +2782,7 @@
     "name": "Scope",
     "kind": "class",
     "package": "go-go-scope",
-    "description": "A Scope for structured concurrency.  // @ts-expect-error TypeScript may not recognize Symbol.asyncDispose in all configurations",
+    "description": "A Scope for structured concurrency. // @ts-expect-error TypeScript may not recognize Symbol.asyncDispose in all configurations",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
@@ -2796,21 +2796,21 @@
     "name": "Scope.resumeTask",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Resume a task from its last checkpoint. If a checkpoint exists for the task ID, the task will be executed with the checkpoint data available in the context. @param taskId - The unique task ID to resum",
+    "description": "Resume a task from its last checkpoint. If a checkpoint exists for the task ID, the task will be executed with the checkpoint data available in the context.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Scope.parallel",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Run multiple tasks in parallel with optional concurrency limit. All tasks run within this scope and are cancelled together on failure. @typeParam T - Tuple type of factory functions @param factories -",
+    "description": "Run multiple tasks in parallel with optional concurrency limit. All tasks run within this scope and are cancelled together on failure.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Scope.race",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Race multiple tasks against each other - first to settle wins. @typeParam T - The type of value returned by the task factories @param factories - Array of factory functions that receive AbortSignal an",
+    "description": "Race multiple tasks against each other - first to settle wins.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
@@ -2824,56 +2824,56 @@
     "name": "Scope.setContext",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Set a context value that will be available to all tasks in this scope. Context values are inherited by child scopes. @param key - Context key @param value - Context value @returns This scope for chain",
+    "description": "Set a context value that will be available to all tasks in this scope. Context values are inherited by child scopes.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Scope.getContext",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Get a context value by key. Returns undefined if the key doesn't exist. @param key - Context key @returns The context value or undefined @example ```typescript await using s = scope({ context: { reque",
+    "description": "Get a context value by key. Returns undefined if the key doesn't exist.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Scope.hasContext",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Check if a context key exists. @param key - Context key @returns True if the key exists in context",
+    "description": "Check if a context key exists.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Scope.removeContext",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Remove a context value by key. @param key - Context key to remove @returns True if the key was removed, false if it didn't exist",
+    "description": "Remove a context value by key.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Scope.getAllContext",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Get all context values as a readonly object. @returns Readonly copy of the context object",
+    "description": "Get all context values as a readonly object.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Scope.eventEmitter",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Create a scoped EventEmitter with automatic cleanup. All listeners are automatically removed when the scope is disposed. @example ```typescript await using s = scope(); const emitter = s.eventEmitter<",
+    "description": "Create a scoped EventEmitter with automatic cleanup. All listeners are automatically removed when the scope is disposed.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Scope.acquireLock",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Acquire a lock for exclusive or shared access. Automatically integrates with scope for cancellation and cleanup. @example ```typescript // Exclusive lock (mutex) await using s = scope() const lock = s",
+    "description": "Acquire a lock for exclusive or shared access. Automatically integrates with scope for cancellation and cleanup.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Scope.poll",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Polls a function at regular intervals with structured concurrency. @typeParam T - The type of value returned by the polled function @param fn - The async function to poll. Receives AbortSignal for can",
+    "description": "Polls a function at regular intervals with structured concurrency.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
@@ -2887,35 +2887,35 @@
     "name": "Scope.throttle",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Create a throttled function that only invokes the provided function at most once per every `wait` milliseconds. Automatically cancelled when the scope is disposed. @typeParam T - The return type of th",
+    "description": "Create a throttled function that only invokes the provided function at most once per every `wait` milliseconds. Automatically cancelled when the scope is disposed.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Scope.delay",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Delay execution for a specified number of milliseconds. Automatically cancelled when the scope is disposed. @param ms - Number of milliseconds to delay @returns Promise that resolves after the delay @",
+    "description": "Delay execution for a specified number of milliseconds. Automatically cancelled when the scope is disposed.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Scope.batch",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Create a batch processor that accumulates items and processes them in batches. Automatically flushes when batch is full or timeout is reached. Auto-flushes on scope disposal. @typeParam T - The type o",
+    "description": "Create a batch processor that accumulates items and processes them in batches. Automatically flushes when batch is full or timeout is reached. Auto-flushes on scope disposal.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Scope.every",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Execute a function repeatedly at a fixed interval. Automatically cancelled when the scope is disposed. @param intervalMs - Interval in milliseconds between executions @param fn - Function to execute. ",
+    "description": "Execute a function repeatedly at a fixed interval. Automatically cancelled when the scope is disposed.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Scope.any",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Wait for the first successful result from multiple tasks. Similar to Promise.any but returns a Result tuple and cancels remaining tasks. @param factories - Array of factory functions that create promi",
+    "description": "Wait for the first successful result from multiple tasks. Similar to Promise.any but returns a Result tuple and cancels remaining tasks.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
@@ -2929,14 +2929,14 @@
     "name": "Scope.memoryUsage",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Get current memory usage information. Returns the current heap usage and limit information. @returns MemoryUsage object or undefined if memory monitoring is not available @example ```typescript await ",
+    "description": "Get current memory usage information. Returns the current heap usage and limit information.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Scope.setMemoryLimit",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Update the memory limit for this scope. Only works if memory monitoring was enabled at creation. @param limit - New memory limit (bytes or string like '100mb') @example ```typescript await using s = s",
+    "description": "Update the memory limit for this scope. Only works if memory monitoring was enabled at creation.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
@@ -2957,112 +2957,112 @@
     "name": "Scope.createChild",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Create a child scope that inherits from this scope. The child scope inherits signal, services, and traceId from the parent. @example ```typescript await using parent = scope({ name: 'parent' }); const",
+    "description": "Create a child scope that inherits from this scope. The child scope inherits signal, services, and traceId from the parent.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Scope.debugTree",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Generate a visual tree representation of the scope hierarchy. Supports ASCII and Mermaid diagram formats. @example ```typescript await using s = scope({ name: 'root' }); const child = s.createChild({ ",
+    "description": "Generate a visual tree representation of the scope hierarchy. Supports ASCII and Mermaid diagram formats.",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
     "name": "Semaphore",
     "kind": "class",
     "package": "go-go-scope",
-    "description": "A Semaphore for limiting concurrent access to a resource. Respects scope cancellation and supports priority-based acquisition. @see Semaphore (module-level documentation for detailed examples)  #__PUR",
+    "description": "A Semaphore for limiting concurrent access to a resource. Respects scope cancellation and supports priority-based acquisition. #__PURE__",
     "file": "packages/go-go-scope/src/semaphore.ts"
   },
   {
     "name": "Semaphore.acquire",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Acquire a permit and execute the function. Blocks if no permits are available until one becomes free. The permit is automatically released when the function completes (whether successful or not). @typ",
+    "description": "Acquire a permit and execute the function. Blocks if no permits are available until one becomes free. The permit is automatically released when the function completes (whether successful or not).",
     "file": "packages/go-go-scope/src/semaphore.ts"
   },
   {
     "name": "Semaphore.execute",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Execute a function with an acquired permit. Alias for {@link acquire}. Use whichever method name reads better in your code context. @typeParam T - Return type of the function @param fn - Function to e",
+    "description": "Execute a function with an acquired permit. Alias for {@link acquire}. Use whichever method name reads better in your code context.",
     "file": "packages/go-go-scope/src/semaphore.ts"
   },
   {
     "name": "Semaphore.tryAcquire",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Try to acquire a permit without blocking. Returns immediately, indicating whether a permit was acquired. Use this when you want to fail fast rather than wait. @returns true if permit was acquired, fal",
+    "description": "Try to acquire a permit without blocking. Returns immediately, indicating whether a permit was acquired. Use this when you want to fail fast rather than wait.",
     "file": "packages/go-go-scope/src/semaphore.ts"
   },
   {
     "name": "Semaphore.tryAcquireWithFn",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Try to acquire a permit and execute a function. If a permit is available, executes the function and returns its result. If no permit is available, returns undefined immediately without waiting. @typeP",
+    "description": "Try to acquire a permit and execute a function. If a permit is available, executes the function and returns its result. If no permit is available, returns undefined immediately without waiting.",
     "file": "packages/go-go-scope/src/semaphore.ts"
   },
   {
     "name": "Semaphore.acquireWithTimeout",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Acquire a permit with a timeout. Waits up to the specified timeout for a permit to become available. @param timeoutMs - Maximum time to wait in milliseconds @returns Promise that resolves to true if p",
+    "description": "Acquire a permit with a timeout. Waits up to the specified timeout for a permit to become available.",
     "file": "packages/go-go-scope/src/semaphore.ts"
   },
   {
     "name": "Semaphore.acquireWithTimeoutAndFn",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Acquire a permit with timeout and execute a function. If the timeout is reached before a permit becomes available, returns undefined without executing the function. @typeParam T - Return type of the f",
+    "description": "Acquire a permit with timeout and execute a function. If the timeout is reached before a permit becomes available, returns undefined without executing the function.",
     "file": "packages/go-go-scope/src/semaphore.ts"
   },
   {
     "name": "Semaphore.bulkAcquire",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Acquire multiple permits at once. Blocks until all requested permits are available. Useful when a task needs exclusive access or multiple resources. @typeParam T - Return type of the function @param c",
+    "description": "Acquire multiple permits at once. Blocks until all requested permits are available. Useful when a task needs exclusive access or multiple resources.",
     "file": "packages/go-go-scope/src/semaphore.ts"
   },
   {
     "name": "Semaphore.tryBulkAcquire",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Try to acquire multiple permits without blocking. Returns immediately, indicating whether the permits were acquired. @param count - Number of permits to acquire @returns true if permits were acquired,",
+    "description": "Try to acquire multiple permits without blocking. Returns immediately, indicating whether the permits were acquired.",
     "file": "packages/go-go-scope/src/semaphore.ts"
   },
   {
     "name": "Semaphore.wait",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Wait for a permit to become available. @param priority - Higher priority tasks are processed first (default: 0) @returns Promise that resolves when a permit is acquired @throws {unknown} If the scope ",
+    "description": "Wait for a permit to become available.",
     "file": "packages/go-go-scope/src/semaphore.ts"
   },
   {
     "name": "Semaphore.release",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Release a permit. If there are waiting tasks, the permit is given to the highest priority waiter. Otherwise, it becomes available for future acquires. @internal",
+    "description": "Release a permit. If there are waiting tasks, the permit is given to the highest priority waiter. Otherwise, it becomes available for future acquires.",
     "file": "packages/go-go-scope/src/semaphore.ts"
   },
   {
     "name": "Semaphore.waitForMultiple",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Wait for multiple permits to become available. @param count - Number of permits to wait for @returns Promise that resolves when all permits are acquired @throws {unknown} If the scope is aborted @inte",
+    "description": "Wait for multiple permits to become available.",
     "file": "packages/go-go-scope/src/semaphore.ts"
   },
   {
     "name": "Semaphore.releaseMultiple",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Release multiple permits. @param count - Number of permits to release @internal",
+    "description": "Release multiple permits.",
     "file": "packages/go-go-scope/src/semaphore.ts"
   },
   {
     "name": "Semaphore.drainQueue",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Drain the queue, rejecting all pending acquires. @internal",
+    "description": "Drain the queue, rejecting all pending acquires.",
     "file": "packages/go-go-scope/src/semaphore.ts"
   },
   {
@@ -3076,7 +3076,7 @@
     "name": "SharedWorkerModule",
     "kind": "class",
     "package": "go-go-scope",
-    "description": "A shared worker module that can be used across multiple scopes. The module is imported once and cached, reducing overhead when used frequently across different scopes. @example ```typescript // Create",
+    "description": "A shared worker module that can be used across multiple scopes. The module is imported once and cached, reducing overhead when used frequently across different scopes.",
     "file": "packages/go-go-scope/src/shared-worker.ts"
   },
   {
@@ -3090,7 +3090,7 @@
     "name": "SharedWorkerModule.export",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Get a WorkerModuleSpec for a specific export. The returned spec can be passed to scope.task() for worker execution. @param exportName - Name of the export to use (default: 'default') @returns WorkerMo",
+    "description": "Get a WorkerModuleSpec for a specific export. The returned spec can be passed to scope.task() for worker execution.",
     "file": "packages/go-go-scope/src/shared-worker.ts"
   },
   {
@@ -3111,7 +3111,7 @@
     "name": "createSharedWorker",
     "kind": "function",
     "package": "go-go-scope",
-    "description": "Create a shared worker module that can be used across multiple scopes. @param modulePath - Path to the worker module file @param options - Options for module validation @returns Initialized SharedWork",
+    "description": "Create a shared worker module that can be used across multiple scopes.",
     "file": "packages/go-go-scope/src/shared-worker.ts"
   },
   {
@@ -3125,28 +3125,28 @@
     "name": "Task.setupAbortController",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Setup AbortController and link to parent signal. Called lazily when signal is accessed or task starts. @internal",
+    "description": "Setup AbortController and link to parent signal. Called lazily when signal is accessed or task starts.",
     "file": "packages/go-go-scope/src/task.ts"
   },
   {
     "name": "Task.start",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Start the task execution if not already started. Optimized to minimize microtask overhead. This is called automatically when the task is awaited or `.then()` is called. @internal",
+    "description": "Start the task execution if not already started. Optimized to minimize microtask overhead. This is called automatically when the task is awaited or `.then()` is called.",
     "file": "packages/go-go-scope/src/task.ts"
   },
   {
     "name": "Task.then",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Attaches callbacks for the resolution and/or rejection of the task. Implements the PromiseLike interface. Calling this method starts task execution if it hasn't started yet. @typeParam TResult1 - The ",
+    "description": "Attaches callbacks for the resolution and/or rejection of the task. Implements the PromiseLike interface. Calling this method starts task execution if it hasn't started yet. // biome-ignore lint/suspi",
     "file": "packages/go-go-scope/src/task.ts"
   },
   {
     "name": "Task.catch",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Attaches a callback for only the rejection of the task. Convenience method equivalent to `.then(undefined, onrejected)`. Calling this method starts task execution if it hasn't started yet. @typeParam ",
+    "description": "Attaches a callback for only the rejection of the task. Convenience method equivalent to `.then(undefined, onrejected)`. Calling this method starts task execution if it hasn't started yet.",
     "file": "packages/go-go-scope/src/task.ts"
   },
   {
@@ -3160,7 +3160,7 @@
     "name": "TokenBucketOptions",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Options for creating a token bucket rate limiter. @interface @see {@link createTokenBucket} Factory function @see {@link TokenBucket} The token bucket class @example ```typescript // Local rate limiti",
+    "description": "Options for creating a token bucket rate limiter.",
     "file": "packages/go-go-scope/src/token-bucket.ts"
   },
   {
@@ -3174,98 +3174,98 @@
     "name": "TokenBucket.getTokens",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Get the current number of tokens available. Automatically refills tokens based on elapsed time since last check. In distributed mode, retrieves state from the cache provider. @returns {Promise<number>",
+    "description": "Get the current number of tokens available. Automatically refills tokens based on elapsed time since last check. In distributed mode, retrieves state from the cache provider.",
     "file": "packages/go-go-scope/src/token-bucket.ts"
   },
   {
     "name": "TokenBucket.tryConsume",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Try to consume tokens without blocking. Returns true if tokens were consumed, false otherwise. Does not wait for tokens to become available. @param tokens - Number of tokens to consume (default: 1) @r",
+    "description": "Try to consume tokens without blocking. Returns true if tokens were consumed, false otherwise. Does not wait for tokens to become available.",
     "file": "packages/go-go-scope/src/token-bucket.ts"
   },
   {
     "name": "TokenBucket.acquire",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Acquire tokens and execute a function. Blocks until the required tokens are available, then executes the provided function. The tokens are consumed before the function executes. @template T Return typ",
+    "description": "Acquire tokens and execute a function. Blocks until the required tokens are available, then executes the provided function. The tokens are consumed before the function executes.",
     "file": "packages/go-go-scope/src/token-bucket.ts"
   },
   {
     "name": "TokenBucket.acquireWithTimeout",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Acquire tokens with a timeout. Attempts to acquire tokens within the specified timeout. Returns undefined if timeout is reached before tokens are available. @template T Return type of the function @pa",
+    "description": "Acquire tokens with a timeout. Attempts to acquire tokens within the specified timeout. Returns undefined if timeout is reached before tokens are available.",
     "file": "packages/go-go-scope/src/token-bucket.ts"
   },
   {
     "name": "TokenBucket.reset",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Reset the bucket to full capacity. Sets tokens to capacity and updates the last refill time. In distributed mode, updates the state in the cache. @returns {Promise<void>} Resolves when reset is comple",
+    "description": "Reset the bucket to full capacity. Sets tokens to capacity and updates the last refill time. In distributed mode, updates the state in the cache.",
     "file": "packages/go-go-scope/src/token-bucket.ts"
   },
   {
     "name": "TokenBucket.getState",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Get the current bucket state. Returns the current token count along with capacity and refill rate. Tokens are refilled before returning the state. @returns {Promise<Object>} Current bucket state @retu",
+    "description": "Get the current bucket state. Returns the current token count along with capacity and refill rate. Tokens are refilled before returning the state.",
     "file": "packages/go-go-scope/src/token-bucket.ts"
   },
   {
     "name": "TokenBucket.refill",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Refill tokens based on elapsed time. @internal",
+    "description": "Refill tokens based on elapsed time.",
     "file": "packages/go-go-scope/src/token-bucket.ts"
   },
   {
     "name": "TokenBucket.tryConsumeLocal",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Try to consume tokens locally. @internal",
+    "description": "Try to consume tokens locally.",
     "file": "packages/go-go-scope/src/token-bucket.ts"
   },
   {
     "name": "TokenBucket.waitForTokens",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Wait for tokens to become available. @internal Blocks until tokens are available",
+    "description": "Wait for tokens to become available.",
     "file": "packages/go-go-scope/src/token-bucket.ts"
   },
   {
     "name": "TokenBucket.waitForTokensWithTimeout",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Wait for tokens with timeout. @internal @returns True if tokens were acquired, false if timeout",
+    "description": "Wait for tokens with timeout.",
     "file": "packages/go-go-scope/src/token-bucket.ts"
   },
   {
     "name": "TokenBucket.getDistributedTokens",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "// Distributed implementation using cache provider  Get tokens from distributed cache. @internal",
+    "description": "// Distributed implementation using cache provider Get tokens from distributed cache.",
     "file": "packages/go-go-scope/src/token-bucket.ts"
   },
   {
     "name": "TokenBucket.tryConsumeDistributed",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Try to consume tokens in distributed mode. @internal",
+    "description": "Try to consume tokens in distributed mode.",
     "file": "packages/go-go-scope/src/token-bucket.ts"
   },
   {
     "name": "TokenBucket.resetDistributed",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Reset bucket in distributed mode. @internal",
+    "description": "Reset bucket in distributed mode.",
     "file": "packages/go-go-scope/src/token-bucket.ts"
   },
   {
     "name": "createTokenBucket",
     "kind": "function",
     "package": "go-go-scope",
-    "description": "Create a token bucket rate limiter. Factory function for creating TokenBucket instances. Supports both local (in-memory) and distributed (via cache provider) rate limiting. @param options - Configurat",
+    "description": "Create a token bucket rate limiter. Factory function for creating TokenBucket instances. Supports both local (in-memory) and distributed (via cache provider) rate limiting.",
     "file": "packages/go-go-scope/src/token-bucket.ts"
   },
   {
@@ -3279,14 +3279,14 @@
     "name": "Failure",
     "kind": "type",
     "package": "go-go-scope",
-    "description": "Represents a failed Result tuple with an error and no value. The first element is the error, the second is undefined (no value). @template E - The type of the error @example ```typescript import { Fai",
+    "description": "Represents a failed Result tuple with an error and no value. The first element is the error, the second is undefined (no value).",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "Result",
     "kind": "type",
     "package": "go-go-scope",
-    "description": "Represents a Result tuple that can be either success or failure. Follows the pattern [error, value] where exactly one is defined. @template E - The type of the error @template T - The type of the succ",
+    "description": "Represents a Result tuple that can be either success or failure. Follows the pattern [error, value] where exactly one is defined.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
@@ -3300,42 +3300,42 @@
     "name": "ErrorConstructor",
     "kind": "type",
     "package": "go-go-scope",
-    "description": "Error class constructor type for typed error handling. Used to specify which error class should wrap task errors. @template E - The error type the constructor creates @example ```typescript import { E",
+    "description": "Error class constructor type for typed error handling. Used to specify which error class should wrap task errors.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "RetryDelayFn",
     "kind": "type",
     "package": "go-go-scope",
-    "description": "Retry delay function type. Called for each retry attempt to determine how long to wait. @param attempt - The current attempt number (1-based, after first failure) @param error - The error that caused ",
+    "description": "Retry delay function type. Called for each retry attempt to determine how long to wait.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "RetryStrategies",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Predefined retry delay strategies. Provides built-in implementations for common retry patterns. @example ```typescript import { scope, RetryStrategies } from 'go-go-scope'; await using s = scope(); //",
+    "description": "Predefined retry delay strategies. Provides built-in implementations for common retry patterns.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "CheckpointContext",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Checkpoint context passed to task functions when checkpoint is configured. Enables long-running tasks to save progress and resume after interruption. @template T - The type of checkpoint data being sa",
+    "description": "Checkpoint context passed to task functions when checkpoint is configured. Enables long-running tasks to save progress and resume after interruption.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "ProgressContext",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Progress tracking context passed to task functions. Allows tasks to report their progress percentage and estimated time remaining. @example ```typescript import { scope, ProgressContext } from 'go-go-",
+    "description": "Progress tracking context passed to task functions. Allows tasks to report their progress percentage and estimated time remaining.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "TaskContext",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Context passed to task functions. Contains all utilities and information available within a task execution. @template Services - The type of services available from the scope @example ```typescript im",
+    "description": "Context passed to task functions. Contains all utilities and information available within a task execution.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
@@ -3370,28 +3370,28 @@
     "name": "WorkerModuleSpec",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Worker module specification for loading tasks from files. Use this instead of a function to load code from a worker file. @template TData - The type of data passed to the worker @template TResult - Th",
+    "description": "Worker module specification for loading tasks from files. Use this instead of a function to load code from a worker file.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "ScopeHooks",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Lifecycle hooks for scope events. Register callbacks to be notified of scope and task lifecycle events. @example ```typescript import { scope, ScopeHooks } from 'go-go-scope'; const hooks: ScopeHooks ",
+    "description": "Lifecycle hooks for scope events. Register callbacks to be notified of scope and task lifecycle events.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "DebounceOptions",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Options for debounce function. Controls the timing and behavior of debounced operations. @example ```typescript import { scope, DebounceOptions } from 'go-go-scope'; await using s = scope(); const opt",
+    "description": "Options for debounce function. Controls the timing and behavior of debounced operations.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "ThrottleOptions",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Options for throttle function. Controls the timing and behavior of throttled operations. @example ```typescript import { scope, ThrottleOptions } from 'go-go-scope'; await using s = scope(); const opt",
+    "description": "Options for throttle function. Controls the timing and behavior of throttled operations.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
@@ -3405,84 +3405,84 @@
     "name": "CircuitBreakerOptions",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Options for configuring a circuit breaker in a scope. Pass these to `scope({ circuitBreaker: {...} })` to enable circuit breaking for all tasks spawned within that scope. @example ```typescript import",
+    "description": "Options for configuring a circuit breaker in a scope. Pass these to `scope({ circuitBreaker: {...} })` to enable circuit breaking for all tasks spawned within that scope.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "CircuitState",
     "kind": "type",
     "package": "go-go-scope",
-    "description": "Circuit breaker states. @deprecated Use {@link CircuitBreakerState} instead",
+    "description": "Circuit breaker states.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "RaceOptions",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Options for the race function. Configures the behavior of racing multiple tasks. @example ```typescript import { scope, RaceOptions } from 'go-go-scope'; await using s = scope(); const options: RaceOp",
+    "description": "Options for the race function. Configures the behavior of racing multiple tasks.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "PollOptions",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Options for the poll function. Configures polling behavior including interval and immediate execution. @example ```typescript import { scope, PollOptions } from 'go-go-scope'; await using s = scope();",
+    "description": "Options for the poll function. Configures polling behavior including interval and immediate execution.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "PollController",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Controller for a polling operation. Allows starting, stopping, and checking status. Automatically stops polling when disposed. @example ```typescript import { scope, PollController } from 'go-go-scope",
+    "description": "Controller for a polling operation. Allows starting, stopping, and checking status. Automatically stops polling when disposed.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "SelectOptions",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Options for select() with timeout support. Controls the behavior of the select statement for channel operations. @example ```typescript import { scope, SelectOptions } from 'go-go-scope'; await using ",
+    "description": "Options for select() with timeout support. Controls the behavior of the select statement for channel operations.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "Logger",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Logger interface for structured logging integration. Implement this interface to provide custom logging backends. @example ```typescript import { Logger } from 'go-go-scope'; // Custom logger implemen",
+    "description": "Logger interface for structured logging integration. Implement this interface to provide custom logging backends.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "ScopeLoggingOptions",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Options for scope with logging. Configures logging behavior when creating a scope. @example ```typescript import { scope, ScopeLoggingOptions, ConsoleLogger } from 'go-go-scope'; const options: ScopeL",
+    "description": "Options for scope with logging. Configures logging behavior when creating a scope.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "DisposableScope",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Minimal scope interface for rate limiting functions. Used to avoid circular dependencies. @example ```typescript import { DisposableScope } from 'go-go-scope'; function createRateLimiter(scope: Dispos",
+    "description": "Minimal scope interface for rate limiting functions. Used to avoid circular dependencies.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "ResourcePoolOptions",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Resource pool configuration. Options for creating and managing a pool of reusable resources. @template T - The type of resource being pooled @example ```typescript import { scope, ResourcePoolOptions ",
+    "description": "Resource pool configuration. Options for creating and managing a pool of reusable resources.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "FactoryResult",
     "kind": "type",
     "package": "go-go-scope",
-    "description": "Helper type to extract the promise resolve type from a factory function. Extracts the return type from a task factory function. @template T - The factory function type @example ```typescript import { ",
+    "description": "Helper type to extract the promise resolve type from a factory function. Extracts the return type from a task factory function.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
     "name": "ParallelResults",
     "kind": "type",
     "package": "go-go-scope",
-    "description": "Converts a tuple of factory functions to a tuple of Result types. This preserves the individual types of each factory's return value. @template T - Tuple of factory function types @template E - Error ",
+    "description": "Converts a tuple of factory functions to a tuple of Result types. This preserves the individual types of each factory's return value.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
@@ -3496,7 +3496,7 @@
     "name": "ChannelOptions",
     "kind": "interface",
     "package": "go-go-scope",
-    "description": "Options for creating a Channel. Configures buffer capacity, backpressure behavior, and callbacks. @template T - The type of values passing through the channel @example ```typescript import { scope, Ch",
+    "description": "Options for creating a Channel. Configures buffer capacity, backpressure behavior, and callbacks.",
     "file": "packages/go-go-scope/src/types.ts"
   },
   {
@@ -3538,7 +3538,7 @@
     "name": "WorkerPool",
     "kind": "class",
     "package": "go-go-scope",
-    "description": "A pool of worker threads for executing CPU-intensive tasks. Implements AsyncDisposable for structured concurrency. @example ```typescript await using pool = new WorkerPool({ size: 4 }); const result =",
+    "description": "A pool of worker threads for executing CPU-intensive tasks. Implements AsyncDisposable for structured concurrency.",
     "file": "packages/go-go-scope/src/worker-pool.ts"
   },
   {
@@ -3552,7 +3552,7 @@
     "name": "WorkerPool.executeModule",
     "kind": "method",
     "package": "go-go-scope",
-    "description": "Execute a function from a module file in a worker thread. The module is loaded by the worker, not serialized. @param modulePath - Path to the module file @param exportName - Name of the export to use ",
+    "description": "Execute a function from a module file in a worker thread. The module is loaded by the worker, not serialized.",
     "file": "packages/go-go-scope/src/worker-pool.ts"
   },
   {
@@ -3636,28 +3636,28 @@
     "name": "adaptPino",
     "kind": "function",
     "package": "logger",
-    "description": "Adapter for Pino logger @example ```typescript import pino from 'pino' import { adaptPino } from '@go-go-scope/logger' const pinoLogger = pino() const logger = adaptPino(pinoLogger, {   redact: { path",
+    "description": "Adapter for Pino logger",
     "file": "packages/logger/src/index.ts"
   },
   {
     "name": "adaptWinston",
     "kind": "function",
     "package": "logger",
-    "description": "Adapter for Winston logger @example ```typescript import winston from 'winston' import { adaptWinston } from '@go-go-scope/logger' const winstonLogger = winston.createLogger({...}) const logger = adap",
+    "description": "Adapter for Winston logger",
     "file": "packages/logger/src/index.ts"
   },
   {
     "name": "createChildLogger",
     "kind": "function",
     "package": "logger",
-    "description": "Create a child logger with additional context @example ```typescript const childLogger = createChildLogger(parentLogger, {   scope: 'user-service',   requestId: 'abc-123' }) ```",
+    "description": "Create a child logger with additional context",
     "file": "packages/logger/src/index.ts"
   },
   {
     "name": "createRedactedLogger",
     "kind": "function",
     "package": "logger",
-    "description": "Create a logger with redaction support Wraps any logger to automatically redact sensitive fields. @example ```typescript import { createRedactedLogger } from '@go-go-scope/logger' const logger = creat",
+    "description": "Create a logger with redaction support Wraps any logger to automatically redact sensitive fields.",
     "file": "packages/logger/src/index.ts"
   },
   {
@@ -3902,7 +3902,7 @@
     "name": "DeadlockDetector",
     "kind": "class",
     "package": "plugin-deadlock-detector",
-    "description": "Tracks task waiting states to detect potential deadlocks. Automatically registered with scope for cleanup.  #__PURE__",
+    "description": "Tracks task waiting states to detect potential deadlocks. Automatically registered with scope for cleanup. #__PURE__",
     "file": "packages/plugin-deadlock-detector/src/index.ts"
   },
   {
@@ -4623,7 +4623,7 @@
     "name": "Profiler",
     "kind": "class",
     "package": "plugin-profiler",
-    "description": "Profiler for tracking task execution performance. Measures time spent in each pipeline stage.  #__PURE__",
+    "description": "Profiler for tracking task execution performance. Measures time spent in each pipeline stage. #__PURE__",
     "file": "packages/plugin-profiler/src/index.ts"
   },
   {
@@ -4854,7 +4854,7 @@
     "name": "workerProfilerPlugin",
     "kind": "function",
     "package": "plugin-worker-profiler",
-    "description": "Create the worker profiler plugin @param options - Profiler configuration options @returns ScopePlugin for worker profiling @example ```typescript import { scope } from 'go-go-scope' import { workerPr",
+    "description": "Create the worker profiler plugin",
     "file": "packages/plugin-worker-profiler/src/index.ts"
   },
   {
@@ -4875,7 +4875,7 @@
     "name": "parseCron",
     "kind": "function",
     "package": "scheduler",
-    "description": "Parse a cron expression and return the next occurrence @param expression - Cron expression (5 fields: minute hour day month dayOfWeek) @param timezone - Optional IANA timezone (e.g., \"America/New_York",
+    "description": "Parse a cron expression and return the next occurrence",
     "file": "packages/scheduler/src/cron.ts"
   },
   {
@@ -4973,7 +4973,7 @@
     "name": "Scheduler.startWebUI",
     "kind": "method",
     "package": "scheduler",
-    "description": "// ============================================================================ // Web UI // ============================================================================  Start web UI server",
+    "description": "// ============================================================================ // Web UI // ============================================================================ Start web UI server",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
@@ -5008,77 +5008,77 @@
     "name": "Scheduler.createSchedule",
     "kind": "method",
     "package": "scheduler",
-    "description": "Create a schedule for recurring job execution. ⚠️ **Admin only**: This method can only be called by admin instances. Workers must use `onSchedule()` to register handlers for schedules. @param name - U",
+    "description": "Create a schedule for recurring job execution. ⚠️ **Admin only**: This method can only be called by admin instances. Workers must use `onSchedule()` to register handlers for schedules.",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
     "name": "Scheduler.deleteSchedule",
     "kind": "method",
     "package": "scheduler",
-    "description": "Delete a schedule by name. ⚠️ **Admin only**: This method can only be called by admin instances. @param name Schedule name to delete @returns true if deleted, false if not found @throws Error if calle",
+    "description": "Delete a schedule by name. ⚠️ **Admin only**: This method can only be called by admin instances.",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
     "name": "Scheduler.listSchedules",
     "kind": "method",
     "package": "scheduler",
-    "description": "List all schedules. @returns Array of all schedules",
+    "description": "List all schedules.",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
     "name": "Scheduler.getSchedule",
     "kind": "method",
     "package": "scheduler",
-    "description": "Get a schedule by name. @param name Schedule name @returns Schedule or null if not found",
+    "description": "Get a schedule by name.",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
     "name": "Scheduler.updateSchedule",
     "kind": "method",
     "package": "scheduler",
-    "description": "Update an existing schedule. ⚠️ **Admin only**: This method can only be called by admin instances. @param name - Schedule name to update @param options - Update options (only provided fields are updat",
+    "description": "Update an existing schedule. ⚠️ **Admin only**: This method can only be called by admin instances.",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
     "name": "Scheduler.pauseSchedule",
     "kind": "method",
     "package": "scheduler",
-    "description": "Pause a schedule. No new jobs will be created until resumed. ⚠️ **Admin only**: This method can only be called by admin instances. @param name Schedule name @returns Updated schedule",
+    "description": "Pause a schedule. No new jobs will be created until resumed. ⚠️ **Admin only**: This method can only be called by admin instances.",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
     "name": "Scheduler.resumeSchedule",
     "kind": "method",
     "package": "scheduler",
-    "description": "Resume a paused schedule. ⚠️ **Admin only**: This method can only be called by admin instances. @param name Schedule name @returns Updated schedule",
+    "description": "Resume a paused schedule. ⚠️ **Admin only**: This method can only be called by admin instances.",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
     "name": "Scheduler.disableSchedule",
     "kind": "method",
     "package": "scheduler",
-    "description": "Disable a schedule. Workers will skip disabled schedules. ⚠️ **Admin only**: This method can only be called by admin instances. @param name Schedule name @returns Updated schedule",
+    "description": "Disable a schedule. Workers will skip disabled schedules. ⚠️ **Admin only**: This method can only be called by admin instances.",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
     "name": "Scheduler.getScheduleStats",
     "kind": "method",
     "package": "scheduler",
-    "description": "Get statistics for a schedule. @param name Schedule name @returns Schedule statistics",
+    "description": "Get statistics for a schedule.",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
     "name": "Scheduler.triggerSchedule",
     "kind": "method",
     "package": "scheduler",
-    "description": "Trigger a schedule to run immediately. Creates a job that will execute as soon as a worker picks it up. ⚠️ **Admin only**: This method can only be called by admin instances. @param name - Schedule nam",
+    "description": "Trigger a schedule to run immediately. Creates a job that will execute as soon as a worker picks it up. ⚠️ **Admin only**: This method can only be called by admin instances.",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
     "name": "Scheduler.getAllScheduleStats",
     "kind": "method",
     "package": "scheduler",
-    "description": "Get all schedules with their statistics. @returns Array of schedule statistics",
+    "description": "Get all schedules with their statistics.",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
@@ -5092,14 +5092,14 @@
     "name": "Scheduler.offSchedule",
     "kind": "method",
     "package": "scheduler",
-    "description": "Remove a handler for a schedule. @param scheduleName Name of the schedule to remove handler for @returns true if handler was removed, false if not found",
+    "description": "Remove a handler for a schedule.",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
     "name": "Scheduler.scheduleJob",
     "kind": "method",
     "package": "scheduler",
-    "description": "Schedule a one-time job (admin only). ⚠️ **Admin only**: Workers execute jobs based on loaded schedules. @param scheduleName - Name of the schedule (must be a key of Schedules type parameter) @param p",
+    "description": "Schedule a one-time job (admin only). ⚠️ **Admin only**: Workers execute jobs based on loaded schedules.",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
@@ -5197,7 +5197,7 @@
     "name": "Scheduler.exportMetrics",
     "kind": "method",
     "package": "scheduler",
-    "description": "Export metrics in various formats. @param options - Export options @param options.format - Export format: 'json', 'prometheus', or 'otel' (default: 'json') @param options.prefix - Prefix for metric na",
+    "description": "Export metrics in various formats.",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
@@ -5239,7 +5239,7 @@
     "name": "createScheduler",
     "kind": "function",
     "package": "scheduler",
-    "description": "Create a typed scheduler instance. This is a convenience factory function that creates a Scheduler with typed schedule definitions for better type inference. @example ```typescript const scheduler = c",
+    "description": "Create a typed scheduler instance. This is a convenience factory function that creates a Scheduler with typed schedule definitions for better type inference.",
     "file": "packages/scheduler/src/scheduler.ts"
   },
   {
@@ -5414,7 +5414,7 @@
     "name": "ScheduleDefinitions",
     "kind": "type",
     "package": "scheduler",
-    "description": "// ============================================================================ // Type-safe schedule definitions // ============================================================================  Helpe",
+    "description": "// ============================================================================ // Type-safe schedule definitions // ============================================================================ Helper",
     "file": "packages/scheduler/src/types.ts"
   },
   {
@@ -5428,7 +5428,7 @@
     "name": "SchedulesOf",
     "kind": "type",
     "package": "scheduler",
-    "description": "Helper type to extract schedule types from a scheduler instance @example ```typescript const scheduler = new Scheduler<AppSchedules>({ storage }); type MySchedules = SchedulesOf<typeof scheduler>; // ",
+    "description": "Helper type to extract schedule types from a scheduler instance",
     "file": "packages/scheduler/src/types.ts"
   },
   {
@@ -5449,35 +5449,35 @@
     "name": "Scheduler",
     "kind": "class",
     "package": "scheduler",
-    "description": "Scheduler class with typed schedules @template Schedules - Record mapping schedule names to their payload types @example ```typescript type AppSchedules = {   'send-email': { to: string; subject: stri",
+    "description": "Scheduler class with typed schedules",
     "file": "packages/scheduler/src/types.ts"
   },
   {
     "name": "Scheduler.onSchedule",
     "kind": "method",
     "package": "scheduler",
-    "description": "Register a typed handler for a schedule. The handler will be called when jobs for this schedule become available. @param name - Schedule name (must be a key of Schedules) @param handler - Handler func",
+    "description": "Register a typed handler for a schedule. The handler will be called when jobs for this schedule become available.",
     "file": "packages/scheduler/src/types.ts"
   },
   {
     "name": "Scheduler.triggerSchedule",
     "kind": "method",
     "package": "scheduler",
-    "description": "Trigger a schedule to run immediately. Creates a job that will execute as soon as a worker picks it up. @param name - Schedule name (must be a key of Schedules) @param payload - Typed payload for the ",
+    "description": "Trigger a schedule to run immediately. Creates a job that will execute as soon as a worker picks it up.",
     "file": "packages/scheduler/src/types.ts"
   },
   {
     "name": "Scheduler.scheduleJob",
     "kind": "method",
     "package": "scheduler",
-    "description": "Schedule a one-time job. @param scheduleName - Schedule name (must be a key of Schedules) @param payload - Typed payload for the job @param options - Optional scheduling options",
+    "description": "Schedule a one-time job.",
     "file": "packages/scheduler/src/types.ts"
   },
   {
     "name": "Scheduler.createSchedule",
     "kind": "method",
     "package": "scheduler",
-    "description": "Create a schedule for recurring job execution. @param name - Unique schedule name @param options - Schedule configuration",
+    "description": "Create a schedule for recurring job execution.",
     "file": "packages/scheduler/src/types.ts"
   },
   {
@@ -5666,14 +5666,14 @@
     "name": "createWebUI",
     "kind": "function",
     "package": "scheduler",
-    "description": "Create web UI server. @param options - Web UI configuration options @param options.port - Port to listen on (e.g., 8080) @param options.host - Host to bind to (e.g., '0.0.0.0') @param options.apiKey -",
+    "description": "Create web UI server.",
     "file": "packages/scheduler/src/web-ui.ts"
   },
   {
     "name": "stopWebUI",
     "kind": "function",
     "package": "scheduler",
-    "description": "Stop web UI server. @param server - HTTP server instance to stop @returns Promise that resolves when server is closed",
+    "description": "Stop web UI server.",
     "file": "packages/scheduler/src/web-ui.ts"
   },
   {
@@ -5687,14 +5687,14 @@
     "name": "Stream.map",
     "kind": "method",
     "package": "stream",
-    "description": "// ============================================================================ // Transformations // ============================================================================  Transform each value",
+    "description": "// ============================================================================ // Transformations // ============================================================================ Transform each value ",
     "file": "packages/stream/src/index.ts"
   },
   {
     "name": "Stream.filter",
     "kind": "method",
     "package": "stream",
-    "description": "Filter values based on a predicate function. This operation is lazy - values are tested as they flow through, and only those matching the predicate are yielded. The original stream is not modified. @p",
+    "description": "Filter values based on a predicate function. This operation is lazy - values are tested as they flow through, and only those matching the predicate are yielded. The original stream is not modified.",
     "file": "packages/stream/src/index.ts"
   },
   {
@@ -5722,7 +5722,7 @@
     "name": "Stream.catchAll",
     "kind": "method",
     "package": "stream",
-    "description": "// ============================================================================ // Error Handling // ============================================================================  Catch errors and reco",
+    "description": "// ============================================================================ // Error Handling // ============================================================================ Catch errors and recov",
     "file": "packages/stream/src/index.ts"
   },
   {
@@ -5778,7 +5778,7 @@
     "name": "Stream.take",
     "kind": "method",
     "package": "stream",
-    "description": "// ============================================================================ // Slicing // ============================================================================  Take the first n elements fr",
+    "description": "// ============================================================================ // Slicing // ============================================================================ Take the first n elements fro",
     "file": "packages/stream/src/index.ts"
   },
   {
@@ -5841,7 +5841,7 @@
     "name": "Stream.scan",
     "kind": "method",
     "package": "stream",
-    "description": "// ============================================================================ // Accumulating // ============================================================================  Scan (running fold) - e",
+    "description": "// ============================================================================ // Accumulating // ============================================================================ Scan (running fold) - em",
     "file": "packages/stream/src/index.ts"
   },
   {
@@ -5925,7 +5925,7 @@
     "name": "Stream.delay",
     "kind": "method",
     "package": "stream",
-    "description": "// ============================================================================ // Timing // ============================================================================  Add delay between elements. L",
+    "description": "// ============================================================================ // Timing // ============================================================================ Add delay between elements. La",
     "file": "packages/stream/src/index.ts"
   },
   {
@@ -5974,7 +5974,7 @@
     "name": "Stream.merge",
     "kind": "method",
     "package": "stream",
-    "description": "// ============================================================================ // Combining // ============================================================================  Merge with another stream ",
+    "description": "// ============================================================================ // Combining // ============================================================================ Merge with another stream (",
     "file": "packages/stream/src/index.ts"
   },
   {
@@ -6009,49 +6009,49 @@
     "name": "Stream.zipAll",
     "kind": "method",
     "package": "stream",
-    "description": "Zip with another stream, padding the shorter stream with a default value. Continues until both streams end. Lazy - zips as values arrive. @example ```typescript const s1 = s.stream(fromArray([1, 2, 3]",
+    "description": "Zip with another stream, padding the shorter stream with a default value. Continues until both streams end. Lazy - zips as values arrive.",
     "file": "packages/stream/src/index.ts"
   },
   {
     "name": "Stream.interleave",
     "kind": "method",
     "package": "stream",
-    "description": "Interleave values from multiple streams fairly. Takes one value from each stream in round-robin fashion. Stops when all streams end. Lazy - interleaves as values arrive. @example ```typescript const s",
+    "description": "Interleave values from multiple streams fairly. Takes one value from each stream in round-robin fashion. Stops when all streams end. Lazy - interleaves as values arrive.",
     "file": "packages/stream/src/index.ts"
   },
   {
     "name": "Stream.cross",
     "kind": "method",
     "package": "stream",
-    "description": "Cartesian product of two streams. Emits all combinations of values from both streams. Collects the entire 'other' stream into memory. Lazy for the primary stream, buffers the secondary. @example ```ty",
+    "description": "Cartesian product of two streams. Emits all combinations of values from both streams. Collects the entire 'other' stream into memory. Lazy for the primary stream, buffers the secondary.",
     "file": "packages/stream/src/index.ts"
   },
   {
     "name": "Stream.collect",
     "kind": "method",
     "package": "stream",
-    "description": "Collect values using a partial function. Only emits values where the partial function returns a non-undefined result. Lazy - filters and maps as values flow through. @example ```typescript // Parse nu",
+    "description": "Collect values using a partial function. Only emits values where the partial function returns a non-undefined result. Lazy - filters and maps as values flow through.",
     "file": "packages/stream/src/index.ts"
   },
   {
     "name": "Stream.collectWhile",
     "kind": "method",
     "package": "stream",
-    "description": "Collect values using a partial function while it returns defined values. Stops when the partial function returns undefined for the first time. Lazy - collects while defined, then stops. @example ```ty",
+    "description": "Collect values using a partial function while it returns defined values. Stops when the partial function returns undefined for the first time. Lazy - collects while defined, then stops.",
     "file": "packages/stream/src/index.ts"
   },
   {
     "name": "Stream.grouped",
     "kind": "method",
     "package": "stream",
-    "description": "Group elements into fixed-size chunks. Alias for `buffer(size)` with better semantics for grouping. Lazy - groups as values flow through. @example ```typescript const [_, groups] = await s.stream([1, ",
+    "description": "Group elements into fixed-size chunks. Alias for `buffer(size)` with better semantics for grouping. Lazy - groups as values flow through.",
     "file": "packages/stream/src/index.ts"
   },
   {
     "name": "Stream.groupedWithin",
     "kind": "method",
     "package": "stream",
-    "description": "Group elements into chunks by size and/or time window. Emits a chunk when either the size limit is reached OR the time window expires. Lazy - groups as values flow through. @example ```typescript // G",
+    "description": "Group elements into chunks by size and/or time window. Emits a chunk when either the size limit is reached OR the time window expires. Lazy - groups as values flow through.",
     "file": "packages/stream/src/index.ts"
   },
   {
@@ -6065,21 +6065,21 @@
     "name": "Stream.switchMap",
     "kind": "method",
     "package": "stream",
-    "description": "// ============================================================================ // Advanced // ============================================================================  Switch map - cancel previou",
+    "description": "// ============================================================================ // Advanced // ============================================================================ Switch map - cancel previous",
     "file": "packages/stream/src/index.ts"
   },
   {
     "name": "Stream.pairwise",
     "kind": "method",
     "package": "stream",
-    "description": "Pairwise - emit [previous, current] tuples. Useful for computing diffs or detecting changes. @example ```typescript const [_, pairs] = await s.stream([1, 2, 3, 4])   .pairwise()   .toArray() // pairs ",
+    "description": "Pairwise - emit [previous, current] tuples. Useful for computing diffs or detecting changes.",
     "file": "packages/stream/src/index.ts"
   },
   {
     "name": "Stream.window",
     "kind": "method",
     "package": "stream",
-    "description": "Sliding window - emit arrays of up to `size` elements. Each new element shifts the window forward by one. @example ```typescript const [_, windows] = await s.stream([1, 2, 3, 4, 5])   .window(3)   .to",
+    "description": "Sliding window - emit arrays of up to `size` elements. Each new element shifts the window forward by one.",
     "file": "packages/stream/src/index.ts"
   },
   {
@@ -6093,7 +6093,7 @@
     "name": "Stream.exhaustMap",
     "kind": "method",
     "package": "stream",
-    "description": "ExhaustMap - ignore new emissions while processing. Maps each value to an async iterable, but ignores new source values while the previous inner iterable is still running. @example ```typescript // Se",
+    "description": "ExhaustMap - ignore new emissions while processing. Maps each value to an async iterable, but ignores new source values while the previous inner iterable is still running.",
     "file": "packages/stream/src/index.ts"
   },
   {
@@ -6107,7 +6107,7 @@
     "name": "Stream.partition",
     "kind": "method",
     "package": "stream",
-    "description": "// ============================================================================ // Splitting // ============================================================================  Partition stream into two ",
+    "description": "// ============================================================================ // Splitting // ============================================================================ Partition stream into two b",
     "file": "packages/stream/src/index.ts"
   },
   {
@@ -6135,7 +6135,7 @@
     "name": "Stream.toArray",
     "kind": "method",
     "package": "stream",
-    "description": "// ============================================================================ // Terminal Operations // ============================================================================  Collect all valu",
+    "description": "// ============================================================================ // Terminal Operations // ============================================================================ Collect all value",
     "file": "packages/stream/src/index.ts"
   },
   {
@@ -6289,7 +6289,7 @@
     "name": "Stream.pipe",
     "kind": "method",
     "package": "stream",
-    "description": "Pipe the stream through a series of transformation functions. Enables functional composition of stream operations by applying a chain of transformation functions in order. @template U - The type of va",
+    "description": "Pipe the stream through a series of transformation functions. Enables functional composition of stream operations by applying a chain of transformation functions in order.",
     "file": "packages/stream/src/index.ts"
   },
   {
@@ -6345,56 +6345,56 @@
     "name": "TaskAssertion",
     "kind": "interface",
     "package": "testing",
-    "description": "Assertion result with fluent helper methods for task validation. Provides a chainable API for asserting various aspects of task execution. @typeparam T - The type of the successful task result @exampl",
+    "description": "Assertion result with fluent helper methods for task validation. Provides a chainable API for asserting various aspects of task execution.",
     "file": "packages/testing/src/assertions.ts"
   },
   {
     "name": "expectTask",
     "kind": "function",
     "package": "testing",
-    "description": "Creates assertion helpers for a task. Provides a fluent API for asserting task resolution, rejection, and timing. @typeparam T - The type of the successful task result @param task - The task to assert",
+    "description": "Creates assertion helpers for a task. Provides a fluent API for asserting task resolution, rejection, and timing.",
     "file": "packages/testing/src/assertions.ts"
   },
   {
     "name": "assertResolves",
     "kind": "function",
     "package": "testing",
-    "description": "Asserts that a task resolves successfully. Throws an error if the task rejects, otherwise returns the result tuple. @typeparam T - The type of the successful task result @param task - The task to asse",
+    "description": "Asserts that a task resolves successfully. Throws an error if the task rejects, otherwise returns the result tuple.",
     "file": "packages/testing/src/assertions.ts"
   },
   {
     "name": "assertRejects",
     "kind": "function",
     "package": "testing",
-    "description": "Asserts that a task rejects with an error. Throws an error if the task resolves, otherwise returns the error. @typeparam T - The type of the successful task result (should not be returned) @param task",
+    "description": "Asserts that a task rejects with an error. Throws an error if the task resolves, otherwise returns the error.",
     "file": "packages/testing/src/assertions.ts"
   },
   {
     "name": "assertResolvesWithin",
     "kind": "function",
     "package": "testing",
-    "description": "Asserts that a task resolves within a specified timeout period. Useful for testing performance requirements and detecting slow operations. @typeparam T - The type of the successful task result @param ",
+    "description": "Asserts that a task resolves within a specified timeout period. Useful for testing performance requirements and detecting slow operations.",
     "file": "packages/testing/src/assertions.ts"
   },
   {
     "name": "MockScopeOptions",
     "kind": "interface",
     "package": "testing",
-    "description": "Options for creating a mock scope. Use these options to configure the behavior of the mock scope for testing. @example ```typescript import { createMockScope } from '@go-go-scope/testing' import { des",
+    "description": "Options for creating a mock scope. Use these options to configure the behavior of the mock scope for testing.",
     "file": "packages/testing/src/index.ts"
   },
   {
     "name": "TaskCall",
     "kind": "interface",
     "package": "testing",
-    "description": "Task call record for tracking task invocations. Captures the function and options passed to each task call for inspection in tests. @example ```typescript import { createMockScope } from '@go-go-scope",
+    "description": "Task call record for tracking task invocations. Captures the function and options passed to each task call for inspection in tests.",
     "file": "packages/testing/src/index.ts"
   },
   {
     "name": "MockScope",
     "kind": "interface",
     "package": "testing",
-    "description": "Extended Scope with mock capabilities. Provides additional methods for testing like call tracking, mocking, and manual abortion. @example ```typescript import { createMockScope } from '@go-go-scope/te",
+    "description": "Extended Scope with mock capabilities. Provides additional methods for testing like call tracking, mocking, and manual abortion.",
     "file": "packages/testing/src/index.ts"
   },
   {
@@ -6408,56 +6408,56 @@
     "name": "ControlledTimer",
     "kind": "interface",
     "package": "testing",
-    "description": "Return type of createControlledTimer. Provides methods for controlling and inspecting simulated time in tests. @example ```typescript import { createControlledTimer } from '@go-go-scope/testing' impor",
+    "description": "Return type of createControlledTimer. Provides methods for controlling and inspecting simulated time in tests.",
     "file": "packages/testing/src/index.ts"
   },
   {
     "name": "createControlledTimer",
     "kind": "function",
     "package": "testing",
-    "description": "Creates a controlled timer environment for testing async operations. Useful for testing timeout and retry logic without waiting for real time. @returns A controlled timer with methods to manipulate si",
+    "description": "Creates a controlled timer environment for testing async operations. Useful for testing timeout and retry logic without waiting for real time.",
     "file": "packages/testing/src/index.ts"
   },
   {
     "name": "flushPromises",
     "kind": "function",
     "package": "testing",
-    "description": "Waits for all promises in the scope to settle. Useful for testing async operations that involve microtasks. @returns A promise that resolves after the current call stack clears @example ```typescript ",
+    "description": "Waits for all promises in the scope to settle. Useful for testing async operations that involve microtasks.",
     "file": "packages/testing/src/index.ts"
   },
   {
     "name": "Spy",
     "kind": "interface",
     "package": "testing",
-    "description": "Spy function interface for testing. Provides methods to track calls, set mock implementations, and inspect invocation history. @typeparam TArgs - Tuple type of function arguments @typeparam TReturn - ",
+    "description": "Spy function interface for testing. Provides methods to track calls, set mock implementations, and inspect invocation history.",
     "file": "packages/testing/src/index.ts"
   },
   {
     "name": "createSpy",
     "kind": "function",
     "package": "testing",
-    "description": "Creates a spy function for testing. Tracks calls and can return mock values. @typeparam TArgs - Tuple type of function arguments @typeparam TReturn - Return type of the function @returns A spy functio",
+    "description": "Creates a spy function for testing. Tracks calls and can return mock values.",
     "file": "packages/testing/src/index.ts"
   },
   {
     "name": "assertScopeDisposed",
     "kind": "function",
     "package": "testing",
-    "description": "Asserts that a scope has been properly disposed. Checks that all resources are cleaned up and the signal is aborted. @param scope - The scope to check for proper disposal @returns A promise that resol",
+    "description": "Asserts that a scope has been properly disposed. Checks that all resources are cleaned up and the signal is aborted.",
     "file": "packages/testing/src/index.ts"
   },
   {
     "name": "MockChannel",
     "kind": "interface",
     "package": "testing",
-    "description": "Mock channel interface for testing. Provides fine-grained control over channel behavior for unit testing. @typeparam T - The type of values passed through the channel @example ```typescript import { c",
+    "description": "Mock channel interface for testing. Provides fine-grained control over channel behavior for unit testing.",
     "file": "packages/testing/src/index.ts"
   },
   {
     "name": "createMockChannel",
     "kind": "function",
     "package": "testing",
-    "description": "Creates a mock channel for testing. Useful for testing code that uses channels without actual async operations. @typeparam T - The type of values passed through the channel @returns A mock channel wit",
+    "description": "Creates a mock channel for testing. Useful for testing code that uses channels without actual async operations.",
     "file": "packages/testing/src/index.ts"
   },
   {
@@ -6492,7 +6492,7 @@
     "name": "TimeController",
     "kind": "interface",
     "package": "testing",
-    "description": "A controller for manipulating time in tests. Use this to fast-forward through delays and timeouts without waiting. @example ```typescript import { createTimeController } from '@go-go-scope/testing' im",
+    "description": "A controller for manipulating time in tests. Use this to fast-forward through delays and timeouts without waiting.",
     "file": "packages/testing/src/time-controller.ts"
   },
   {
@@ -6506,14 +6506,14 @@
     "name": "createTimeController",
     "kind": "function",
     "package": "testing",
-    "description": "Creates a time controller for testing. Provides fine-grained control over time without actually waiting. @returns A TimeController instance for manipulating simulated time @example ```typescript impor",
+    "description": "Creates a time controller for testing. Provides fine-grained control over time without actually waiting.",
     "file": "packages/testing/src/time-controller.ts"
   },
   {
     "name": "createTestScope",
     "kind": "function",
     "package": "testing",
-    "description": "Test helper that creates a scope with time control enabled. Automatically installs the time controller and returns both the scope and controller. @param options - Configuration options for the test sc",
+    "description": "Test helper that creates a scope with time control enabled. Automatically installs the time controller and returns both the scope and controller.",
     "file": "packages/testing/src/time-controller.ts"
   },
   {
@@ -6527,70 +6527,70 @@
     "name": "channelToReadableStream",
     "kind": "function",
     "package": "web-streams",
-    "description": "Convert a go-go-scope Channel to a ReadableStream @example ```typescript const ch = s.channel<string>() const stream = channelToReadableStream(ch) const reader = stream.getReader() const { value } = a",
+    "description": "Convert a go-go-scope Channel to a ReadableStream",
     "file": "packages/web-streams/src/index.ts"
   },
   {
     "name": "readableStreamToChannel",
     "kind": "function",
     "package": "web-streams",
-    "description": "Convert a ReadableStream to a go-go-scope Channel @example ```typescript const response = await fetch('/api/data') const ch = readableStreamToChannel(s, response.body!) for await (const chunk of ch) {",
+    "description": "Convert a ReadableStream to a go-go-scope Channel",
     "file": "packages/web-streams/src/index.ts"
   },
   {
     "name": "channelToWritableStream",
     "kind": "function",
     "package": "web-streams",
-    "description": "Convert a go-go-scope Channel to a WritableStream @example ```typescript const ch = s.channel<string>() const stream = channelToWritableStream(ch) const writer = stream.getWriter() await writer.write(",
+    "description": "Convert a go-go-scope Channel to a WritableStream",
     "file": "packages/web-streams/src/index.ts"
   },
   {
     "name": "writableStreamToChannel",
     "kind": "function",
     "package": "web-streams",
-    "description": "Convert a WritableStream to a go-go-scope Channel @example ```typescript const ws = new WebSocketStream('wss://example.com') const ch = writableStreamToChannel(s, ws.writable) await ch.send('hello') `",
+    "description": "Convert a WritableStream to a go-go-scope Channel",
     "file": "packages/web-streams/src/index.ts"
   },
   {
     "name": "TransformConfig",
     "kind": "interface",
     "package": "web-streams",
-    "description": "Create a TransformStream from a channel transformation @example ```typescript const transform = createTransformStream<string, number>({   transform: (chunk) => chunk.length }) await readable   .pipeTh",
+    "description": "Create a TransformStream from a channel transformation",
     "file": "packages/web-streams/src/index.ts"
   },
   {
     "name": "streamToReadableStream",
     "kind": "function",
     "package": "web-streams",
-    "description": "Convert a go-go-scope Stream (from @go-go-scope/stream) to a ReadableStream @example ```typescript import { stream } from '@go-go-scope/stream' const st = s.stream(data)   .map(x => x * 2)   .filter(x",
+    "description": "Convert a go-go-scope Stream (from @go-go-scope/stream) to a ReadableStream",
     "file": "packages/web-streams/src/index.ts"
   },
   {
     "name": "readableStreamToStream",
     "kind": "function",
     "package": "web-streams",
-    "description": "Convert a ReadableStream to a go-go-scope Stream-compatible async iterable @example ```typescript const response = await fetch('/api/data') const stream = readableStreamToStream(response.body!) // Use",
+    "description": "Convert a ReadableStream to a go-go-scope Stream-compatible async iterable",
     "file": "packages/web-streams/src/index.ts"
   },
   {
     "name": "DuplexStream",
     "kind": "interface",
     "package": "web-streams",
-    "description": "Create a duplex stream (ReadableStream + WritableStream) from two channels @example ```typescript const { readable, writable } = createDuplexStream<string, number>(s) // Write strings const writer = w",
+    "description": "Create a duplex stream (ReadableStream + WritableStream) from two channels",
     "file": "packages/web-streams/src/index.ts"
   },
   {
     "name": "teeStream",
     "kind": "function",
     "package": "web-streams",
-    "description": "Tee a ReadableStream into two channels @example ```typescript const stream = fetch('/api/data').then(r => r.body!) const [ch1, ch2] = teeStream(s, await stream) // ch1 and ch2 both receive all values ",
+    "description": "Tee a ReadableStream into two channels",
     "file": "packages/web-streams/src/index.ts"
   },
   {
     "name": "pipeStreams",
     "kind": "function",
     "package": "web-streams",
-    "description": "Create a backpressure-aware stream pipe @example ```typescript await pipeStreams(   fetch('/api/data').then(r => r.body!),   transformStream,   writableStream ) ```",
+    "description": "Create a backpressure-aware stream pipe",
     "file": "packages/web-streams/src/index.ts"
   },
   {

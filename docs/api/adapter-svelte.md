@@ -33,7 +33,7 @@
 function createScope(options: CreateScopeOptions = {}): ReactiveScope
 ```
 
-Create a reactive scope that automatically disposes on component destroy. @example ```svelte <script>   const s = createScope({ name: "my-component" });   // Scope is automatically disposed when component is destroyed   const [err, result] = await s.task(() => fetchData()); </script> ```
+Create a reactive scope that automatically disposes on component destroy.
 
 **Parameters:**
 
@@ -64,7 +64,7 @@ Create a reactive scope that automatically disposes on component destroy. @examp
 function createTask<T>(factory: () => Promise<T>, options: CreateTaskOptions<T> = {}): TaskState<T>
 ```
 
-Create a reactive task that integrates with Svelte's store system. Returns a store-like object that can be used with `$` prefix. @example ```svelte <script>   const task = createTask(     async () => fetchUser(userId),     { immediate: true }   ); </script> {#if $task.isLoading}   <p>Loading...</p> {:else if $task.error}   <p>Error: {$task.error.message}</p> {:else}   <p>{$task.data.name}</p> {/if} ```
+Create a reactive task that integrates with Svelte's store system. Returns a store-like object that can be used with `$` prefix.
 
 **Parameters:**
 
@@ -104,7 +104,7 @@ Create a reactive task that integrates with Svelte's store system. Returns a sto
 function createParallel<T>(factories: (() => Promise<T>)[], options: CreateParallelOptions = {}): ParallelState<T>
 ```
 
-Create reactive parallel task execution. @example ```svelte <script>   const parallel = createParallel(     urls.map(url => () => fetch(url).then(r => r.json())),     { concurrency: 3, immediate: true }   ); </script> <progress value={$parallel.progress} max="100" /> ```
+Create reactive parallel task execution.
 
 **Parameters:**
 
@@ -138,7 +138,7 @@ Create reactive parallel task execution. @example ```svelte <script>   const par
 function createChannel<T>(options: CreateChannelOptions = {}): ChannelState<T>
 ```
 
-Create a reactive channel for Go-style communication. @example ```svelte <script>   const ch = createChannel<string>();   async function sendMessage() {     await ch.send("Hello!");   } </script> <p>Latest: {$ch.latest}</p> <button onclick={sendMessage}>Send</button> ```
+Create a reactive channel for Go-style communication.
 
 **Parameters:**
 
@@ -173,7 +173,7 @@ Create a reactive channel for Go-style communication. @example ```svelte <script
 function createBroadcast<T>(): BroadcastState<T>
 ```
 
-Create a reactive broadcast channel. @example ```svelte <script>   const bus = createBroadcast<string>();   // Subscribe   bus.subscribe(msg => console.log(msg));   function send() {     bus.broadcast("Hello!");   } </script> <p>Latest: {$bus.latest}</p> ```
+Create a reactive broadcast channel.
 
 **Returns:** `BroadcastState<T>`
 
@@ -204,7 +204,7 @@ Create a reactive broadcast channel. @example ```svelte <script>   const bus = c
 function createPolling<T>(factory: () => Promise<T>, options: CreatePollingOptions): PollingState<T>
 ```
 
-Create a reactive polling mechanism. @example ```svelte <script>   const poller = createPolling(     async () => fetchLatestData(),     { interval: 5000, immediate: true }   ); </script> {#if $poller.data}   <p>{$poller.data}</p> {/if} <button onclick={() => $poller.stop()}>Stop</button> ```
+Create a reactive polling mechanism.
 
 **Parameters:**
 
@@ -241,7 +241,7 @@ Create a reactive polling mechanism. @example ```svelte <script>   const poller 
 function createStore<T>(initialValue: T)
 ```
 
-// ============================================================================ // Store-like Interface (Svelte 5 compatible) // ============================================================================  Create a reactive value that can be subscribed to (Svelte store contract). Compatible with Svelte 5's `$` prefix. @example ```svelte <script>   const count = createStore(0);   function increment() {     $count++;   } </script> <button onclick={increment}>   Count: {$count} </button> ```
+// ============================================================================ // Store-like Interface (Svelte 5 compatible) // ============================================================================ Create a reactive value that can be subscribed to (Svelte store contract). Compatible with Svelte 5's `$` prefix.
 
 **Parameters:**
 
@@ -277,7 +277,7 @@ function createStore<T>(initialValue: T)
 interface CreateScopeOptions
 ```
 
-// ============================================================================ // Core - Scope // ============================================================================  Options for creating a scope
+// ============================================================================ // Core - Scope // ============================================================================ Options for creating a scope
 
 *Source: [index.ts:46](packages/adapter-svelte/src/index.ts#L46)*
 
@@ -301,7 +301,7 @@ Reactive scope with automatic cleanup
 interface CreateTaskOptions
 ```
 
-// ============================================================================ // Task Store // ============================================================================  Options for creating a task
+// ============================================================================ // Task Store // ============================================================================ Options for creating a task
 
 *Source: [index.ts:102](packages/adapter-svelte/src/index.ts#L102)*
 
@@ -325,7 +325,7 @@ Reactive task state
 interface CreateParallelOptions
 ```
 
-// ============================================================================ // Parallel Tasks Store // ============================================================================  Options for parallel execution
+// ============================================================================ // Parallel Tasks Store // ============================================================================ Options for parallel execution
 
 *Source: [index.ts:212](packages/adapter-svelte/src/index.ts#L212)*
 
@@ -349,7 +349,7 @@ Reactive parallel task state
 interface CreateChannelOptions
 ```
 
-// ============================================================================ // Channel Store // ============================================================================  Options for creating a channel
+// ============================================================================ // Channel Store // ============================================================================ Options for creating a channel
 
 *Source: [index.ts:317](packages/adapter-svelte/src/index.ts#L317)*
 
@@ -373,7 +373,7 @@ Reactive channel state
 interface BroadcastState
 ```
 
-// ============================================================================ // Broadcast Store // ============================================================================  Reactive broadcast state
+// ============================================================================ // Broadcast Store // ============================================================================ Reactive broadcast state
 
 *Source: [index.ts:396](packages/adapter-svelte/src/index.ts#L396)*
 
@@ -385,7 +385,7 @@ interface BroadcastState
 interface CreatePollingOptions
 ```
 
-// ============================================================================ // Polling Store // ============================================================================  Options for polling
+// ============================================================================ // Polling Store // ============================================================================ Options for polling
 
 *Source: [index.ts:458](packages/adapter-svelte/src/index.ts#L458)*
 

@@ -20,7 +20,7 @@
 function withScopeLoader<T extends Record<string, unknown>, R>(loader: (args: LoaderFunctionArgs & RemixContext<T>) => Promise<R> | R, options: RemixScopeOptions<T> = {}): (args: LoaderFunctionArgs) => Promise<R>
 ```
 
-Wrap a Remix loader with scope @example ```typescript // app/routes/users.tsx import { withScopeLoader } from '@go-go-scope/adapter-remix' import { json } from '@remix-run/node' export const loader = withScopeLoader(async ({ request, scope }) => {   const url = new URL(request.url)   const page = url.searchParams.get('page') || '1'   const [err, users] = await scope.task(() => fetchUsers(page))   if (err) throw new Response(err.message, { status: 500 })   return json({ users }) }) ```
+Wrap a Remix loader with scope
 
 **Parameters:**
 
@@ -59,7 +59,7 @@ export const loader = withScopeLoader(async ({ request, scope }) => {
 function withScopeAction<T extends Record<string, unknown>, R>(action: (args: ActionFunctionArgs & RemixContext<T>) => Promise<R> | R, options: RemixScopeOptions<T> = {}): (args: ActionFunctionArgs) => Promise<R>
 ```
 
-Wrap a Remix action with scope @example ```typescript // app/routes/users.tsx import { withScopeAction } from '@go-go-scope/adapter-remix' import { json } from '@remix-run/node' export const action = withScopeAction(async ({ request, scope }) => {   const formData = await request.formData()   const [err, result] = await scope.task(() => createUser(formData))   if (err) return json({ error: err.message }, { status: 400 })   return json({ result }) }) ```
+Wrap a Remix action with scope
 
 **Parameters:**
 
@@ -97,7 +97,7 @@ export const action = withScopeAction(async ({ request, scope }) => {
 function createRemixScope<T extends Record<string, unknown>>(config: RemixScopeOptions<T>)
 ```
 
-Create reusable scope configuration for loaders/actions @example ```typescript // app/lib/scope.ts import { createRemixScope } from '@go-go-scope/adapter-remix' import { db } from './db' export const remixScope = createRemixScope({   timeout: 10000,   services: { db } }) // app/routes/users.tsx import { remixScope } from '~/lib/scope' export const loader = remixScope.loader(async ({ request, scope }) => {   const db = scope.use('db')   // ... }) ```
+Create reusable scope configuration for loaders/actions
 
 **Parameters:**
 

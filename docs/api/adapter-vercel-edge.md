@@ -24,7 +24,7 @@ function vercelEdgeGoGoScope(options: VercelEdgeGoGoScopeOptions = {}): <T>(
 ) => Promise<T>
 ```
 
-Vercel Edge middleware for go-go-scope integration @example ```typescript // middleware.ts import { vercelEdgeGoGoScope } from '@go-go-scope/adapter-vercel-edge' import { NextResponse } from 'next/server' const middleware = vercelEdgeGoGoScope({   name: 'my-edge-app',   timeout: 30000 }) export default async function edgeMiddleware(request: Request) {   return middleware(request, async (scope) => {     const [err, data] = await scope.task(() => fetchData())     if (err) return NextResponse.json({ error: err.message }, { status: 500 })     return NextResponse.json(data)   }) } export const config = {   runtime: 'edge', } ```
+Vercel Edge middleware for go-go-scope integration
 
 **Parameters:**
 
@@ -72,7 +72,7 @@ export const config = {
 function nextEdgeHandler<T>(handler: (request: Request, scope: Scope) => Promise<T>, opts: VercelEdgeGoGoScopeOptions = {}): (request: Request) => Promise<T>
 ```
 
-Helper for Next.js Edge API Routes @example ```typescript // app/api/users/route.ts import { nextEdgeHandler } from '@go-go-scope/adapter-vercel-edge' import { NextResponse } from 'next/server' export const runtime = 'edge' export const GET = nextEdgeHandler(async (request, scope) => {   const [err, users] = await scope.task(() => fetchUsers())   if (err) return NextResponse.json({ error: err.message }, { status: 500 })   return NextResponse.json(users) }) ```
+Helper for Next.js Edge API Routes
 
 **Parameters:**
 
@@ -109,7 +109,7 @@ export const GET = nextEdgeHandler(async (request, scope) => {
 function getScope(event: { scope?: Scope }): Scope
 ```
 
-Helper to get the current scope from the request context @example ```typescript import { getScope } from '@go-go-scope/adapter-vercel-edge' export const handler = async (request: Request) => {   const scope = getScope(request as any)   const [err, data] = await scope.task(() => fetchData())   return new Response(JSON.stringify(data)) } ```
+Helper to get the current scope from the request context
 
 **Parameters:**
 
@@ -141,7 +141,7 @@ export const handler = async (request: Request) => {
 function getEdgeConfig<T = unknown>(scope: Scope<any>, _key: string): Promise<[Error | undefined, T | undefined]>
 ```
 
-Edge Config integration helper Fetches config with automatic retry and caching @example ```typescript import { getEdgeConfig } from '@go-go-scope/adapter-vercel-edge' export const GET = nextEdgeHandler(async (request, scope) => {   const [err, config] = await getEdgeConfig(scope, 'my-feature-flag')   if (err) return new Response('Config error', { status: 500 })   return new Response(JSON.stringify(config)) }) ```
+Edge Config integration helper Fetches config with automatic retry and caching
 
 **Parameters:**
 
@@ -174,7 +174,7 @@ export const GET = nextEdgeHandler(async (request, scope) => {
 function kvGet<T = unknown>(scope: Scope<any>, _key: string): Promise<[Error | undefined, T | undefined]>
 ```
 
-KV integration helper for Vercel KV @example ```typescript import { kvGet, kvSet } from '@go-go-scope/adapter-vercel-edge' export const GET = nextEdgeHandler(async (request, scope) => {   const [err, data] = await kvGet(scope, 'user:123')   return new Response(JSON.stringify(data)) }) ```
+KV integration helper for Vercel KV
 
 **Parameters:**
 
@@ -208,7 +208,7 @@ export const GET = nextEdgeHandler(async (request, scope) => {
 interface RateLimitOptions
 ```
 
-Rate limiting helper for Edge functions @example ```typescript import { rateLimit } from '@go-go-scope/adapter-vercel-edge' export const GET = nextEdgeHandler(async (request, scope) => {   const [err, allowed] = await rateLimit(scope, request.ip || 'anonymous', {     maxRequests: 100,     windowMs: 60000   })   if (!allowed) {     return new Response('Rate limited', { status: 429 })   }   return new Response('Success') }) ```
+Rate limiting helper for Edge functions
 
 **Examples:**
 

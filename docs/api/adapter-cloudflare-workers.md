@@ -23,7 +23,7 @@ function cloudflareWorkersGoGoScope(options: CloudflareWorkersGoGoScopeOptions =
 ) => Promise<T>
 ```
 
-Cloudflare Workers middleware for go-go-scope integration @example ```typescript // src/index.ts import { cloudflareWorkersGoGoScope, getScope } from '@go-go-scope/adapter-cloudflare-workers' const middleware = cloudflareWorkersGoGoScope({   name: 'my-worker',   timeout: 30000 }) export default {   async fetch(request: Request, env: Env, ctx: ExecutionContext) {     return middleware(request, env, ctx, async (scope) => {       const [err, data] = await scope.task(() => fetchData())       if (err) return new Response('Error', { status: 500 })       return new Response(JSON.stringify(data))     })   } } ```
+Cloudflare Workers middleware for go-go-scope integration
 
 **Parameters:**
 
@@ -70,7 +70,7 @@ export default {
 function getScope(event: { scope?: Scope }): Scope
 ```
 
-Helper to get the current scope from the request context Note: In Cloudflare Workers, pass scope explicitly or use closure @example ```typescript export default {   async fetch(request: Request, env: Env, ctx: ExecutionContext) {     const middleware = cloudflareWorkersGoGoScope()     return middleware(request, env, ctx, async (scope) => {       // Use scope directly       const [err, data] = await scope.task(() => fetchData())       return new Response(JSON.stringify(data))     })   } } ```
+Helper to get the current scope from the request context Note: In Cloudflare Workers, pass scope explicitly or use closure
 
 **Parameters:**
 
@@ -115,7 +115,7 @@ function defineScopedHandler<T>(handler: (
 ) => Promise<T>
 ```
 
-Helper to create a handler with automatic scope integration @example ```typescript // src/handlers/api.ts import { defineScopedHandler } from '@go-go-scope/adapter-cloudflare-workers' export const handler = defineScopedHandler(async (request, scope, env, ctx) => {   const [err, data] = await scope.task(() => fetchData())   if (err) return new Response('Error', { status: 500 })   return new Response(JSON.stringify(data)) }) // src/index.ts import { cloudflareWorkersGoGoScope } from '@go-go-scope/adapter-cloudflare-workers' import { handler } from './handlers/api' const middleware = cloudflareWorkersGoGoScope() export default {   async fetch(request: Request, env: Env, ctx: ExecutionContext) {     return middleware(request, env, ctx, (scope) => handler(request, scope, env, ctx))   } } ```
+Helper to create a handler with automatic scope integration
 
 **Parameters:**
 
@@ -170,7 +170,7 @@ export default {
 function withDurableObjectScope<T>(_request: Request, handler: (scope: Scope<any>) => Promise<T>, opts: { name?: string; timeout?: number; debug?: boolean } = {}): Promise<T>
 ```
 
-Durable Objects integration helper Provides scoped execution within Durable Objects @example ```typescript // src/durable-object.ts import { DurableObject } from 'cloudflare:workers' import { withDurableObjectScope } from '@go-go-scope/adapter-cloudflare-workers' export class MyDurableObject extends DurableObject {   async fetch(request: Request) {     return withDurableObjectScope(request, async (scope) => {       const [err, data] = await scope.task(() => this.process(request))       return new Response(JSON.stringify(data))     })   } } ```
+Durable Objects integration helper Provides scoped execution within Durable Objects
 
 **Parameters:**
 

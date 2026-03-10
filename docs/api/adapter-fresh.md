@@ -20,7 +20,7 @@
 function freshGoGoScope(options: FreshGoGoScopeOptions = {}): (req: Request, ctx: FreshContext) => Promise<Response>
 ```
 
-Fresh middleware for go-go-scope integration @example ```typescript // routes/_middleware.ts import { freshGoGoScope } from '@go-go-scope/adapter-fresh' export const handler = freshGoGoScope({   name: 'my-fresh-app',   timeout: 30000 }) ```
+Fresh middleware for go-go-scope integration
 
 **Parameters:**
 
@@ -58,7 +58,7 @@ function defineRouteHandler(handlers: {
 }): FreshHandlers
 ```
 
-Helper to define a route handler with automatic scope integration @example ```typescript // routes/api/users.ts import { defineRouteHandler } from '@go-go-scope/adapter-fresh' export const handler = defineRouteHandler({   async GET(req, ctx, scope) {     const [err, users] = await scope.task(() => fetchUsers())     if (err) return new Response('Error', { status: 500 })     return Response.json(users)   },   async POST(req, ctx, scope) {     const [err, user] = await scope.task(() => createUser(req))     if (err) return new Response('Error', { status: 500 })     return Response.json(user, { status: 201 })   } }) ```
+Helper to define a route handler with automatic scope integration
 
 **Parameters:**
 
@@ -104,7 +104,7 @@ export const handler = defineRouteHandler({
 function getScope(ctx: FreshContext | { scope?: Scope }): Scope
 ```
 
-Helper to get the current scope from Fresh context @example ```typescript // routes/api/data.ts import { getScope } from '@go-go-scope/adapter-fresh' export const handler = {   async GET(req, ctx) {     const scope = getScope(ctx)     const [err, data] = await scope.task(() => fetchData())     return Response.json(data)   } } ```
+Helper to get the current scope from Fresh context
 
 **Parameters:**
 
@@ -139,7 +139,7 @@ export const handler = {
 function withIslandScope<T>(handler: (req: Request, scope: Scope<any>) => Promise<T>, opts: { name?: string; timeout?: number } = {}): Promise<T>
 ```
 
-Helper for Fresh Islands with scope integration @example ```typescript // islands/Counter.tsx import { withIslandScope } from '@go-go-scope/adapter-fresh' export const handler = withIslandScope(async (req, scope) => {   const [err, count] = await scope.task(() => getCount())   return { count: count || 0 } }) ```
+Helper for Fresh Islands with scope integration
 
 **Parameters:**
 
@@ -178,7 +178,7 @@ function createSafeHandler(handlers: {
 }): FreshHandlers
 ```
 
-Helper for Fresh handlers with automatic error handling @example ```typescript // routes/api/users.ts import { createSafeHandler } from '@go-go-scope/adapter-fresh' export const handler = createSafeHandler({   async GET(req, ctx, scope) {     const users = await scope.task(() => fetchUsers())     return Response.json(users[1]) // users[1] is the data   } }) ```
+Helper for Fresh handlers with automatic error handling
 
 **Parameters:**
 
@@ -224,7 +224,7 @@ function createJsonHandler(handlers: {
 }): FreshHandlers
 ```
 
-Helper to create a JSON API response handler @example ```typescript // routes/api/users.ts import { createJsonHandler } from '@go-go-scope/adapter-fresh' export const handler = createJsonHandler({   async GET(req, ctx, scope) {     const [err, users] = await scope.task(() => fetchUsers())     if (err) throw err     return users   },   async POST(req, ctx, scope) {     const body = await req.json()     const [err, user] = await scope.task(() => createUser(body))     if (err) throw err     return { data: user, status: 201 }   } }) ```
+Helper to create a JSON API response handler
 
 **Parameters:**
 

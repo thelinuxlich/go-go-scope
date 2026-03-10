@@ -1082,111 +1082,6 @@
             </section>
 
             <!-- Task Section -->
-            <section id="task" class="content">
-                <h2 class="section-anchor">The Task</h2>
-                <p>A <strong>Task</strong> is a unit of work within a scope. It's like a Promise, but:</p>
-                <ul>
-                    <li><strong>Lazy</strong> - Doesn't start until you await it</li>
-                    <li><strong>Cancellable</strong> - Respects the AbortSignal</li>
-                    <li><strong>Returns a Result</strong> - Never throws, always returns <code>[error, value]</code></li>
-                </ul>
-
-                <h3>Lazy Execution</h3>
-                <pre><code><span class="keyword">await using</span> s = <span class="function">scope</span>()
-
-<span class="comment">// Create tasks (doesn't start yet!)</span>
-<span class="keyword">const</span> primary = s.<span class="function">task</span>(() => <span class="function">fetchFromPrimary</span>())
-<span class="keyword">const</span> fallback = s.<span class="function">task</span>(() => <span class="function">fetchFromFallback</span>())
-
-<span class="comment">// Try primary first</span>
-<span class="keyword">const</span> [err, result] = <span class="keyword">await</span> primary
-<span class="keyword">if</span> (err) {
-  <span class="comment">// Only now does fallback start!</span>
-  <span class="keyword">const</span> [fallbackErr, fallbackResult] = <span class="keyword">await</span> fallback
-  <span class="keyword">return</span> fallbackResult
-}
-<span class="keyword">return</span> result</code></pre>
-
-                <h3>Task Context</h3>
-                <p>Task functions receive a context object with useful properties:</p>
-                <pre><code><span class="keyword">await</span> s.<span class="function">task</span>(<span class="keyword">async</span> ({ services, signal, logger, context }) => {
-  <span class="comment">// services: Your provided services (DI)</span>
-  <span class="comment">// signal: AbortSignal for cancellation</span>
-  <span class="comment">// logger: Structured logger (debug, info, warn, error)</span>
-  <span class="comment">// context: Request-scoped context object from scope</span>
-  
-  logger.<span class="function">info</span>(<span class="string">'Starting operation'</span>, { requestId: context.requestId })
-  
-  <span class="keyword">const</span> data = <span class="keyword">await</span> <span class="function">fetchData</span>({ signal })
-  <span class="keyword">return</span> data
-})</code></pre>
-            </section>
-
-            <!-- Channels Section -->
-            <section id="channels" class="content">
-                <h2 class="section-anchor">Channels</h2>
-                <p>Channels provide Go-style concurrent communication with configurable backpressure strategies.</p>
-
-                <h3>Basic Usage</h3>
-                <pre><code><span class="keyword">await using</span> s = <span class="function">scope</span>()
-<span class="keyword">const</span> ch = s.<span class="function">channel</span>&lt;<span class="type">string</span>&gt;(<span class="number">100</span>)  <span class="comment">// Buffer capacity of 100</span>
-
-<span class="comment">// Producer</span>
-s.<span class="function">task</span>(<span class="keyword">async</span> () => {
-  <span class="keyword">for</span> (<span class="keyword">const</span> log <span class="keyword">of</span> logs) {
-    <span class="keyword">await</span> ch.<span class="function">send</span>(log)  <span class="comment">// Blocks if buffer full (default)</span>
-  }
-  ch.<span class="function">close</span>()
-})
-
-<span class="comment">// Consumer with native async iteration</span>
-<span class="keyword">for await</span> (<span class="keyword">const</span> log <span class="keyword">of</span> ch) {
-  <span class="keyword">await</span> <span class="function">processLog</span>(log)
-}</code></pre>
-
-                <h3>Priority Channels</h3>
-                <pre><code><span class="keyword">const</span> pq = s.<span class="function">priorityChannel</span>&lt;{ value: <span class="type">Task</span>; priority: <span class="type">number</span> }&gt;({
-  capacity: <span class="number">100</span>,
-  comparator: (a, b) => a.priority - b.priority
-})
-
-<span class="comment">// Send tasks with priorities</span>
-<span class="keyword">await</span> pq.<span class="function">send</span>({ value: task1, priority: <span class="number">3</span> })
-<span class="keyword">await</span> pq.<span class="function">send</span>({ value: task2, priority: <span class="number">1</span> })  <span class="comment">// Higher priority</span>
-
-<span class="comment">// Receive in priority order</span>
-<span class="keyword">const</span> item = <span class="keyword">await</span> pq.<span class="function">receive</span>() <span class="comment">// task2 first</span></code></pre>
-            </section>
-
-            <!-- Cancellation Section -->
-            <section id="cancellation" class="content">
-                <h2 class="section-anchor">Cancellation</h2>
-                <p>go-go-scope provides several utilities for handling cancellation:</p>
-
-                <h3>Cancellation Utilities</h3>
-                <pre><code><span class="keyword">import</span> { 
-  throwIfAborted, 
-  onAbort, 
-  abortPromise, 
-  raceSignals 
-} <span class="keyword">from</span> <span class="string">'go-go-scope'</span>
-
-<span class="comment">// Throw if signal is aborted</span>
-<span class="function">throwIfAborted</span>(signal)
-
-<span class="comment">// Register abort callback</span>
-<span class="keyword">const</span> disposable = <span class="function">onAbort</span>(signal, () => {
-  console.<span class="function">log</span>(<span class="string">'Aborted!'</span>)
-})
-
-<span class="comment">// Promise that rejects on abort</span>
-<span class="keyword">await</span> <span class="function">abortPromise</span>(signal)
-
-<span class="comment">// Race multiple signals</span>
-<span class="keyword">const</span> combined = <span class="function">raceSignals</span>([scope.signal, timeoutSignal])</code></pre>
-            </section>
-
-            <!-- Examples Showcase -->
             <!-- API Reference Section - Links to Auto-Generated Documentation -->
 
 <section id="api" class="content">
@@ -1331,6 +1226,12 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
         <p style="margin: 0; color: var(--text-muted);">📚 For detailed guides and examples, see the <a href="./03-api-reference.md" style="color: var(--primary);">API Reference Overview</a> or explore the <a href="https://github.com/thelinuxlich/go-go-scope/tree/main/examples" style="color: var(--primary);" target="_blank">examples directory</a>.</p>
     </div>
 </section>
+
+<!-- /API Reference Section -->
+
+<!-- /API Reference Section -->
+
+<!-- /API Reference Section -->
 
 <!-- /API Reference Section -->
 

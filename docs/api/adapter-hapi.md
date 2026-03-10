@@ -57,7 +57,7 @@ Get the root application scope from Hapi server
 function closeHapiScope(server: Server): Promise<void>
 ```
 
-Graceful shutdown helper for Hapi applications Disposes the root scope when the server is closing @example ```typescript process.on('SIGTERM', async () => {   await closeHapiScope(server)   await server.stop() }) ```
+Graceful shutdown helper for Hapi applications Disposes the root scope when the server is closing
 
 **Parameters:**
 

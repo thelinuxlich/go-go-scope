@@ -6,7 +6,7 @@
 
 - [Functions](#Functions)
   - [profilerPlugin](#profilerplugin)
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [Profiler](#profiler)
 - [Interfaces](#Interfaces)
   - [TaskProfile](#taskprofile)
@@ -45,7 +45,7 @@ Create the profiler plugin
 
 ---
 
-## Classs
+## Classes
 
 ### Profiler
 
@@ -53,7 +53,7 @@ Create the profiler plugin
 class Profiler
 ```
 
-Profiler for tracking task execution performance. Measures time spent in each pipeline stage.  #__PURE__
+Profiler for tracking task execution performance. Measures time spent in each pipeline stage. #__PURE__
 
 *Source: [index.ts:57](packages/plugin-profiler/src/index.ts#L57)*
 

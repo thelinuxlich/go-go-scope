@@ -4,11 +4,11 @@
 
 ## Table of Contents
 
-- [Classs](#Classs)
+- [Classes](#Classes)
   - [MongoDBIdempotencyAdapter](#mongodbidempotencyadapter)
   - [MongoDBAdapter](#mongodbadapter)
 
-## Classs
+## Classes
 
 ### MongoDBIdempotencyAdapter
 
