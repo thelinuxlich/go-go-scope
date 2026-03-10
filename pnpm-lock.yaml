@@ -563,6 +563,9 @@ importers:
       debug:
         specifier: ^4.4.3
         version: 4.4.3
+      source-map-support:
+        specifier: ^0.5.21
+        version: 0.5.21
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.4.4
@@ -597,6 +600,9 @@ importers:
       '@types/node':
         specifier: ^24
         version: 24.10.13
+      '@types/source-map-support':
+        specifier: ^0.5.10
+        version: 0.5.10
       fast-check:
         specifier: ^4.5.3
         version: 4.5.3
@@ -973,6 +979,25 @@ importers:
       go-go-scope:
         specifier: workspace:*
         version: link:../go-go-scope
+      pkgroll:
+        specifier: ^2.26.3
+        version: 2.26.3(typescript@5.9.3)(vite@7.3.1(@types/node@24.10.13)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@24.10.13)(jiti@2.6.1)(jsdom@24.1.3)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/plugin-worker-profiler:
+    dependencies:
+      go-go-scope:
+        specifier: workspace:*
+        version: link:../go-go-scope
+    devDependencies:
+      '@biomejs/biome':
+        specifier: ^2.4.4
+        version: 2.4.4
       pkgroll:
         specifier: ^2.26.3
         version: 2.26.3(typescript@5.9.3)(vite@7.3.1(@types/node@24.10.13)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
@@ -3785,6 +3810,9 @@ packages:
 
   '@types/serve-static@2.2.0':
     resolution: {integrity: sha512-8mam4H1NHLtu7nmtalF7eyBH14QyOASmcxHhSfEoRyr0nP/YdoesEtU+uSRvMe96TW/HPTtkoKqQLl53N7UXMQ==}
+
+  '@types/source-map-support@0.5.10':
+    resolution: {integrity: sha512-tgVP2H469x9zq34Z0m/fgPewGhg/MLClalNOiPIzQlXrSS2YrKu/xCdSCKnEDwkFha51VKEKB6A9wW26/ZNwzA==}
 
   '@types/sqlite3@5.1.0':
     resolution: {integrity: sha512-w25Gd6OzcN0Sb6g/BO7cyee0ugkiLgonhgGYfG+H0W9Ub6PUsC2/4R+KXy2tc80faPIWO3Qytbvr8gP1fU4siA==}
@@ -10683,6 +10711,10 @@ snapshots:
     dependencies:
       '@types/http-errors': 2.0.5
       '@types/node': 22.19.13
+
+  '@types/source-map-support@0.5.10':
+    dependencies:
+      source-map: 0.6.1
 
   '@types/sqlite3@5.1.0':
     dependencies:

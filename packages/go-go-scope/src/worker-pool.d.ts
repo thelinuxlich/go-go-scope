@@ -48,7 +48,7 @@ export declare class WorkerPool implements AsyncDisposable {
 	execute<T, R>(
 		fn: (data: T) => R,
 		data: T,
-		transferList?: ArrayBuffer[],
+		transferList?: Transferable[],
 	): Promise<R>;
 	/**
 	 * Execute multiple tasks in parallel using the worker pool.

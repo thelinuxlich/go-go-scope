@@ -7,6 +7,12 @@ export type Failure<E> = readonly [E, undefined];
 export type Result<E, T> = Success<T> | Failure<E>;
 
 /**
+ * Transferable type for zero-copy data transfer to workers.
+ * In Node.js, this includes ArrayBuffer and MessagePort.
+ */
+export type Transferable = ArrayBuffer;
+
+/**
  * Error class constructor type for typed error handling.
  */
 export type ErrorConstructor<E> = new (
@@ -322,6 +328,32 @@ interface TaskOptionsBase {
 	 */
 	worker?: boolean;
 	/**
+	 * Data to pass to worker thread when using `worker: true`.
+	 * Any ArrayBuffers in the data object will be automatically transferred
+	 * (not copied) for zero-copy performance.
+	 *
+	 * @example
+	 * ```typescript
+	 * const buffer = new ArrayBuffer(1024 * 1024); // 1MB buffer
+	 *
+	 * const [err, result] = await s.task(
+	 *   ({ data }) => {
+	 *     // Process buffer in worker (zero-copy transfer)
+	 *     const view = new Uint8Array(data.buffer);
+	 *     return view.reduce((a, b) => a + b, 0);
+	 *   },
+	 *   {
+	 *     worker: true,
+	 *     data: { buffer } // ArrayBuffers automatically transferred
+	 *   }
+	 * )
+	 *
+	 * // Buffer is now detached (transferred to worker)
+	 * console.log(buffer.byteLength); // 0
+	 * ```
+	 */
+	data?: unknown;
+	/**
 	 * Checkpoint configuration for long-running tasks.
 	 * Requires a checkpoint provider configured in scope persistence.
 	 *
@@ -473,6 +505,43 @@ export type TaskOptions<E extends Error = Error> =
 	| TaskOptionsWithErrorClass<E>
 	| TaskOptionsWithSystemErrorClass<E>
 	| TaskOptionsBase;
+
+/**
+ * Worker module specification for loading tasks from files.
+ * Use this instead of a function to load code from a worker file.
+ *
+ * @example
+ * ```typescript
+ * // Load from worker file
+ * const [err, result] = await s.task(
+ *   { module: './workers/compute.js', export: 'fibonacci' },
+ *   { data: { n: 40 } }
+ * )
+ *
+ * // Worker file (workers/compute.js)
+ * export function fibonacci({ data }) {
+ *   // Full access to imports, closures, etc.
+ *   function fib(n) { return n < 2 ? n : fib(n - 1) + fib(n - 2) }
+ *   return fib(data.n)
+ * }
+ * ```
+ */
+export interface WorkerModuleSpec<TData = unknown, TResult = unknown> {
+	/** Path to the worker module file */
+	module: string;
+	/** Named export to use (default: 'default') */
+	export?: string;
+	/** Validate module exists and export is callable before spawning (default: true) */
+	validate?: boolean;
+	/** Cache the imported module for reuse (default: true) */
+	cache?: boolean;
+	/** Enable source map support for proper stack traces from TypeScript (default: true) */
+	sourceMap?: boolean;
+	/** @internal Type marker for data type inference */
+	_data?: TData;
+	/** @internal Type marker for result type inference */
+	_result?: TResult;
+}
 
 /**
  * Span status codes (from OpenTelemetry)

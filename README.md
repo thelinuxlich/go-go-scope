@@ -41,6 +41,7 @@ else console.log("User:", data);
 | 🔄 **Structured Concurrency** | No fire-and-forget, all tasks tracked and awaitable |
 | 🛡️ **Resilience Built-in** | Circuit breakers, retries, timeouts, idempotency |
 | 🧵 **Worker Thread Support** | Offload CPU-intensive tasks to worker threads (v2.4.0+) |
+| 📁 **Worker Module Loading** | Load worker functions from files, no eval/closure limits (v2.9.0+) |
 | ⏱️ **Cancellable Delays** | `scope.delay()` with automatic cancellation (v2.8.0+) |
 | 🎯 **Per-Task Circuit Breaker** | Override scope CB settings per task (v2.8.0+) |
 | 🔄 **Interval Execution** | `scope.every()` for recurring tasks (v2.8.0+) |
@@ -69,7 +70,7 @@ npm install @go-go-scope/persistence-mongodb
 ```
 
 ```typescript
-import { scope } from "go-go-scope";
+import { scope, createSharedWorker } from "go-go-scope";
 
 // Create a scope with timeout
 await using s = scope({ timeout: 5000 });
@@ -89,6 +90,19 @@ const [err3, results] = await s.parallel([
 const [err4, fib] = await s.task(
   () => computeFibonacci(1000),
   { worker: true }
+);
+
+// Load worker function from file - no eval/closure limits (v2.9.0+)
+const [err5, result] = await s.task(
+  { module: './heavy-computation.js', export: 'compute' },
+  { worker: true, data: { items: largeArray } }
+);
+
+// Or create shared worker for reuse across scopes (v2.9.0+)
+const sharedWorker = await createSharedWorker('./image-processor.js');
+const [err6, thumb] = await s.task(
+  sharedWorker.export('createThumbnail'),
+  { worker: true, data: { image: buffer, size: 256 } }
 );
 
 // Use channels for Go-style concurrency
@@ -148,6 +162,7 @@ Request-scoped structured concurrency for your favorite framework:
 | Package | Description | Install |
 |---------|-------------|---------|
 | **[@go-go-scope/plugin-visualizer](./packages/plugin-visualizer)** | Real-time WebSocket dashboard | `npm i @go-go-scope/plugin-visualizer` |
+| **[@go-go-scope/plugin-worker-profiler](./packages/plugin-worker-profiler)** | Worker task performance profiling | `npm i @go-go-scope/plugin-worker-profiler` |
 
 ---
 

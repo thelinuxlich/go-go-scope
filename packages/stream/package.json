@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/stream",
-	"version": "2.8.0",
+	"version": "2.9.0",
 	"description": "Lazy async iterable streams for go-go-scope - 50+ composable operations",
 	"type": "module",
 	"main": "./dist/index.mjs",

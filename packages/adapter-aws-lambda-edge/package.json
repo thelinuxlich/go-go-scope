@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/adapter-aws-lambda-edge",
-	"version": "2.8.0",
+	"version": "2.9.0",
 	"description": "AWS Lambda@Edge adapter for go-go-scope",
 	"type": "module",
 	"exports": {

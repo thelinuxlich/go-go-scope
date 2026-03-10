@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/persistence-sqlite",
-	"version": "2.8.0",
+	"version": "2.9.0",
 	"description": "SQLite persistence adapter for go-go-scope - distributed locks and circuit breaker state",
 	"type": "module",
 	"main": "./dist/index.mjs",

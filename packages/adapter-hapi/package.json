@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/adapter-hapi",
-	"version": "2.8.0",
+	"version": "2.9.0",
 	"description": "Hapi adapter for go-go-scope - request-scoped structured concurrency",
 	"type": "module",
 	"main": "./dist/index.mjs",

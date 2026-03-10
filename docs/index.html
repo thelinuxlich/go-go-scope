@@ -1710,6 +1710,17 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
     size?: <span class="type">number</span>           <span class="comment">// Number of worker threads (default: CPU count - 1)</span>
     idleTimeout?: <span class="type">number</span>    <span class="comment">// Idle timeout in ms (default: 60000)</span>
   }
+  
+  <span class="comment">/** Memory limit for heap monitoring (v2.9.0+) */</span>
+  memoryLimit?: <span class="type">number</span> | <span class="type">string</span> | {
+    limit: <span class="type">number</span> | <span class="type">string</span>     <span class="comment">// Max heap (bytes or '100mb', '1gb')</span>
+    onPressure?: (usage: <span class="type">MemoryUsage</span>) => <span class="type">void</span>  <span class="comment">// Pressure callback</span>
+    checkInterval?: <span class="type">number</span>     <span class="comment">// Check interval ms (default: 5000)</span>
+    pressureThreshold?: <span class="type">number</span>  <span class="comment">// Trigger at % (default: 80)</span>
+  }
+  
+  <span class="comment">/** Callback when memory pressure detected (v2.9.0+) */</span>
+  onMemoryPressure?: (usage: <span class="type">MemoryUsage</span>) => <span class="type">void</span>
 }</code></pre>
 
     <h4 id="taskoptions-type" class="section-anchor"><code>TaskOptions&lt;E&gt;</code></h4>
@@ -2345,6 +2356,58 @@ s.<span class="function">task</span>(<span class="keyword">async</span> () => {
   key: <span class="string">'resource:123'</span>,
   ttl: <span class="number">30000</span>
 })</code></pre>
+
+    <h5 id="scope-memoryusage" class="section-anchor"><code>scope.memoryUsage()</code> <span style="color: var(--primary);">v2.9.0+</span></h5>
+    <p>Get current memory usage information. Returns <code>undefined</code> if memory monitoring is not available.</p>
+    <pre><code><span class="function">memoryUsage</span>(): <span class="type">MemoryUsage</span> | <span class="type">undefined</span>
+
+<span class="keyword">interface</span> <span class="type">MemoryUsage</span> {
+  used: <span class="type">number</span>           <span class="comment">// Heap used in bytes</span>
+  total: <span class="type">number</span>          <span class="comment">// Total heap size</span>
+  limit: <span class="type">number</span>          <span class="comment">// Configured limit</span>
+  percentageUsed: <span class="type">number</span>  <span class="comment">// 0-100</span>
+  isOverLimit: <span class="type">boolean</span>    <span class="comment">// Exceeded limit?</span>
+}</code></pre>
+
+    <h5 id="scope-setmemorylimit" class="section-anchor"><code>scope.setMemoryLimit(limit)</code> <span style="color: var(--primary);">v2.9.0+</span></h5>
+    <p>Update the memory limit dynamically. Requires memory monitoring to be enabled at scope creation.</p>
+    <pre><code><span class="function">setMemoryLimit</span>(limit: <span class="type">number</span> | <span class="type">string</span>): <span class="type">void</span>
+
+<span class="comment">// Example</span>
+<span class="keyword">await using</span> s = <span class="function">scope</span>({ memoryLimit: <span class="string">'100mb'</span> })
+s.<span class="function">setMemoryLimit</span>(<span class="string">'200mb'</span>)  <span class="comment">// Increase limit</span></code></pre>
+
+    <h5 id="scope-setcontext" class="section-anchor"><code>scope.setContext(key, value)</code> <span style="color: var(--primary);">v2.9.0+</span></h5>
+    <p>Set a context value accessible to all tasks in this scope. Chainable.</p>
+    <pre><code><span class="function">setContext</span>(key: <span class="type">string</span>, value: <span class="type">unknown</span>): <span class="keyword">this</span>
+
+<span class="comment">// Example</span>
+<span class="keyword">await using</span> s = <span class="function">scope</span>()
+s.<span class="function">setContext</span>(<span class="string">'requestId'</span>, <span class="string">'abc-123'</span>)
+  .<span class="function">setContext</span>(<span class="string">'userId'</span>, <span class="number">456</span>)
+
+s.<span class="function">task</span>(({ context }) => {
+  <span class="function">console</span>.<span class="function">log</span>(context.requestId)  <span class="comment">// 'abc-123'</span>
+})</code></pre>
+
+    <h5 id="scope-getcontext" class="section-anchor"><code>scope.getContext(key)</code> <span style="color: var(--primary);">v2.9.0+</span></h5>
+    <p>Get a context value by key. Returns <code>undefined</code> if not found.</p>
+    <pre><code><span class="function">getContext</span>&lt;T&gt;(key: <span class="type">string</span>): T | <span class="type">undefined</span>
+
+<span class="comment">// Example</span>
+<span class="keyword">const</span> requestId = s.<span class="function">getContext</span>&lt;<span class="type">string</span>&gt;(<span class="string">'requestId'</span>)</code></pre>
+
+    <h5 id="scope-hascontext" class="section-anchor"><code>scope.hasContext(key)</code> <span style="color: var(--primary);">v2.9.0+</span></h5>
+    <p>Check if a context key exists.</p>
+    <pre><code><span class="function">hasContext</span>(key: <span class="type">string</span>): <span class="type">boolean</span></code></pre>
+
+    <h5 id="scope-removecontext" class="section-anchor"><code>scope.removeContext(key)</code> <span style="color: var(--primary);">v2.9.0+</span></h5>
+    <p>Remove a context key. Returns <code>true</code> if removed, <code>false</code> if not found.</p>
+    <pre><code><span class="function">removeContext</span>(key: <span class="type">string</span>): <span class="type">boolean</span></code></pre>
+
+    <h5 id="scope-getallcontext" class="section-anchor"><code>scope.getAllContext()</code> <span style="color: var(--primary);">v2.9.0+</span></h5>
+    <p>Get all context values as a readonly object.</p>
+    <pre><code><span class="function">getAllContext</span>(): <span class="type">Readonly</span>&lt;<span class="type">Record</span>&lt;<span class="type">string</span>, <span class="type">unknown</span>&gt;&gt;</code></pre>
 
     <h3 id="task-class">Task Class</h3>
     <p>Lazy, disposable Promise-like object. Implements <code>PromiseLike&lt;T&gt;</code> and <code>Disposable</code>.</p>
@@ -3756,6 +3819,9 @@ app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) =
             { title: 'scope.every()', desc: 'Interval execution', href: '#scope-every' },
             { title: 'scope.any()', desc: 'First success', href: '#scope-any' },
             { title: 'scope.batch()', desc: 'Batch processing', href: '#scope-batch' },
+            { title: 'scope.memoryUsage()', desc: 'Memory monitoring', href: '#scope-memoryusage', tag: 'v2.9.0' },
+            { title: 'scope.setContext()', desc: 'Set context value', href: '#scope-setcontext', tag: 'v2.9.0' },
+            { title: 'scope.getContext()', desc: 'Get context value', href: '#scope-getcontext', tag: 'v2.9.0' },
             { title: 'scope.select()', desc: 'Select statement', href: '#scope-select' },
             { title: 'scope.broadcast()', desc: 'Create broadcast channel', href: '#scope-broadcast' },
             { title: 'scope.priorityChannel()', desc: 'Priority channel', href: '#scope-prioritychannel' },

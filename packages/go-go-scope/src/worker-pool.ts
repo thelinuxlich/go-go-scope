@@ -6,7 +6,7 @@
 
 import type { Worker } from "node:worker_threads";
 import createDebug from "debug";
-import type { Result } from "./types.js";
+import type { Result, Transferable } from "./types.js";
 
 const debugWorker = createDebug("go-go-scope:worker");
 
@@ -39,7 +39,7 @@ type WorkerType = Worker | BunWorker;
 // Bun worker wrapper interface
 interface BunWorker {
 	terminate(): Promise<void> | void;
-	postMessage(message: unknown): void;
+	postMessage(message: unknown, transferList?: Transferable[]): void;
 	onmessage: ((event: { data: unknown }) => void) | null;
 	onerror: ((error: Error) => void) | null;
 }
@@ -90,7 +90,23 @@ interface PooledWorker {
 interface PendingTask<T, R> {
 	fn: (data: T) => R;
 	data: T;
-	transferList?: ArrayBuffer[];
+	transferList?: Transferable[];
+	resolve: (result: R) => void;
+	reject: (error: Error) => void;
+	settled?: boolean;
+}
+
+/**
+ * Module task pending execution
+ */
+interface PendingModuleTask<R> {
+	type: "module";
+	modulePath: string;
+	exportName: string;
+	data: unknown;
+	transferList?: Transferable[];
+	cache?: boolean;
+	sourceMap?: boolean;
 	resolve: (result: R) => void;
 	reject: (error: Error) => void;
 	settled?: boolean;
@@ -142,7 +158,7 @@ export class WorkerPool implements AsyncDisposable {
 	async execute<T, R>(
 		fn: (data: T) => R,
 		data: T,
-		transferList?: ArrayBuffer[],
+		transferList?: Transferable[],
 	): Promise<R> {
 		if (this.disposed) {
 			throw new Error("WorkerPool has been disposed");
@@ -171,6 +187,110 @@ export class WorkerPool implements AsyncDisposable {
 				debugWorker("Task queued, %d pending", this.pending.length);
 			}
 		});
+	}
+
+	/**
+	 * Execute a function from a module file in a worker thread.
+	 * The module is loaded by the worker, not serialized.
+	 *
+	 * @param modulePath - Path to the module file
+	 * @param exportName - Name of the export to use (default: 'default')
+	 * @param data - Data to pass to the function
+	 * @param transferList - Optional transfer list for zero-copy
+	 * @param options - Additional options for module execution
+	 */
+	async executeModule<R>(
+		modulePath: string,
+		exportName: string,
+		data: unknown,
+		transferList?: Transferable[],
+		options?: { validate?: boolean; cache?: boolean; sourceMap?: boolean },
+	): Promise<R> {
+		if (this.disposed) {
+			throw new Error("WorkerPool has been disposed");
+		}
+
+		// Validate module exists and export is callable if requested
+		if (options?.validate !== false) {
+			await this.validateModule(modulePath, exportName);
+		}
+
+		return new Promise<R>((resolve, reject) => {
+			const task: PendingModuleTask<R> = {
+				type: "module",
+				modulePath,
+				exportName,
+				data,
+				transferList,
+				cache: options?.cache,
+				sourceMap: options?.sourceMap,
+				resolve: resolve as (result: unknown) => void,
+				reject,
+			};
+
+			// Try to execute immediately
+			const worker = this.findIdleWorker();
+			if (worker) {
+				this.runModuleTask(worker, task);
+			} else if (this.workers.length < this.options.size) {
+				// Create new worker if under limit
+				const newWorker = this.createModuleWorker();
+				this.runModuleTask(newWorker, task);
+			} else {
+				// Queue the task - will be handled by next available worker
+				this.pending.push(task as unknown as PendingTask<unknown, unknown>);
+				debugWorker("Module task queued, %d pending", this.pending.length);
+			}
+		});
+	}
+
+	/**
+	 * Validate that a module exists and the specified export is callable.
+	 * Throws descriptive errors for common issues.
+	 */
+	private async validateModule(
+		modulePath: string,
+		exportName: string,
+	): Promise<void> {
+		try {
+			// Try to import the module
+			const mod = await import(modulePath);
+
+			// Check if export exists
+			if (!(exportName in mod)) {
+				const availableExports = Object.keys(mod).filter(
+					(key) => typeof mod[key] === "function",
+				);
+				const exportList =
+					availableExports.length > 0
+						? `Available function exports: ${availableExports.join(", ")}`
+						: "No function exports found in module";
+				throw new Error(
+					`Export '${exportName}' not found in '${modulePath}'. ${exportList}`,
+				);
+			}
+
+			// Check if export is callable
+			if (typeof mod[exportName] !== "function") {
+				throw new Error(
+					`Export '${exportName}' in '${modulePath}' is not a function (type: ${typeof mod[exportName]})`,
+				);
+			}
+		} catch (error) {
+			// Enhance error message for module not found
+			if (error instanceof Error) {
+				const nodeError = error as Error & { code?: string };
+				if (
+					nodeError.code === "ERR_MODULE_NOT_FOUND" ||
+					error.message.includes("Cannot find module")
+				) {
+					throw new Error(
+						`Worker module not found: '${modulePath}'. Ensure the path is correct and the file exists.`,
+					);
+				}
+			}
+			throw error;
+		}
 	}
 
 	/**
@@ -373,6 +493,109 @@ export class WorkerPool implements AsyncDisposable {
 		return pooledWorker;
 	}
 
+	private createModuleWorker(): PooledWorker {
+		// Dynamic import to avoid issues in Bun
+		const { Worker } = require("node:worker_threads");
+
+		const workerCode = `
+      const { parentPort } = require('worker_threads');
+      
+      // Cache for loaded modules
+      const moduleCache = new Map();
+      
+      // Track if source-map-support is installed
+      let sourceMapInstalled = false;
+      
+      parentPort.on('message', async (message) => {
+        if (message.type === 'execute-module') {
+          try {
+            const { modulePath, exportName, data, cache, sourceMap } = message;
+            
+            // Install source-map-support if enabled (default: true)
+            if (sourceMap !== false && !sourceMapInstalled) {
+              try {
+                require('source-map-support').install();
+                sourceMapInstalled = true;
+              } catch {
+                // source-map-support not available, continue without it
+              }
+            }
+            
+            // Load or get cached module (cache defaults to true)
+            let mod;
+            if (cache !== false) {
+              mod = moduleCache.get(modulePath);
+            }
+            if (!mod) {
+              mod = await import(modulePath);
+              if (cache !== false) {
+                moduleCache.set(modulePath, mod);
+              }
+            }
+            
+            // Get the exported function
+            const fn = mod[exportName];
+            if (typeof fn !== 'function') {
+              throw new Error(\`Export '\${exportName}' not found or not a function in '\${modulePath}'\`);
+            }
+            
+            const result = await fn(data);
+            parentPort.postMessage({
+              type: 'result',
+              id: message.id,
+              data: result
+            });
+          } catch (error) {
+            parentPort.postMessage({
+              type: 'error',
+              id: message.id,
+              error: {
+                message: error.message,
+                stack: error.stack
+              }
+            });
+          }
+        }
+      });
+    `;
+
+		const worker = new Worker(workerCode, {
+			eval: true,
+			resourceLimits: this.options.resourceLimits,
+		});
+
+		const pooledWorker: PooledWorker = {
+			worker: worker as WorkerType,
+			busy: false,
+			idleSince: Date.now(),
+			taskId: null,
+		};
+
+		worker.on("message", (message: WorkerMessage) => {
+			this.handleWorkerMessage(pooledWorker, message);
+		});
+
+		worker.on("error", (err: Error) => {
+			debugWorker("Module worker error: %O", err);
+			this.handleWorkerError(pooledWorker, err);
+		});
+
+		worker.on("exit", (code: number) => {
+			if (code !== 0) {
+				debugWorker("Module worker exited with code %d", code);
+			}
+			this.removeWorker(pooledWorker);
+		});
+
+		this.workers.push(pooledWorker);
+		debugWorker(
+			"Created new Node.js module worker, total: %d",
+			this.workers.length,
+		);
+
+		return pooledWorker;
+	}
+
 	private createBunWorker(): PooledWorker {
 		// Bun worker code - uses Bun's spawn API
 		const workerCode = `
@@ -425,7 +648,9 @@ export class WorkerPool implements AsyncDisposable {
 				subprocess.kill();
 				await subprocess.exited;
 			},
-			postMessage: (message: unknown) => {
+			postMessage: (message: unknown, _transferList?: Transferable[]) => {
+				// Note: Bun's IPC uses structured clone but doesn't support
+				// transfer lists like Web Workers. Data is copied, not transferred.
 				(subprocess as any).send(message);
 			},
 			onmessage: null,
@@ -481,9 +706,52 @@ export class WorkerPool implements AsyncDisposable {
 		// Store task reference for result handling
 		(worker as unknown as Record<string, unknown>).currentTask = task;
 
-		worker.worker.postMessage({ ...message, fn: fnString }, task.transferList);
+		// Prepare transfer list for postMessage
+		// In Node.js worker_threads, transfer list is the second argument
+		// In Bun, we need to handle it differently
+		const transferList = task.transferList;
+
+		if (transferList && transferList.length > 0) {
+			// For Node.js workers, pass transfer list directly
+			// The data should include references to the transferred objects
+			worker.worker.postMessage({ ...message, fn: fnString }, transferList);
+		} else {
+			worker.worker.postMessage({ ...message, fn: fnString });
+		}
 
 		debugWorker("Task %d assigned to worker", taskId);
+	}
+
+	private runModuleTask<R>(
+		worker: PooledWorker,
+		task: PendingModuleTask<R>,
+	): void {
+		const taskId = ++this.taskIdCounter;
+		worker.busy = true;
+		worker.taskId = taskId;
+
+		const message = {
+			type: "execute-module" as const,
+			id: taskId,
+			modulePath: task.modulePath,
+			exportName: task.exportName,
+			data: task.data,
+			cache: task.cache !== false, // Default to true
+			sourceMap: task.sourceMap !== false, // Default to true
+		};
+
+		// Store task reference for result handling
+		(worker as unknown as Record<string, unknown>).currentTask = task;
+
+		const transferList = task.transferList;
+
+		if (transferList && transferList.length > 0) {
+			worker.worker.postMessage(message, transferList);
+		} else {
+			worker.worker.postMessage(message);
+		}
+
+		debugWorker("Module task %d assigned to worker", taskId);
 	}
 
 	private handleWorkerMessage(

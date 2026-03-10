@@ -90,6 +90,16 @@ export {
 } from "./log-correlation.js";
 // Re-export logger
 export { ConsoleLogger, createLogger, NoOpLogger } from "./logger.js";
+export type {
+	MemoryLimitConfig,
+	MemoryUsage,
+} from "./memory-monitor.js";
+// Re-export memory monitoring utilities
+export {
+	getMemoryUsage,
+	isMemoryMonitoringAvailable,
+	MemoryMonitor,
+} from "./memory-monitor.js";
 export { parallel } from "./parallel.js";
 // race is available as scope.race()
 // Re-export performance utilities
@@ -179,6 +189,15 @@ export type {
 
 // Testing utilities are available via 'go-go-scope/testing' import
 
+/**
+ * SharedWorkerModule for sharing worker modules across multiple scopes.
+ * Use createSharedWorker() to create a shared module that can be reused
+ * across different scopes for better performance.
+ */
+export {
+	createSharedWorker,
+	SharedWorkerModule,
+} from "./shared-worker.js";
 /**
  * @internal WorkerPool is exported for workspace packages and advanced use cases.
  * Most users should use `scope.task({ worker: true })`, `parallel()`, `race()`, or `benchmark()` instead.

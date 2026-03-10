@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/adapter-elysia",
-	"version": "2.8.0",
+	"version": "2.9.0",
 	"description": "Elysia adapter for go-go-scope - Bun-first native integration",
 	"type": "module",
 	"main": "./dist/index.mjs",

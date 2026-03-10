@@ -807,6 +807,205 @@ for (let i = 0; i < 100; i++) {
 
 This provides automatic backpressure - memory usage stays low because only 4 tasks run at a time, even with 100 queued.
 
+#### Loading Functions from Module Files (v2.9.0+)
+
+For complex worker tasks, instead of serializing inline functions, you can load functions from actual module files. This avoids closure capture limitations and `eval()` serialization issues:
+
+```typescript
+// math-worker.ts - Your worker function as a module export
+export function fibonacci(data: { n: number }): number {
+  function fib(n: number): number {
+    return n < 2 ? n : fib(n - 1) + fib(n - 2);
+  }
+  return fib(data.n);
+}
+
+// Can also use imports and module-level state
+import { complexMath } from './math-lib';
+
+export function heavyComputation(data: { items: number[] }) {
+  // Full access to imports and module-level variables
+  return data.items.map(complexMath).reduce((a, b) => a + b, 0);
+}
+```
+
+```typescript
+// main.ts - Load and execute from the module file
+await using s = scope({ workerPool: { size: 4 } });
+
+// Pass a WorkerModuleSpec instead of inline function
+const [err, result] = await s.task(
+  { module: './math-worker.ts', export: 'fibonacci' },
+  { worker: true, data: { n: 40 } }
+);
+
+// Default export also works
+const [err2, result2] = await s.task(
+  { module: './math-worker.ts', export: 'heavyComputation' },
+  { worker: true, data: { items: [1, 2, 3, 4, 5] } }
+);
+```
+
+**Benefits over inline functions:**
+
+| Inline Function | Module File |
+|-----------------|-------------|
+| `toString()` + `eval()` serialization | Native ESM `import()` |
+| No closure capture (external vars don't work) | Full access to imports and module state |
+| Limited error stack traces | Proper source maps and file references |
+| Function body size limits | No serialization limits |
+| Security concerns with `eval()` | No code evaluation at runtime |
+
+**Requirements:**
+- Must use with `{ worker: true }` option
+- Module must export the function as named or default export
+- Function receives `data` object as single argument
+- Module path can be relative (`./worker.ts`) or absolute
+
+**When to use module files:**
+- CPU-intensive tasks that need external libraries
+- Large functions that would be unwieldy as inline code
+- Tasks requiring complex business logic with imports
+- Security-sensitive environments avoiding `eval()`
+
+**TypeScript and Source Maps:**
+
+Worker module files can be TypeScript (`.ts`) files. Stack traces automatically show original TypeScript line numbers:
+
+```typescript
+// math-worker.ts
+export function fibonacci(data: { n: number }): number {
+  if (data.n < 0) {
+    throw new Error('n must be non-negative')  // Line 4
+  }
+  // ... computation
+}
+```
+
+```typescript
+// Main thread
+const [err, result] = await s.task(
+  { module: './math-worker.ts', export: 'fibonacci' },
+  { worker: true, data: { n: -1 } }
+);
+
+// Error stack trace shows:
+// Error: n must be non-negative
+//     at fibonacci (math-worker.ts:4:11)  ← TypeScript line number!
+//     ...
+```
+
+Source map support is enabled by default. To disable (show compiled JS line numbers):
+
+```typescript
+await s.task(
+  { module: './worker.ts', export: 'fn', sourceMap: false },
+  { worker: true }
+);
+```
+
+#### Passing Data to Workers (v2.9.0+)
+
+Use the `data` option to pass data to worker tasks. ArrayBuffers are automatically transferred (not copied) for zero-copy performance:
+
+```typescript
+await using s = scope();
+
+// Create a large buffer
+const buffer = new ArrayBuffer(100 * 1024 * 1024); // 100MB
+const view = new Uint8Array(buffer);
+view.fill(42);
+
+// Pass to worker - buffer is transferred, not copied
+const [err, sum] = await s.task(
+  ({ data }) => {
+    const view = new Uint8Array(data.buffer);
+    return view.reduce((a, b) => a + b, 0);
+  },
+  { worker: true, data: { buffer } }
+);
+
+// ⚠️ WARNING: Buffer is now detached in main thread!
+console.log(buffer.byteLength); // 0
+```
+
+**Zero-copy transfer benefits:**
+- Large buffers move to worker without memory duplication
+- Faster for 10MB+ data sizes
+- Reduced GC pressure
+
+**Important:** After transfer, the ArrayBuffer becomes **detached** (unusable) in the main thread. Accessing it will return an empty buffer. Design your code so the worker returns results instead of modifying shared buffers.
+
+**Works with both inline and module workers:**
+```typescript
+// Inline function with data
+await s.task(
+  ({ data }) => processData(data.buffer),
+  { worker: true, data: { buffer, meta: { width, height } } }
+);
+
+// Module function with data
+await s.task(
+  { module: './image-processor.ts', export: 'processImage' },
+  { worker: true, data: { imageBuffer, options: { quality: 0.9 } } }
+);
+```
+
+#### Shared Worker Modules (v2.9.0+)
+
+For worker modules used across multiple scopes, use `createSharedWorker()` to import once and reuse:
+
+```typescript
+import { createSharedWorker } from 'go-go-scope';
+
+// Create shared worker once at startup
+const imageWorker = await createSharedWorker('./image-processor.ts');
+
+// Discover available exports
+console.log(imageWorker.getAvailableExports());
+// ['createThumbnail', 'compress', 'rotate', 'default']
+
+// Use across multiple scopes without re-importing
+await using s1 = scope();
+const [err1, thumb] = await s1.task(
+  imageWorker.export('createThumbnail'),
+  { worker: true, data: { image: buffer, size: 256 } }
+);
+
+await using s2 = scope();
+const [err2, compressed] = await s2.task(
+  imageWorker.export('compress'),
+  { worker: true, data: { image: buffer, quality: 0.8 } }
+);
+
+// Check if export exists before using
+if (imageWorker.hasExport('watermark')) {
+  const [err3, watermarked] = await s2.task(
+    imageWorker.export('watermark'),
+    { worker: true, data: { image: buffer, text: '© 2024' } }
+  );
+}
+```
+
+**Benefits of SharedWorkerModule:**
+- Single module import shared across all scopes
+- Pre-validated exports (no runtime errors from typos)
+- Reduced memory and CPU overhead
+- Better error messages with available export lists
+
+**Validation and Caching Options:**
+
+```typescript
+// Disable validation for lazy loading (not recommended)
+const worker = await createSharedWorker('./heavy.js', { validate: false });
+
+// Disable module caching (useful for testing)
+await s.task(
+  { module: './worker.js', export: 'fn', cache: false },
+  { worker: true }
+);
+```
+
 ### Scheduler with Workers
 
 Run scheduled jobs in worker threads to avoid blocking the main event loop:

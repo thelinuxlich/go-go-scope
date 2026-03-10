@@ -20,13 +20,21 @@ import { AbortError, UnknownError } from "./errors.js";
 import { ScopedEventEmitter } from "./event-emitter.js";
 import type { GracefulShutdownOptions } from "./graceful-shutdown.js";
 import { GracefulShutdownController } from "./graceful-shutdown.js";
-import { Lock, type LockOptions } from "./lock.js";
+import type { LockOptions } from "./lock.js";
+import { Lock } from "./lock.js";
 import {
 	createCorrelatedLogger,
 	generateSpanId,
 	generateTraceId,
 } from "./log-correlation.js";
 import { createLogger, createTaskLogger } from "./logger.js";
+import {
+	getMemoryUsage,
+	isMemoryMonitoringAvailable,
+	type MemoryLimitConfig,
+	MemoryMonitor,
+	type MemoryUsage,
+} from "./memory-monitor.js";
 import type { Checkpoint } from "./persistence/types.js";
 import { installPlugins } from "./plugin.js";
 import { poll as pollFn } from "./poll.js";
@@ -62,6 +70,28 @@ import { WorkerPool } from "./worker-pool.js";
 const debugScope = createDebug("go-go-scope:scope");
 
 let scopeIdCounter = 0;
+
+/**
+ * Extract all ArrayBuffers from data for zero-copy transfer to workers.
+ * Recursively searches through objects and arrays.
+ */
+function extractTransferables(data: unknown): ArrayBuffer[] {
+	const transferables: ArrayBuffer[] = [];
+
+	if (data instanceof ArrayBuffer) {
+		transferables.push(data);
+	} else if (Array.isArray(data)) {
+		for (const item of data) {
+			transferables.push(...extractTransferables(item));
+		}
+	} else if (data && typeof data === "object") {
+		for (const value of Object.values(data)) {
+			transferables.push(...extractTransferables(value));
+		}
+	}
+
+	return transferables;
+}
 
 /**
  * Async disposable resource wrapper
@@ -199,6 +229,28 @@ export interface ScopeOptions<
 	 * @see EnhancedTracingOptions in @riseworks/plugin-opentelemetry
 	 */
 	tracing?: Record<string, unknown>;
+	/**
+	 * Memory limit configuration for automatic memory monitoring.
+	 * When set, the scope will monitor heap usage and trigger callbacks
+	 * when memory pressure is detected.
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope({
+	 *   memoryLimit: '100mb',
+	 *   onMemoryPressure: (usage) => {
+	 *     console.warn('High memory:', usage.percentageUsed + '%');
+	 *   }
+	 * });
+	 * ```
+	 */
+	memoryLimit?: number | string | MemoryLimitConfig;
+	/**
+	 * Callback when memory pressure is detected.
+	 * Shorthand for memoryLimit with just a callback.
+	 * For more control, use memoryLimit with an object.
+	 */
+	onMemoryPressure?: (usage: MemoryUsage) => void;
 }
 
 /**
@@ -252,6 +304,8 @@ export class Scope<
 	readonly spanId?: string;
 	/** Graceful shutdown controller */
 	private _shutdownController?: GracefulShutdownController;
+	/** Memory monitor for heap usage tracking */
+	private _memoryMonitor?: MemoryMonitor;
 
 	/**
 	 * Check if graceful shutdown has been requested.
@@ -405,6 +459,28 @@ export class Scope<
 				options.gracefulShutdown,
 			);
 		}
+
+		// Set up memory monitoring if specified
+		if (options?.memoryLimit) {
+			const memoryConfig: MemoryLimitConfig =
+				typeof options.memoryLimit === "object" &&
+				!Array.isArray(options.memoryLimit)
+					? options.memoryLimit
+					: {
+							limit: options.memoryLimit as number | string,
+							onPressure: options.onMemoryPressure,
+						};
+
+			if (isMemoryMonitoringAvailable()) {
+				this._memoryMonitor = new MemoryMonitor(memoryConfig);
+				this.registerDisposable(this._memoryMonitor);
+			} else if (debugScope.enabled) {
+				debugScope(
+					"[%s] Memory monitoring requested but not available in this environment",
+					this.name,
+				);
+			}
+		}
 	}
 
 	get signal(): AbortSignal {
@@ -484,14 +560,19 @@ export class Scope<
 	}
 
 	task<T, E extends Error = Error>(
-		fn: (ctx: {
-			services: Services;
-			signal: AbortSignal;
-			logger: Logger;
-			context: Record<string, unknown>;
-			checkpoint?: { save: (data: unknown) => Promise<void>; data?: unknown };
-			progress?: ProgressContext;
-		}) => Promise<T>,
+		fnOrModule:
+			| ((ctx: {
+					services: Services;
+					signal: AbortSignal;
+					logger: Logger;
+					context: Record<string, unknown>;
+					checkpoint?: {
+						save: (data: unknown) => Promise<void>;
+						data?: unknown;
+					};
+					progress?: ProgressContext;
+			  }) => Promise<T>)
+			| import("./types.js").WorkerModuleSpec,
 		options?: TaskOptions<E>,
 	): Task<Result<E, T>> {
 		if (this.disposed) {
@@ -573,6 +654,28 @@ export class Scope<
 
 		// Determine task ID (reused for checkpoint and otel)
 		const taskId = options?.id ?? `${this.name}-task-${taskIndex}`;
+
+		// Check if first argument is a WorkerModuleSpec
+		const isWorkerModule =
+			typeof fnOrModule === "object" &&
+			fnOrModule !== null &&
+			"module" in fnOrModule;
+		const workerModule = isWorkerModule
+			? (fnOrModule as import("./types.js").WorkerModuleSpec)
+			: undefined;
+		const fn = isWorkerModule
+			? undefined
+			: (fnOrModule as (ctx: {
+					services: Services;
+					signal: AbortSignal;
+					logger: Logger;
+					context: Record<string, unknown>;
+					checkpoint?: {
+						save: (data: unknown) => Promise<void>;
+						data?: unknown;
+					};
+					progress?: ProgressContext;
+				}) => Promise<T>);
 
 		// Check if checkpoint is configured
 		const checkpointConfig = options?.checkpoint;
@@ -656,8 +759,16 @@ export class Scope<
 			}
 
 			try {
+				// WorkerModuleSpec requires worker: true or workers pool config
+				if (workerModule && !options?.worker && !this._workerPoolOptions) {
+					throw new Error(
+						"WorkerModuleSpec requires { worker: true } option or " +
+							"a scope configured with workers. Module loading only works with worker threads.",
+					);
+				}
+
 				const callFn = (sig: AbortSignal): Promise<T> => {
-					return fn({
+					return fn!({
 						services: this.services as Services,
 						signal: sig,
 						logger: taskLogger,
@@ -762,27 +873,57 @@ export class Scope<
 						});
 					}
 
-					// Serialize and execute function in worker
-					const fnString = fn.toString();
-					result = await this._workerPool.execute<string, T>(
-						(workerFnString) => {
-							// biome-ignore lint/security/noGlobalEval: Required for worker thread execution
-							const workerFn = eval(`(${workerFnString})`);
-							// Call with minimal context (no services/logger in worker)
-							return workerFn({
-								services: {},
-								signal: { aborted: false },
-								logger: {
-									debug: () => {},
-									info: () => {},
-									warn: () => {},
-									error: () => {},
-								},
-								context: {},
-							});
-						},
-						fnString,
-					);
+					// biome-ignore lint/suspicious/noExplicitAny: Data from options
+					const userData = (options as { data?: unknown }).data;
+
+					// Auto-extract ArrayBuffers from data for zero-copy transfer
+					const transferList = extractTransferables(userData);
+
+					if (workerModule) {
+						// Execute from worker module file
+						result = await this._workerPool.executeModule<T>(
+							workerModule.module,
+							workerModule.export ?? "default",
+							userData,
+							transferList,
+							{
+								validate: workerModule.validate,
+								cache: workerModule.cache,
+								sourceMap: workerModule.sourceMap,
+							},
+						);
+					} else {
+						// Serialize and execute inline function in worker
+						const fnString = fn!.toString();
+						result = await this._workerPool.execute<
+							{ fnString: string; userData?: unknown },
+							T
+						>(
+							(workerPayload) => {
+								// biome-ignore lint/security/noGlobalEval: Required for worker thread execution
+								const workerFn = eval(`(${workerPayload.fnString})`);
+								// Call with minimal context (no services/logger in worker)
+								const ctx = {
+									services: {},
+									signal: { aborted: false },
+									logger: {
+										debug: () => {},
+										info: () => {},
+										warn: () => {},
+										error: () => {},
+									},
+									context: {},
+									// Include user's data if provided
+									...(workerPayload.userData !== undefined
+										? { data: workerPayload.userData }
+										: {}),
+								};
+								return workerFn(ctx);
+							},
+							{ fnString, userData },
+							transferList,
+						);
+					}
 				} else {
 					// Create timeout promise if timeout option is set
 					let timeoutPromise: Promise<never> | undefined;
@@ -1451,6 +1592,93 @@ export class Scope<
 		return key in this.services;
 	}
 
+	/**
+	 * Set a context value that will be available to all tasks in this scope.
+	 * Context values are inherited by child scopes.
+	 *
+	 * @param key - Context key
+	 * @param value - Context value
+	 * @returns This scope for chaining
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope();
+	 *
+	 * // Set context values dynamically
+	 * s.setContext('requestId', 'abc-123');
+	 * s.setContext('userId', 456);
+	 *
+	 * // Access in tasks
+	 * s.task(({ context }) => {
+	 *   console.log(context.requestId); // 'abc-123'
+	 *   console.log(context.userId);    // 456
+	 * });
+	 * ```
+	 */
+	setContext(key: string, value: unknown): this {
+		if (this.disposed) {
+			throw new Error("Cannot set context on disposed scope");
+		}
+		this.requestContext[key] = value;
+		return this;
+	}
+
+	/**
+	 * Get a context value by key.
+	 * Returns undefined if the key doesn't exist.
+	 *
+	 * @param key - Context key
+	 * @returns The context value or undefined
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope({ context: { requestId: 'abc-123' } });
+	 *
+	 * // Get context value
+	 * const requestId = s.getContext('requestId');
+	 * console.log(requestId); // 'abc-123'
+	 *
+	 * // Returns undefined for missing keys
+	 * const missing = s.getContext('nonexistent'); // undefined
+	 * ```
+	 */
+	getContext<T = unknown>(key: string): T | undefined {
+		return this.requestContext[key] as T | undefined;
+	}
+
+	/**
+	 * Check if a context key exists.
+	 *
+	 * @param key - Context key
+	 * @returns True if the key exists in context
+	 */
+	hasContext(key: string): boolean {
+		return key in this.requestContext;
+	}
+
+	/**
+	 * Remove a context value by key.
+	 *
+	 * @param key - Context key to remove
+	 * @returns True if the key was removed, false if it didn't exist
+	 */
+	removeContext(key: string): boolean {
+		if (key in this.requestContext) {
+			delete this.requestContext[key];
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Get all context values as a readonly object.
+	 *
+	 * @returns Readonly copy of the context object
+	 */
+	getAllContext(): Readonly<Record<string, unknown>> {
+		return { ...this.requestContext };
+	}
+
 	override<K extends keyof Services>(
 		key: K,
 		value: Services[K] | (() => Services[K]),
@@ -1933,6 +2161,71 @@ export class Scope<
 	 */
 	metrics(): undefined {
 		return undefined;
+	}
+
+	/**
+	 * Get current memory usage information.
+	 * Returns the current heap usage and limit information.
+	 *
+	 * @returns MemoryUsage object or undefined if memory monitoring is not available
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope({ memoryLimit: '100mb' });
+	 *
+	 * const usage = s.memoryUsage();
+	 * if (usage) {
+	 *   console.log(`Using ${usage.used} bytes (${usage.percentageUsed.toFixed(1)}%)`);
+	 * }
+	 * ```
+	 */
+	memoryUsage(): MemoryUsage | undefined {
+		if (this._memoryMonitor) {
+			return this._memoryMonitor.getUsage();
+		}
+		// Return basic usage even without monitor
+		if (isMemoryMonitoringAvailable()) {
+			return getMemoryUsage();
+		}
+		return undefined;
+	}
+
+	/**
+	 * Check if memory monitoring is enabled for this scope.
+	 */
+	get isMemoryMonitoringEnabled(): boolean {
+		return this._memoryMonitor !== undefined;
+	}
+
+	/**
+	 * Get the configured memory limit in bytes.
+	 * Returns 0 if no limit is configured.
+	 */
+	get memoryLimit(): number {
+		return this._memoryMonitor?.getLimit() ?? 0;
+	}
+
+	/**
+	 * Update the memory limit for this scope.
+	 * Only works if memory monitoring was enabled at creation.
+	 *
+	 * @param limit - New memory limit (bytes or string like '100mb')
+	 *
+	 * @example
+	 * ```typescript
+	 * await using s = scope({ memoryLimit: '100mb' });
+	 *
+	 * // Increase limit dynamically
+	 * s.setMemoryLimit('200mb');
+	 * ```
+	 */
+	setMemoryLimit(limit: number | string): void {
+		if (!this._memoryMonitor) {
+			throw new Error(
+				"Memory monitoring not enabled. Create scope with memoryLimit option first.",
+			);
+		}
+		this._memoryMonitor.setLimit(limit);
 	}
 
 	onDispose(fn: () => void | Promise<void>): void {

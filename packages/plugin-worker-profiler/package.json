@@ -1,7 +1,7 @@
 {
-	"name": "@go-go-scope/adapter-express",
+	"name": "@go-go-scope/plugin-worker-profiler",
 	"version": "2.9.0",
-	"description": "Express adapter for go-go-scope - request-scoped structured concurrency",
+	"description": "Worker performance profiling plugin for go-go-scope",
 	"type": "module",
 	"main": "./dist/index.mjs",
 	"types": "./dist/index.d.mts",
@@ -12,17 +12,18 @@
 		}
 	},
 	"scripts": {
-		"build": "pkgroll --clean-dist",
+		"build": "pkgroll --clean-dist --packagejson='dist/index*'",
+		"test": "npm run build && vitest run --passWithNoTests",
 		"lint": "biome check --write src/",
-		"test": "vitest run --passWithNoTests",
-		"clean": "rm -rf dist",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"clean": "rm -rf dist"
 	},
 	"keywords": [
-		"express",
-		"adapter",
 		"go-go-scope",
-		"structured-concurrency"
+		"plugin",
+		"worker",
+		"profiling",
+		"performance"
 	],
 	"engines": {
 		"node": ">=24.0.0"
@@ -32,26 +33,18 @@
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/thelinuxlich/go-go-scope.git",
-		"directory": "packages/adapter-express"
+		"directory": "packages/plugin-worker-profiler"
 	},
 	"files": [
 		"dist/",
-		"README.md"
+		"README.md",
+		"LICENSE"
 	],
-	"publishConfig": {
-		"access": "public"
-	},
 	"dependencies": {
 		"go-go-scope": "workspace:*"
 	},
-	"peerDependencies": {
-		"express": "^5.2.1"
-	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.4",
-		"@types/express": "^5.0.6",
-		"@types/node": "^24",
-		"express": "^5.2.1",
 		"pkgroll": "^2.26.3",
 		"typescript": "^5.9.3",
 		"vitest": "^4.0.18"

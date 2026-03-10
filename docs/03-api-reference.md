@@ -426,6 +426,130 @@ const [err, result] = await s.task(
 
 ---
 
+### WorkerModuleSpec (Type)
+
+```typescript
+interface WorkerModuleSpec<TData = unknown, TResult = unknown> {
+  /** Path to the module file (relative or absolute) */
+  module: string
+  /** Export name to use (default: 'default') */
+  export?: string
+  /** Validate module exists and export is callable before spawning (default: true) */
+  validate?: boolean
+  /** Cache the imported module for reuse (default: true) */
+  cache?: boolean
+  /** Enable source map support for proper stack traces from TypeScript (default: true) */
+  sourceMap?: boolean
+}
+```
+
+Specifies a function to load from a module file for worker execution. 
+
+**Benefits over inline functions:**
+- No closure capture limitations - can use module-level imports and variables
+- No `eval()` serialization issues - functions are loaded natively
+- Better error stack traces pointing to actual source files
+- Supports full TypeScript with proper type checking
+
+**Requirements:**
+- Must use with `{ worker: true }` option
+- Module must export the function as named or default export
+- Function receives `data` object as single argument
+
+**Options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `validate` | `true` | Validate module exists and export is callable before spawning. Disable for lazy validation. |
+| `cache` | `true` | Cache the imported module in the worker for reuse. Disable to force re-import on each execution. |
+| `sourceMap` | `true` | Enable source-map-support for proper stack traces from TypeScript files. Shows original `.ts` line numbers in errors. |
+
+**Example:**
+
+```typescript
+// Basic usage
+await s.task(
+  { module: './workers.js', export: 'process' },
+  { worker: true, data: { items: [1, 2, 3] } }
+);
+
+// With validation disabled (lazy loading)
+await s.task(
+  { module: './workers.js', export: 'process', validate: false },
+  { worker: true, data: { items: [1, 2, 3] } }
+);
+
+// Without caching (force re-import each time)
+await s.task(
+  { module: './workers.js', export: 'process', cache: false },
+  { worker: true, data: { items: [1, 2, 3] } }
+);
+
+// Disable source maps (show compiled JS line numbers)
+await s.task(
+  { module: './workers.ts', export: 'process', sourceMap: false },
+  { worker: true, data: { items: [1, 2, 3] } }
+);
+```
+
+---
+
+### SharedWorkerModule (Class)
+
+```typescript
+class SharedWorkerModule {
+  export(exportName?: string): WorkerModuleSpec
+  getAvailableExports(): string[]
+  hasExport(exportName: string): boolean
+}
+
+// Factory function
+function createSharedWorker(
+  modulePath: string,
+  options?: { validate?: boolean }
+): Promise<SharedWorkerModule>
+```
+
+A shared worker module that can be used across multiple scopes. The module is imported once and cached, reducing overhead when used frequently.
+
+**Benefits:**
+- Single module import shared across scopes
+- Pre-validated exports for immediate use
+- Reduced memory and CPU overhead
+
+**Example:**
+
+```typescript
+import { createSharedWorker } from 'go-go-scope';
+
+// Create once at application startup
+const imageWorker = await createSharedWorker('./image-processor.js');
+
+// Use across multiple scopes
+await using s1 = scope();
+const [err1, thumb] = await s1.task(
+  imageWorker.export('createThumbnail'),
+  { worker: true, data: { image: buffer, size: 256 } }
+);
+
+await using s2 = scope();
+const [err2, compressed] = await s2.task(
+  imageWorker.export('compress'),
+  { worker: true, data: { image: buffer, quality: 0.8 } }
+);
+
+// Discover available exports
+const exports = imageWorker.getAvailableExports();
+// ['createThumbnail', 'compress', 'rotate', 'default']
+
+// Check if export exists
+if (imageWorker.hasExport('resize')) {
+  // Use resize function
+}
+```
+
+---
+
 ### TaskOptions (Type)
 
 ```typescript
@@ -554,6 +678,73 @@ interface TaskOptions<E extends Error = Error> {
    * ```
    */
   worker?: boolean
+  
+  /**
+   * Data to pass to worker thread when using `worker: true` (v2.9.0+).
+   * 
+   * Any ArrayBuffers in the data object are automatically transferred
+   * (not copied) to the worker for zero-copy performance. Other data
+   * types are serialized via the structured clone algorithm.
+   * 
+   * ⚠️ **WARNING: ArrayBuffers are detached after transfer!**
+   * After the task executes, any ArrayBuffers in `data` will become
+   * detached (unusable) in the main thread. Accessing them will return
+   * empty buffers.
+   * 
+   * @example
+   * ```typescript
+   * const buffer = new ArrayBuffer(1024 * 1024) // 1MB
+   * new Uint8Array(buffer).fill(42)
+   * 
+   * const [err, result] = await s.task(
+   *   ({ data }) => {
+   *     // Process in worker - buffer was transferred (zero-copy)
+   *     const view = new Uint8Array(data.buffer)
+   *     return view.reduce((a, b) => a + b, 0)
+   *   },
+   *   {
+   *     worker: true,
+   *     data: { buffer } // ArrayBuffers auto-transferred
+   *   }
+   * )
+   * 
+   * // ⚠️ Buffer is now detached in main thread!
+   * console.log(buffer.byteLength) // 0
+   * ```
+   */
+  data?: unknown
+  
+  /**
+   * Load function from module file for worker execution (v2.9.0+).
+   * 
+   * Instead of serializing an inline function with `toString()` + eval(),
+   * load the function from an actual file. This avoids:
+   * - Closure capture limitations (no external variable access)
+   * - eval() security concerns
+   * - Function serialization edge cases
+   * 
+   * The module file must export the function as a named or default export.
+   * The function receives the `data` object as its argument.
+   * 
+   * @example
+   * ```typescript
+   * // math-worker.ts
+   * export function heavyComputation(data: { n: number }) {
+   *   let sum = 0
+   *   for (let i = 1; i <= data.n; i++) {
+   *     sum += i
+   *   }
+   *   return sum
+   * }
+   * 
+   * // main.ts
+   * const [err, result] = await s.task(
+   *   { module: './math-worker.ts', export: 'heavyComputation' },
+   *   { worker: true, data: { n: 1000000 } }
+   * )
+   * ```
+   */
+  module?: WorkerModuleSpec
   
   /**
    * Checkpoint configuration for long-running tasks (v2.5.0+).

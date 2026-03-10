@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/adapter-solid-start",
-	"version": "2.8.0",
+	"version": "2.9.0",
 	"description": "SolidStart adapter for go-go-scope - Request-scoped structured concurrency for SolidStart applications",
 	"type": "module",
 	"main": "./dist/index.mjs",

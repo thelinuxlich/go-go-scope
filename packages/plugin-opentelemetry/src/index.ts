@@ -144,10 +144,12 @@ export function opentelemetryPlugin(
 			scope.onBeforeTask?.(
 				(_taskName: string, index: number, options?: unknown) => {
 					const taskOptions = options as
-						| { otel?: TaskSpanOptions; retry?: unknown; timeout?: number }
+						| { otel?: { name?: string; attributes?: Record<string, unknown> }; retry?: unknown; timeout?: number }
 						| undefined;
+					// Use otel.name for span name if provided, otherwise use task name
+					const spanName = taskOptions?.otel?.name ?? _taskName ?? "scope.task";
 					const span = state.tracer?.startSpan(
-						_taskName ?? "scope.task",
+						spanName,
 						{
 							attributes: {
 								"task.index": index,
