@@ -94,7 +94,55 @@ function extractTransferables(data: unknown): ArrayBuffer[] {
 }
 
 /**
- * Async disposable resource wrapper
+ * Async disposable resource wrapper.
+ * Manages the lifecycle of an asynchronously acquired resource with automatic cleanup.
+ * Useful for resources like database connections, file handles, or network sockets
+ * that need async acquisition and disposal.
+ *
+ * @example
+ * ```typescript
+ * import { AsyncDisposableResource } from 'go-go-scope';
+ *
+ * // Create a resource wrapper for a database connection
+ * const dbResource = new AsyncDisposableResource(
+ *   async () => {
+ *     // Acquire the resource
+ *     const conn = await createDatabaseConnection();
+ *     console.log('Database connected');
+ *     return conn;
+ *   },
+ *   async (conn) => {
+ *     // Cleanup the resource
+ *     await conn.close();
+ *     console.log('Database disconnected');
+ *   }
+ * );
+ *
+ * // Acquire and use with automatic cleanup
+ * await using resource = await dbResource.acquire();
+ * await resource.query('SELECT * FROM users');
+ *
+ * // Resource is automatically closed when out of scope
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Using with scope's provide() for dependency injection
+ * import { scope } from 'go-go-scope';
+ *
+ * await using s = scope();
+ *
+ * const redisResource = new AsyncDisposableResource(
+ *   async () => await redis.connect(),
+ *   async (client) => await client.quit()
+ * );
+ *
+ * // Provide as a singleton service with automatic disposal
+ * s.provide('redis', () => redisResource, {
+ *   singleton: true,
+ *   dispose: async () => await redisResource[Symbol.asyncDispose]()
+ * });
+ * ```
  */
 export class AsyncDisposableResource<T> implements AsyncDisposable {
 	private resource?: T;
@@ -255,6 +303,97 @@ export interface ScopeOptions<
 
 /**
  * A Scope for structured concurrency.
+ *
+ * The Scope class is the core primitive of go-go-scope, providing:
+ * - Automatic cancellation propagation
+ * - Resource cleanup (LIFO order)
+ * - Task spawning with Result tuples
+ * - Timeout and retry support
+ * - Parallel and race execution
+ * - Channels, semaphores, and more
+ *
+ * @example
+ * ```typescript
+ * import { scope } from 'go-go-scope';
+ *
+ * // Basic usage with automatic cleanup
+ * await using s = scope();
+ *
+ * // Spawn a task
+ * const [err, result] = await s.task(async ({ signal }) => {
+ *   const response = await fetch('https://api.example.com/data', { signal });
+ *   return response.json();
+ * });
+ *
+ * if (err) {
+ *   console.error('Task failed:', err);
+ * } else {
+ *   console.log('Result:', result);
+ * }
+ * // Scope is automatically cleaned up when out of scope
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Resource management with services
+ * await using s = scope();
+ *
+ * // Provide a service with automatic disposal
+ * s.provide('db', () => createConnection(), {
+ *   dispose: (conn) => conn.close()
+ * });
+ *
+ * // Use the service in tasks
+ * const [err, users] = await s.task(async ({ services }) => {
+ *   const db = services.db;
+ *   return db.query('SELECT * FROM users');
+ * });
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Parent-child scope hierarchy
+ * await using parent = scope({ timeout: 5000 });
+ *
+ * // Child scope inherits parent's signal and services
+ * await using child = scope({ parent });
+ *
+ * // Tasks in child are cancelled when parent times out
+ * const task = child.task(async ({ signal }) => {
+ *   await new Promise(resolve => setTimeout(resolve, 10000));
+ *   return 'completed';
+ * });
+ *
+ * // Task will be cancelled when parent scope times out
+ * const [err, result] = await task;
+ * // err will be a timeout error
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Parallel execution with progress tracking
+ * await using s = scope();
+ *
+ * const urls = ['https://api1.com', 'https://api2.com', 'https://api3.com'];
+ *
+ * const results = await s.parallel(
+ *   urls.map(url => async () => {
+ *     const res = await fetch(url);
+ *     return res.json();
+ *   }),
+ *   {
+ *     concurrency: 2, // Max 2 concurrent requests
+ *     onProgress: (completed, total, result) => {
+ *       console.log(`Progress: ${completed}/${total}`);
+ *     }
+ *   }
+ * );
+ *
+ * // results is an array of Result tuples [error, value]
+ * for (const [err, data] of results) {
+ *   if (!err) console.log(data);
+ * }
+ * ```
  */
 // @ts-expect-error TypeScript may not recognize Symbol.asyncDispose in all configurations
 export class Scope<

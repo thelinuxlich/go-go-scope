@@ -412,12 +412,30 @@ Create an async iterator from an array with async delay between items
 
 | Name | Type | Description |
 |------|------|-------------|
-| `array` | `T[]` |  |
-| `options` (optional) | `FromArrayOptions` |  |
+| `array` | `T[]` | - The source array to convert to an async iterable |
+| `options` (optional) | `FromArrayOptions` | - Optional configuration for delay and abort signal |
 
 **Returns:** `AsyncIterable<T>`
 
-*Source: [async-iterable.ts:26](packages/go-go-scope/src/async-iterable.ts#L26)*
+An async iterable that yields array elements
+
+**Examples:**
+
+```typescript
+import { fromArray } from "go-go-scope";
+
+const asyncIter = fromArray([1, 2, 3, 4, 5], { delay: 100 });
+
+for await (const value of asyncIter) {
+  console.log(value); // 1, 2, 3, 4, 5 (with 100ms delay between each)
+}
+```
+
+**@param:** - Optional configuration for delay and abort signal
+
+**@returns:** An async iterable that yields array elements
+
+*Source: [async-iterable.ts:41](packages/go-go-scope/src/async-iterable.ts#L41)*
 
 ---
 
@@ -433,11 +451,28 @@ Convert an async iterable to an array
 
 | Name | Type | Description |
 |------|------|-------------|
-| `iterable` | `AsyncIterable<T>` |  |
+| `iterable` | `AsyncIterable<T>` | - The async iterable to convert |
 
 **Returns:** `Promise<T[]>`
 
-*Source: [async-iterable.ts:65](packages/go-go-scope/src/async-iterable.ts#L65)*
+A promise that resolves to an array of all values
+
+**Examples:**
+
+```typescript
+import { fromArray, toArray } from "go-go-scope";
+
+const asyncIter = fromArray([1, 2, 3, 4, 5]);
+const result = await toArray(asyncIter);
+
+console.log(result); // [1, 2, 3, 4, 5]
+```
+
+**@param:** - The async iterable to convert
+
+**@returns:** A promise that resolves to an array of all values
+
+*Source: [async-iterable.ts:93](packages/go-go-scope/src/async-iterable.ts#L93)*
 
 ---
 
@@ -453,11 +488,28 @@ Convert an async iterable to a promise that resolves with the first value
 
 | Name | Type | Description |
 |------|------|-------------|
-| `iterable` | `AsyncIterable<T>` |  |
+| `iterable` | `AsyncIterable<T>` | - The async iterable to get the first value from |
 
 **Returns:** `Promise<T | undefined>`
 
-*Source: [async-iterable.ts:76](packages/go-go-scope/src/async-iterable.ts#L76)*
+A promise that resolves to the first value, or undefined if empty
+
+**Examples:**
+
+```typescript
+import { fromArray, first } from "go-go-scope";
+
+const asyncIter = fromArray([10, 20, 30]);
+const firstValue = await first(asyncIter);
+
+console.log(firstValue); // 10
+```
+
+**@param:** - The async iterable to get the first value from
+
+**@returns:** A promise that resolves to the first value, or undefined if empty
+
+*Source: [async-iterable.ts:117](packages/go-go-scope/src/async-iterable.ts#L117)*
 
 ---
 
@@ -473,11 +525,31 @@ Merge multiple async iterables into one Values are yielded as they arrive (order
 
 | Name | Type | Description |
 |------|------|-------------|
-| `iterables` | `AsyncIterable<T>[]` |  |
+| `iterables` | `AsyncIterable<T>[]` | - The async iterables to merge |
 
 **Returns:** `AsyncIterable<T>`
 
-*Source: [async-iterable.ts:89](packages/go-go-scope/src/async-iterable.ts#L89)*
+An async iterable that yields values from all iterables as they arrive
+
+**Examples:**
+
+```typescript
+import { fromArray, merge, toArray } from "go-go-scope";
+
+const stream1 = fromArray([1, 2, 3], { delay: 50 });
+const stream2 = fromArray(['a', 'b', 'c'], { delay: 30 });
+
+const merged = merge(stream1, stream2);
+const result = await toArray(merged);
+
+console.log(result); // Values from both streams interleaved (order depends on timing)
+```
+
+**@param:** - The async iterables to merge
+
+**@returns:** An async iterable that yields values from all iterables as they arrive
+
+*Source: [async-iterable.ts:146](packages/go-go-scope/src/async-iterable.ts#L146)*
 
 ---
 
@@ -493,11 +565,33 @@ Zip multiple async iterables together Yields arrays of [value1, value2, ...] Sto
 
 | Name | Type | Description |
 |------|------|-------------|
-| `iterables` | `{ [K in keyof T]: AsyncIterable<T[K]> }` |  |
+| `iterables` | `{ [K in keyof T]: AsyncIterable<T[K]> }` | - The async iterables to zip together |
 
 **Returns:** `AsyncIterable<T>`
 
-*Source: [async-iterable.ts:124](packages/go-go-scope/src/async-iterable.ts#L124)*
+An async iterable that yields arrays of values at each position
+
+**Examples:**
+
+```typescript
+import { fromArray, zip, toArray } from "go-go-scope";
+
+const names = fromArray(['Alice', 'Bob', 'Charlie']);
+const ages = fromArray([25, 30, 35]);
+const cities = fromArray(['NYC', 'LA', 'Chicago']);
+
+const zipped = zip(names, ages, cities);
+const result = await toArray(zipped);
+
+console.log(result);
+// [['Alice', 25, 'NYC'], ['Bob', 30, 'LA'], ['Charlie', 35, 'Chicago']]
+```
+
+**@param:** - The async iterables to zip together
+
+**@returns:** An async iterable that yields arrays of values at each position
+
+*Source: [async-iterable.ts:199](packages/go-go-scope/src/async-iterable.ts#L199)*
 
 ---
 
@@ -513,12 +607,30 @@ Transform an async iterable with a mapping function
 
 | Name | Type | Description |
 |------|------|-------------|
-| `iterable` | `AsyncIterable<T>` |  |
-| `fn` | `(value: T, index: number) => R | Promise<R>` |  |
+| `iterable` | `AsyncIterable<T>` | - The async iterable to transform |
+| `fn` | `(value: T, index: number) => R | Promise<R>` | - The mapping function that receives each value and its index |
 
 **Returns:** `AsyncIterable<R>`
 
-*Source: [async-iterable.ts:151](packages/go-go-scope/src/async-iterable.ts#L151)*
+An async iterable with transformed values
+
+**Examples:**
+
+```typescript
+import { fromArray, map, toArray } from "go-go-scope";
+
+const numbers = fromArray([1, 2, 3, 4, 5]);
+const doubled = map(numbers, (n) => n * 2);
+const result = await toArray(doubled);
+
+console.log(result); // [2, 4, 6, 8, 10]
+```
+
+**@param:** - The mapping function that receives each value and its index
+
+**@returns:** An async iterable with transformed values
+
+*Source: [async-iterable.ts:241](packages/go-go-scope/src/async-iterable.ts#L241)*
 
 ---
 
@@ -534,12 +646,30 @@ Filter an async iterable
 
 | Name | Type | Description |
 |------|------|-------------|
-| `iterable` | `AsyncIterable<T>` |  |
-| `predicate` | `(value: T, index: number) => boolean | Promise<boolean>` |  |
+| `iterable` | `AsyncIterable<T>` | - The async iterable to filter |
+| `predicate` | `(value: T, index: number) => boolean | Promise<boolean>` | - A function that returns true for values to keep |
 
 **Returns:** `AsyncIterable<T>`
 
-*Source: [async-iterable.ts:168](packages/go-go-scope/src/async-iterable.ts#L168)*
+An async iterable with only values that pass the predicate
+
+**Examples:**
+
+```typescript
+import { fromArray, filter, toArray } from "go-go-scope";
+
+const numbers = fromArray([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+const evens = filter(numbers, (n) => n % 2 === 0);
+const result = await toArray(evens);
+
+console.log(result); // [2, 4, 6, 8, 10]
+```
+
+**@param:** - A function that returns true for values to keep
+
+**@returns:** An async iterable with only values that pass the predicate
+
+*Source: [async-iterable.ts:273](packages/go-go-scope/src/async-iterable.ts#L273)*
 
 ---
 
@@ -555,12 +685,30 @@ Take first n items from an async iterable
 
 | Name | Type | Description |
 |------|------|-------------|
-| `iterable` | `AsyncIterable<T>` |  |
-| `n` | `number` |  |
+| `iterable` | `AsyncIterable<T>` | - The async iterable to take from |
+| `n` | `number` | - The number of items to take |
 
 **Returns:** `AsyncIterable<T>`
 
-*Source: [async-iterable.ts:187](packages/go-go-scope/src/async-iterable.ts#L187)*
+An async iterable that yields at most n items
+
+**Examples:**
+
+```typescript
+import { fromArray, take, toArray } from "go-go-scope";
+
+const numbers = fromArray([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+const firstThree = take(numbers, 3);
+const result = await toArray(firstThree);
+
+console.log(result); // [1, 2, 3]
+```
+
+**@param:** - The number of items to take
+
+**@returns:** An async iterable that yields at most n items
+
+*Source: [async-iterable.ts:307](packages/go-go-scope/src/async-iterable.ts#L307)*
 
 ---
 
@@ -576,12 +724,30 @@ Skip first n items from an async iterable
 
 | Name | Type | Description |
 |------|------|-------------|
-| `iterable` | `AsyncIterable<T>` |  |
-| `n` | `number` |  |
+| `iterable` | `AsyncIterable<T>` | - The async iterable to skip from |
+| `n` | `number` | - The number of items to skip |
 
 **Returns:** `AsyncIterable<T>`
 
-*Source: [async-iterable.ts:206](packages/go-go-scope/src/async-iterable.ts#L206)*
+An async iterable that yields items after the first n
+
+**Examples:**
+
+```typescript
+import { fromArray, skip, toArray } from "go-go-scope";
+
+const numbers = fromArray([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+const afterFive = skip(numbers, 5);
+const result = await toArray(afterFive);
+
+console.log(result); // [6, 7, 8, 9, 10]
+```
+
+**@param:** - The number of items to skip
+
+**@returns:** An async iterable that yields items after the first n
+
+*Source: [async-iterable.ts:341](packages/go-go-scope/src/async-iterable.ts#L341)*
 
 ---
 
@@ -597,12 +763,30 @@ Buffer items from an async iterable into chunks
 
 | Name | Type | Description |
 |------|------|-------------|
-| `iterable` | `AsyncIterable<T>` |  |
-| `size` | `number` |  |
+| `iterable` | `AsyncIterable<T>` | - The async iterable to buffer |
+| `size` | `number` | - The maximum size of each chunk |
 
 **Returns:** `AsyncIterable<T[]>`
 
-*Source: [async-iterable.ts:226](packages/go-go-scope/src/async-iterable.ts#L226)*
+An async iterable that yields arrays (chunks) of items
+
+**Examples:**
+
+```typescript
+import { fromArray, buffer, toArray } from "go-go-scope";
+
+const numbers = fromArray([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+const chunked = buffer(numbers, 3);
+const result = await toArray(chunked);
+
+console.log(result); // [[1, 2, 3], [4, 5, 6], [7, 8, 9], [10]]
+```
+
+**@param:** - The maximum size of each chunk
+
+**@returns:** An async iterable that yields arrays (chunks) of items
+
+*Source: [async-iterable.ts:376](packages/go-go-scope/src/async-iterable.ts#L376)*
 
 ---
 
@@ -618,12 +802,36 @@ Add a side effect to an async iterable without modifying values
 
 | Name | Type | Description |
 |------|------|-------------|
-| `iterable` | `AsyncIterable<T>` |  |
-| `fn` | `(value: T, index: number) => void | Promise<void>` |  |
+| `iterable` | `AsyncIterable<T>` | - The async iterable to tap into |
+| `fn` | `(value: T, index: number) => void | Promise<void>` | - A side effect function called for each value |
 
 **Returns:** `AsyncIterable<T>`
 
-*Source: [async-iterable.ts:249](packages/go-go-scope/src/async-iterable.ts#L249)*
+An async iterable that yields the same values unchanged
+
+**Examples:**
+
+```typescript
+import { fromArray, tap, toArray } from "go-go-scope";
+
+const numbers = fromArray([1, 2, 3]);
+const logged = tap(numbers, (n, index) => {
+  console.log(`Processing item ${index}: ${n}`);
+});
+const result = await toArray(logged);
+
+// Logs:
+// Processing item 0: 1
+// Processing item 1: 2
+// Processing item 2: 3
+console.log(result); // [1, 2, 3]
+```
+
+**@param:** - A side effect function called for each value
+
+**@returns:** An async iterable that yields the same values unchanged
+
+*Source: [async-iterable.ts:420](packages/go-go-scope/src/async-iterable.ts#L420)*
 
 ---
 
@@ -639,11 +847,32 @@ Concatenate multiple async iterables
 
 | Name | Type | Description |
 |------|------|-------------|
-| `iterables` | `AsyncIterable<T>[]` |  |
+| `iterables` | `AsyncIterable<T>[]` | - The async iterables to concatenate |
 
 **Returns:** `AsyncIterable<T>`
 
-*Source: [async-iterable.ts:267](packages/go-go-scope/src/async-iterable.ts#L267)*
+An async iterable that yields all items from the first iterable, then the second, etc.
+
+**Examples:**
+
+```typescript
+import { fromArray, concat, toArray } from "go-go-scope";
+
+const stream1 = fromArray([1, 2, 3]);
+const stream2 = fromArray([4, 5, 6]);
+const stream3 = fromArray([7, 8, 9]);
+
+const combined = concat(stream1, stream2, stream3);
+const result = await toArray(combined);
+
+console.log(result); // [1, 2, 3, 4, 5, 6, 7, 8, 9]
+```
+
+**@param:** - The async iterables to concatenate
+
+**@returns:** An async iterable that yields all items from the first iterable, then the second, etc.
+
+*Source: [async-iterable.ts:455](packages/go-go-scope/src/async-iterable.ts#L455)*
 
 ---
 
@@ -659,12 +888,37 @@ Create an async iterable that completes after a delay
 
 | Name | Type | Description |
 |------|------|-------------|
-| `ms` | `number` |  |
-| `options` (optional) | `AsyncIteratorFromOptions` |  |
+| `ms` | `number` | - The delay in milliseconds |
+| `options` (optional) | `AsyncIteratorFromOptions` | - Optional configuration with abort signal |
 
 **Returns:** `AsyncIterable<void>`
 
-*Source: [async-iterable.ts:280](packages/go-go-scope/src/async-iterable.ts#L280)*
+An async iterable that yields undefined after the delay
+
+**Examples:**
+
+```typescript
+import { delay } from "go-go-scope";
+
+// Wait for 1 second
+for await (const _ of delay(1000)) {
+  console.log("1 second has passed");
+}
+
+// Use with AbortSignal for cancellable delays
+const controller = new AbortController();
+setTimeout(() => controller.abort(), 500);
+
+for await (const _ of delay(2000, { signal: controller.signal })) {
+  console.log("This may not print if aborted");
+}
+```
+
+**@param:** - Optional configuration with abort signal
+
+**@returns:** An async iterable that yields undefined after the delay
+
+*Source: [async-iterable.ts:490](packages/go-go-scope/src/async-iterable.ts#L490)*
 
 ---
 
@@ -680,12 +934,40 @@ Debounce an async iterable
 
 | Name | Type | Description |
 |------|------|-------------|
-| `iterable` | `AsyncIterable<T>` |  |
-| `ms` | `number` |  |
+| `iterable` | `AsyncIterable<T>` | - The async iterable to debounce |
+| `ms` | `number` | - The debounce delay in milliseconds |
 
 **Returns:** `AsyncIterable<T>`
 
-*Source: [async-iterable.ts:310](packages/go-go-scope/src/async-iterable.ts#L310)*
+An async iterable that yields the last value after the delay
+
+**Examples:**
+
+```typescript
+import { fromArray, debounce, toArray } from "go-go-scope";
+
+// Simulate rapid updates (e.g., from user input)
+async function* rapidUpdates() {
+  yield 'a';
+  yield 'ab';
+  yield 'abc';
+  await new Promise(r => setTimeout(r, 100));
+  yield 'abcd';
+  yield 'abcde';
+}
+
+const debounced = debounce(rapidUpdates(), 50);
+const result = await toArray(debounced);
+
+// Only yields values after the debounce delay
+console.log(result); // ['abc', 'abcde']
+```
+
+**@param:** - The debounce delay in milliseconds
+
+**@returns:** An async iterable that yields the last value after the delay
+
+*Source: [async-iterable.ts:545](packages/go-go-scope/src/async-iterable.ts#L545)*
 
 ---
 
@@ -701,12 +983,39 @@ Throttle an async iterable
 
 | Name | Type | Description |
 |------|------|-------------|
-| `iterable` | `AsyncIterable<T>` |  |
-| `ms` | `number` |  |
+| `iterable` | `AsyncIterable<T>` | - The async iterable to throttle |
+| `ms` | `number` | - The minimum time between yields in milliseconds |
 
 **Returns:** `AsyncIterable<T>`
 
-*Source: [async-iterable.ts:368](packages/go-go-scope/src/async-iterable.ts#L368)*
+An async iterable that yields values at most once per ms milliseconds
+
+**Examples:**
+
+```typescript
+import { fromArray, throttle, toArray } from "go-go-scope";
+
+// Rapid source that emits every 10ms
+async function* rapidSource() {
+  for (let i = 0; i < 10; i++) {
+    yield i;
+    await new Promise(r => setTimeout(r, 10));
+  }
+}
+
+// Throttle to allow at most one value per 50ms
+const throttled = throttle(rapidSource(), 50);
+const result = await toArray(throttled);
+
+// Fewer values due to throttling
+console.log(result.length); // Approximately 2-3 items instead of 10
+```
+
+**@param:** - The minimum time between yields in milliseconds
+
+**@returns:** An async iterable that yields values at most once per ms milliseconds
+
+*Source: [async-iterable.ts:627](packages/go-go-scope/src/async-iterable.ts#L627)*
 
 ---
 
@@ -908,7 +1217,7 @@ emitter.emit("message", "Hello!");
 
 **@returns:** ScopedEventEmitter instance
 
-*Source: [event-emitter.ts:280](packages/go-go-scope/src/event-emitter.ts#L280)*
+*Source: [event-emitter.ts:327](packages/go-go-scope/src/event-emitter.ts#L327)*
 
 ---
 
@@ -1043,7 +1352,7 @@ const [err, result] = await s.task(() => callUnreliableService());
 function setupEnhancedGracefulShutdown(scope: Scope<Record<string, unknown>>, options: EnhancedGracefulShutdownOptions = {}): EnhancedGracefulShutdownController
 ```
 
-Setup enhanced graceful shutdown
+Setup enhanced graceful shutdown Creates and configures an {@link EnhancedGracefulShutdownController} for a scope. Supports multiple shutdown strategies with task tracking and lifecycle hooks.
 
 **Parameters:**
 
@@ -1054,7 +1363,62 @@ Setup enhanced graceful shutdown
 
 **Returns:** `EnhancedGracefulShutdownController`
 
-*Source: [graceful-shutdown-enhanced.ts:346](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L346)*
+**Examples:**
+
+```typescript
+import { scope } from "go-go-scope";
+import { setupEnhancedGracefulShutdown } from "go-go-scope/graceful-shutdown-enhanced";
+
+await using s = scope();
+
+// Immediate shutdown - cancels all tasks immediately
+const immediate = setupEnhancedGracefulShutdown(s, {
+  strategy: "immediate"
+});
+```
+
+```typescript
+import { scope } from "go-go-scope";
+import { setupEnhancedGracefulShutdown } from "go-go-scope/graceful-shutdown-enhanced";
+
+await using s = scope();
+
+// Drain shutdown - wait for in-flight tasks to complete
+const drain = setupEnhancedGracefulShutdown(s, {
+  strategy: "drain",
+  drainTimeout: 30000, // Wait up to 30 seconds
+  healthCheckInterval: 1000,
+  healthCheck: () => {
+    return service.isHealthy();
+  }
+});
+```
+
+```typescript
+import { scope } from "go-go-scope";
+import { setupEnhancedGracefulShutdown } from "go-go-scope/graceful-shutdown-enhanced";
+
+await using s = scope();
+
+// Hybrid shutdown - drain with timeout fallback
+const hybrid = setupEnhancedGracefulShutdown(s, {
+  strategy: "hybrid",
+  drainTimeout: 30000,
+  timeout: 60000,
+  enableRollback: true,
+  rollback: async () => {
+    // Restore state if shutdown fails
+    await restoreCheckpoint();
+  }
+});
+
+// Add custom shutdown hook
+hybrid.onShutdownHook(async () => {
+  await closeDatabaseConnections();
+});
+```
+
+*Source: [graceful-shutdown-enhanced.ts:445](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L445)*
 
 ---
 
@@ -1064,11 +1428,59 @@ Setup enhanced graceful shutdown
 function createShutdownCoordinator(): ShutdownCoordinator
 ```
 
-Create a shutdown coordinator
+Create a shutdown coordinator Factory function to create a new {@link ShutdownCoordinator} instance. Use this for managing shutdown of multiple scopes with dependencies.
 
 **Returns:** `ShutdownCoordinator`
 
-*Source: [graceful-shutdown-enhanced.ts:478](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L478)*
+**Examples:**
+
+```typescript
+import { scope } from "go-go-scope";
+import { createShutdownCoordinator } from "go-go-scope/graceful-shutdown-enhanced";
+
+// Create coordinator
+const coordinator = createShutdownCoordinator();
+
+// Setup services with different scopes
+await using httpScope = scope();
+await using wsScope = scope();
+await using queueScope = scope();
+
+// Register each service
+coordinator.register("http-server", httpScope, {
+  strategy: "drain",
+  drainTimeout: 15000
+});
+
+coordinator.register("websocket-server", wsScope, {
+  strategy: "drain",
+  drainTimeout: 10000
+});
+
+coordinator.register("job-queue", queueScope, {
+  strategy: "hybrid",
+  drainTimeout: 60000,
+  timeout: 120000
+});
+
+// WebSocket depends on HTTP server
+coordinator.addDependency("websocket-server", "http-server");
+
+// Graceful shutdown on SIGTERM
+process.on("SIGTERM", async () => {
+  const results = await coordinator.shutdownAll("SIGTERM");
+  const failed = Array.from(results.entries())
+    .filter(([_, error]) => error !== undefined);
+
+  if (failed.length > 0) {
+    console.error("Some services failed to shut down:", failed);
+    process.exit(1);
+  }
+  process.exit(0);
+});
+```
+
+*Source: [graceful-shutdown-enhanced.ts:679](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L679)*
 
 ---
 
@@ -1636,7 +2048,24 @@ Get current memory usage
 
 **Returns:** `MemoryUsage`
 
-*Source: [memory-monitor.ts:82](packages/go-go-scope/src/memory-monitor.ts#L82)*
+**Examples:**
+
+```typescript
+const usage = getMemoryUsage();
+console.log(`Heap used: ${(usage.used / 1024 / 1024).toFixed(2)} MB`);
+console.log(`Heap total: ${(usage.total / 1024 / 1024).toFixed(2)} MB`);
+console.log(`Usage: ${usage.percentageUsed.toFixed(1)}%`);
+```
+
+```typescript
+// Check if memory usage is high before performing heavy operation
+const usage = getMemoryUsage();
+if (usage.percentageUsed > 80) {
+  console.warn('High memory usage detected, consider delaying operation');
+}
+```
+
+*Source: [memory-monitor.ts:99](packages/go-go-scope/src/memory-monitor.ts#L99)*
 
 ---
 
@@ -1650,7 +2079,28 @@ Check if memory monitoring is available in the current environment
 
 **Returns:** `boolean`
 
-*Source: [memory-monitor.ts:284](packages/go-go-scope/src/memory-monitor.ts#L284)*
+**Examples:**
+
+```typescript
+if (isMemoryMonitoringAvailable()) {
+  const usage = getMemoryUsage();
+  console.log(`Memory: ${usage.percentageUsed.toFixed(1)}%`);
+} else {
+  console.log('Memory monitoring not available in this environment');
+}
+```
+
+```typescript
+// Gracefully degrade when memory monitoring is unavailable
+function logMemoryIfAvailable() {
+  if (!isMemoryMonitoringAvailable()) return;
+
+  const usage = getMemoryUsage();
+  console.log(`Heap: ${(usage.used / 1024 / 1024).toFixed(2)} MB`);
+}
+```
+
+*Source: [memory-monitor.ts:349](packages/go-go-scope/src/memory-monitor.ts#L349)*
 
 ---
 
@@ -1853,7 +2303,51 @@ Create a performance monitor for a scope
 
 **Returns:** `PerformanceMonitor`
 
-*Source: [performance.ts:226](packages/go-go-scope/src/performance.ts#L226)*
+**Examples:**
+
+```typescript
+import { scope, performanceMonitor } from "go-go-scope";
+
+await using s = scope();
+
+// Create and auto-start monitoring
+using monitor = performanceMonitor(s, {
+  sampleInterval: 1000,
+  trackMemory: true
+});
+
+// Spawn some tasks
+for (let i = 0; i < 10; i++) {
+  s.task(async () => {
+    await new Promise(r => setTimeout(r, 100));
+  });
+}
+
+// Get current metrics
+const metrics = monitor.getMetrics();
+console.log(`Tasks/sec: ${metrics.tasksPerSecond.toFixed(2)}`);
+console.log(`Avg duration: ${metrics.averageTaskDuration.toFixed(2)}ms`);
+```
+
+```typescript
+// Monitor with memory tracking
+await using s = scope();
+using monitor = performanceMonitor(s, {
+  sampleInterval: 500,
+  trackMemory: true
+});
+
+// Check memory growth over time
+setInterval(() => {
+  const metrics = monitor.getMetrics();
+  if (metrics.memoryUsage) {
+    const mb = (metrics.memoryUsage.used / 1024 / 1024).toFixed(2);
+    console.log(`Memory: ${mb} MB`);
+  }
+}, 1000);
+```
+
+*Source: [performance.ts:313](packages/go-go-scope/src/performance.ts#L313)*
 
 ---
 
@@ -1875,7 +2369,7 @@ Run a benchmark in a worker thread
 
 **Returns:** `Promise<BenchmarkResult>`
 
-*Source: [performance.ts:289](packages/go-go-scope/src/performance.ts#L289)*
+*Source: [performance.ts:376](packages/go-go-scope/src/performance.ts#L376)*
 
 ---
 
@@ -1897,7 +2391,56 @@ Run a benchmark
 
 **Returns:** `Promise<BenchmarkResult>`
 
-*Source: [performance.ts:360](packages/go-go-scope/src/performance.ts#L360)*
+**Examples:**
+
+```typescript
+import { benchmark } from "go-go-scope";
+
+// Benchmark a simple function
+const result = await benchmark('array-sum', () => {
+  const arr = new Array(1000).fill(0).map((_, i) => i);
+  return arr.reduce((a, b) => a + b, 0);
+}, {
+  warmup: 100,
+  iterations: 1000
+});
+
+console.log(`${result.name}:`);
+console.log(`  Average: ${result.avgDuration.toFixed(3)}ms`);
+console.log(`  Ops/sec: ${result.opsPerSecond.toFixed(0)}`);
+console.log(`  Min/Max: ${result.minDuration.toFixed(3)}ms / ${result.maxDuration.toFixed(3)}ms`);
+```
+
+```typescript
+// Benchmark an async operation
+const result = await benchmark('fetch-data', async () => {
+  await fetch('https://api.example.com/data');
+}, {
+  warmup: 10,
+  iterations: 100,
+  minDuration: 5000
+});
+
+console.log(`API latency: ${result.avgDuration.toFixed(2)}ms average`);
+```
+
+```typescript
+// Run benchmark in a worker thread (for CPU-intensive tasks)
+const result = await benchmark('heavy-calculation', () => {
+  let sum = 0;
+  for (let i = 0; i < 1000000; i++) {
+    sum += Math.sqrt(i);
+  }
+  return sum;
+}, {
+  worker: true,
+  iterations: 100
+});
+
+console.log(`Throughput: ${result.opsPerSecond.toFixed(0)} ops/sec`);
+```
+
+*Source: [performance.ts:497](packages/go-go-scope/src/performance.ts#L497)*
 
 ---
 
@@ -1907,7 +2450,7 @@ Run a benchmark
 function hasPlugin(scope: Scope, pluginName: string): boolean
 ```
 
-Check if a plugin is installed on a scope
+Check if a plugin is installed on a scope.
 
 **Parameters:**
 
@@ -1918,7 +2461,34 @@ Check if a plugin is installed on a scope
 
 **Returns:** `boolean`
 
-*Source: [plugin.ts:49](packages/go-go-scope/src/plugin.ts#L49)*
+**Examples:**
+
+```typescript
+import { scope, hasPlugin, registerPlugin } from 'go-go-scope';
+
+// Define a custom plugin
+const metricsPlugin: ScopePlugin = {
+  name: 'metrics',
+  install(scope) {
+    scope.provide('metrics', {
+      counters: new Map<string, number>(),
+      increment(name: string) {
+        const current = this.counters.get(name) ?? 0;
+        this.counters.set(name, current + 1);
+      }
+    });
+  }
+};
+
+await using s = scope({ plugins: [metricsPlugin] });
+
+// Check if plugin is installed
+if (hasPlugin(s, 'metrics')) {
+  console.log('Metrics plugin is active');
+}
+```
+
+*Source: [plugin.ts:75](packages/go-go-scope/src/plugin.ts#L75)*
 
 ---
 
@@ -1928,7 +2498,7 @@ Check if a plugin is installed on a scope
 function registerPlugin(scope: Scope, plugin: ScopePlugin): void
 ```
 
-Register a plugin as installed on a scope
+Register a plugin as installed on a scope. This is called automatically when plugins are passed to scope options, but can also be called manually for dynamic plugin registration.
 
 **Parameters:**
 
@@ -1939,7 +2509,38 @@ Register a plugin as installed on a scope
 
 **Returns:** `void`
 
-*Source: [plugin.ts:56](packages/go-go-scope/src/plugin.ts#L56)*
+**Examples:**
+
+```typescript
+import { scope, registerPlugin } from 'go-go-scope';
+import type { ScopePlugin } from 'go-go-scope';
+
+// Create a custom logging plugin
+const loggingPlugin: ScopePlugin = {
+  name: 'logging',
+  install(scope) {
+    // Add a method to the scope
+    (scope as any).logTask = async (name: string, fn: () => Promise<void>) => {
+      console.log(`Starting: ${name}`);
+      await fn();
+      console.log(`Completed: ${name}`);
+    };
+  },
+  cleanup(scope) {
+    console.log('Logging plugin cleanup');
+  }
+};
+
+await using s = scope();
+
+// Register plugin manually
+registerPlugin(s, loggingPlugin);
+
+// The plugin is now active on this scope
+// Plugin lifecycle: cleanup will be called when scope is disposed
+```
+
+*Source: [plugin.ts:114](packages/go-go-scope/src/plugin.ts#L114)*
 
 ---
 
@@ -2872,7 +3473,87 @@ Create a worker pool with the given options. Convenience function for API consis
 
 **Returns:** `WorkerPool`
 
-*Source: [worker-pool.ts:885](packages/go-go-scope/src/worker-pool.ts#L885)*
+**Examples:**
+
+```typescript
+import { workerPool } from 'go-go-scope';
+
+// Create a worker pool with 4 workers
+await using pool = workerPool({ size: 4 });
+
+// Execute a CPU-intensive task in a worker
+const [err, result] = await pool.execute(
+  (n: number) => {
+    // This runs in a worker thread
+    function fibonacci(num: number): number {
+      return num <= 1 ? num : fibonacci(num - 1) + fibonacci(num - 2);
+    }
+    return fibonacci(n);
+  },
+  35  // Input value
+);
+
+if (err) {
+  console.error('Calculation failed:', err);
+} else {
+  console.log('Fibonacci result:', result);
+}
+// Pool is automatically terminated when out of scope
+```
+
+```typescript
+// Batch processing with error handling
+import { workerPool } from 'go-go-scope';
+
+await using pool = workerPool({ size: 4, idleTimeout: 30000 });
+
+const numbers = [30, 35, 40, 45];
+
+// Process multiple items in parallel
+const results = await pool.executeBatch(
+  numbers,
+  (n) => {
+    // Heavy computation
+    let sum = 0;
+    for (let i = 0; i < n * 1000000; i++) {
+      sum += i;
+    }
+    return { n, sum };
+  },
+  { ordered: true }  // Results in same order as input
+);
+
+for (const [err, result] of results) {
+  if (!err) {
+    console.log(`Sum for n=${result.n}:`, result.sum);
+  }
+}
+```
+
+```typescript
+// Using with scope's worker option
+import { scope } from 'go-go-scope';
+
+// Create scope with worker pool configuration
+await using s = scope({
+  workerPool: { size: 4, idleTimeout: 60000 }
+});
+
+// Execute task in worker automatically
+const [err, result] = await s.task(
+  async () => {
+    // This function is serialized and runs in a worker
+    const data = (ctx as any).data;
+    return data.map((x: number) => x * x);
+  },
+  {
+    worker: true,
+    data: [1, 2, 3, 4, 5]  // Data passed to worker
+  }
+);
+```
+
+*Source: [worker-pool.ts:966](packages/go-go-scope/src/worker-pool.ts#L966)*
 
 ---
 
@@ -3349,9 +4030,55 @@ async function handleApiRequest(req: Request) {
 class ScopedEventEmitter<Events extends EventMap = EventMap>
 ```
 
-Scoped EventEmitter with automatic cleanup All listeners are automatically removed when the parent scope is disposed.
+Scoped EventEmitter with automatic cleanup All listeners are automatically removed when the parent scope is disposed. This prevents memory leaks from forgotten event listeners in long-running applications.
 
-*Source: [event-emitter.ts:45](packages/go-go-scope/src/event-emitter.ts#L45)*
+**Examples:**
+
+```typescript
+import { scope } from "go-go-scope";
+
+await using s = scope();
+
+// Create a typed event emitter
+const emitter = s.eventEmitter<{
+  userLogin: (userId: string, timestamp: number) => void;
+  userLogout: (userId: string) => void;
+  dataReceived: (payload: { id: string; data: unknown }) => void;
+}>();
+
+// Listen to events - automatically cleaned up when scope disposes
+emitter.on("userLogin", (userId, timestamp) => {
+  console.log(`User ${userId} logged in at ${new Date(timestamp)}`);
+});
+
+emitter.on("userLogout", (userId) => {
+  console.log(`User ${userId} logged out`);
+});
+
+// Listen once - handler is removed after first emit
+emitter.once("dataReceived", (payload) => {
+  console.log(`First data received: ${payload.id}`);
+});
+
+// Emit events within the scope
+emitter.emit("userLogin", "user-123", Date.now());
+emitter.emit("dataReceived", { id: "msg-1", data: "Hello" });
+emitter.emit("dataReceived", { id: "msg-2", data: "World" }); // once handler not called
+emitter.emit("userLogout", "user-123");
+
+// Check listener count
+console.log(`Login listeners: ${emitter.listenerCount("userLogin")}`);
+
+// Manual cleanup of specific listeners
+const unsubscribe = emitter.on("dataReceived", (payload) => {
+  console.log(`Data: ${payload.id}`);
+});
+unsubscribe(); // Remove this specific listener
+
+// All listeners are automatically removed when scope exits
+```
+
+*Source: [event-emitter.ts:92](packages/go-go-scope/src/event-emitter.ts#L92)*
 
 ---
 
@@ -3361,9 +4088,47 @@ Scoped EventEmitter with automatic cleanup All listeners are automatically remov
 class EnhancedGracefulShutdownController
 ```
 
-Enhanced graceful shutdown controller with strategies
+Enhanced graceful shutdown controller with strategies Provides multiple shutdown strategies (immediate, drain, timeout, hybrid) with task tracking, health checks, and lifecycle hooks.
 
-*Source: [graceful-shutdown-enhanced.ts:59](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L59)*
+**Examples:**
+
+```typescript
+import { scope } from "go-go-scope";
+import { setupEnhancedGracefulShutdown } from "go-go-scope/graceful-shutdown-enhanced";
+
+await using s = scope();
+
+const shutdown = setupEnhancedGracefulShutdown(s, {
+  strategy: "hybrid",
+  drainTimeout: 30000,
+  timeout: 60000,
+  healthCheck: () => {
+    // Check if system is healthy
+    return db.isConnected();
+  },
+  beforeShutdown: async () => {
+    console.log("Preparing for shutdown...");
+  },
+  afterShutdown: async () => {
+    console.log("Shutdown complete");
+  }
+});
+
+// Spawn some tasks
+s.task(async () => {
+  // This task will be tracked during shutdown
+  await processData();
+});
+
+// Check shutdown state
+console.log(shutdown.currentState); // "running"
+console.log(shutdown.activeTaskCount); // 1
+
+// Later, trigger shutdown
+// await shutdown.shutdown("SIGTERM");
+```
+
+*Source: [graceful-shutdown-enhanced.ts:99](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L99)*
 
 ---
 
@@ -3373,9 +4138,59 @@ Enhanced graceful shutdown controller with strategies
 class ShutdownCoordinator
 ```
 
-Shutdown coordinator for multi-scope applications
+Shutdown coordinator for multi-scope applications Manages graceful shutdown of multiple scopes with dependency ordering. Dependencies are shut down before the scopes that depend on them.
 
-*Source: [graceful-shutdown-enhanced.ts:365](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L365)*
+**Examples:**
+
+```typescript
+import { scope } from "go-go-scope";
+import { ShutdownCoordinator, createShutdownCoordinator } from "go-go-scope/graceful-shutdown-enhanced";
+
+const coordinator = createShutdownCoordinator();
+
+// Create multiple scopes for different services
+await using apiScope = scope();
+await using workerScope = scope();
+await using dbScope = scope();
+
+// Register scopes with the coordinator
+coordinator.register("database", dbScope, {
+  strategy: "drain",
+  drainTimeout: 10000
+});
+
+coordinator.register("worker", workerScope, {
+  strategy: "drain",
+  drainTimeout: 30000
+});
+
+coordinator.register("api", apiScope, {
+  strategy: "drain",
+  drainTimeout: 20000
+});
+
+// Define dependencies: API depends on database, worker depends on database
+coordinator.addDependency("api", "database");
+coordinator.addDependency("worker", "database");
+
+// Check status before shutdown
+const status = coordinator.getStatus();
+for (const [name, info] of status) {
+  console.log(`${name}: ${info.state}, ${info.activeTasks} tasks`);
+}
+
+// Shutdown all scopes in dependency order (database last)
+const results = await coordinator.shutdownAll("SIGTERM");
+for (const [name, error] of results) {
+  if (error) {
+    console.error(`Shutdown failed for ${name}:`, error);
+  } else {
+    console.log(`${name} shut down successfully`);
+  }
+}
+```
+
+*Source: [graceful-shutdown-enhanced.ts:516](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L516)*
 
 ---
 
@@ -3385,9 +4200,63 @@ Shutdown coordinator for multi-scope applications
 class ProcessLifecycle
 ```
 
-Process lifecycle manager with graceful shutdown
+Process lifecycle manager with graceful shutdown Manages the entire process lifecycle including signal handling, uncaught exception handling, and coordinated shutdown. Use the global {@link processLifecycle} instance for singleton access.
 
-*Source: [graceful-shutdown-enhanced.ts:485](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L485)*
+**Examples:**
+
+```typescript
+import { scope } from "go-go-scope";
+import { processLifecycle } from "go-go-scope/graceful-shutdown-enhanced";
+
+await using s = scope();
+
+// Initialize process lifecycle with single scope
+const controller = processLifecycle.init(s, {
+  strategy: "hybrid",
+  drainTimeout: 30000,
+  timeout: 60000,
+  beforeShutdown: async () => {
+    console.log("Received shutdown signal, starting graceful shutdown...");
+  },
+  afterShutdown: async () => {
+    console.log("Cleanup complete, process will exit");
+  }
+});
+
+// Access controller later
+const currentController = processLifecycle.getController();
+console.log("Shutdown state:", currentController.currentState);
+
+// The process will automatically handle SIGTERM/SIGINT
+// and uncaught exceptions
+```
+
+```typescript
+import { scope } from "go-go-scope";
+import { processLifecycle } from "go-go-scope/graceful-shutdown-enhanced";
+
+// Initialize with coordinator for multi-scope application
+const coordinator = processLifecycle.initWithCoordinator();
+
+// Register multiple scopes
+await using apiScope = scope();
+await using workerScope = scope();
+
+coordinator.register("api", apiScope, { strategy: "drain", drainTimeout: 20000 });
+coordinator.register("worker", workerScope, { strategy: "drain", drainTimeout: 30000 });
+
+// Add dependency
+coordinator.addDependency("api", "worker");
+
+// Access coordinator later
+const currentCoordinator = processLifecycle.getCoordinator();
+const status = currentCoordinator.getStatus();
+
+// Handle process signals automatically
+// SIGTERM/SIGINT will trigger coordinator.shutdownAll()
+```
+
+*Source: [graceful-shutdown-enhanced.ts:745](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L745)*
 
 ---
 
@@ -3688,7 +4557,34 @@ class MemoryMonitor
 
 Memory monitor that tracks heap usage and triggers callbacks on pressure
 
-*Source: [memory-monitor.ts:145](packages/go-go-scope/src/memory-monitor.ts#L145)*
+**Examples:**
+
+```typescript
+// Monitor memory with a 100MB limit
+using monitor = new MemoryMonitor({
+  limit: '100mb',
+  pressureThreshold: 75,
+  checkInterval: 1000,
+  onPressure: (usage) => {
+    console.warn(`Memory pressure: ${usage.percentageUsed.toFixed(1)}% used`);
+  }
+});
+
+// Get current usage anytime
+const usage = monitor.getUsage();
+console.log(`Using ${usage.percentageUsed.toFixed(1)}% of limit`);
+```
+
+```typescript
+// Dynamic limit adjustment
+using monitor = new MemoryMonitor({ limit: '50mb' });
+
+// Increase limit as needed
+monitor.setLimit('100mb');
+console.log(`New limit: ${(monitor.getLimit() / 1024 / 1024).toFixed(0)} MB`);
+```
+
+*Source: [memory-monitor.ts:189](packages/go-go-scope/src/memory-monitor.ts#L189)*
 
 ---
 
@@ -3700,7 +4596,50 @@ class PerformanceMonitor
 
 Performance monitor for a scope
 
-*Source: [performance.ts:59](packages/go-go-scope/src/performance.ts#L59)*
+**Examples:**
+
+```typescript
+import { scope, PerformanceMonitor } from "go-go-scope";
+
+await using s = scope();
+
+// Create and start monitoring
+using monitor = new PerformanceMonitor(s, {
+  sampleInterval: 500,
+  maxSnapshots: 50,
+  trackMemory: true
+});
+monitor.start();
+
+// Run some tasks
+await s.task(async () => {
+  await new Promise(r => setTimeout(r, 100));
+}).run();
+
+// Check metrics
+const metrics = monitor.getMetrics();
+console.log(`Tasks: ${metrics.taskCount}, Active: ${metrics.activeTaskCount}`);
+
+// Check trends
+const trends = monitor.getTrends();
+console.log(`Task rate is ${trends.taskRateTrend}`);
+```
+
+```typescript
+// Take periodic snapshots for analysis
+using monitor = new PerformanceMonitor(scope(), {
+  sampleInterval: 1000,
+  maxSnapshots: 100
+});
+monitor.start();
+
+// After some time...
+const snapshots = monitor.getSnapshots();
+const avgTaskRate = snapshots.reduce((sum, s) => sum + s.metrics.tasksPerSecond, 0) / snapshots.length;
+console.log(`Average task rate: ${avgTaskRate.toFixed(2)} tasks/sec`);
+```
+
+*Source: [performance.ts:102](packages/go-go-scope/src/performance.ts#L102)*
 
 ---
 
@@ -3712,7 +4651,61 @@ class MemoryTracker
 
 Memory tracker for detecting leaks
 
-*Source: [performance.ts:415](packages/go-go-scope/src/performance.ts#L415)*
+**Examples:**
+
+```typescript
+import { MemoryTracker } from "go-go-scope";
+
+// Create a tracker
+const tracker = new MemoryTracker(50);
+
+// Take initial snapshot
+tracker.snapshot();
+
+// Perform some operations
+const data = [];
+for (let i = 0; i < 1000; i++) {
+  data.push(new Array(1000).fill(i));
+  tracker.snapshot();
+}
+
+// Check for memory leaks
+if (tracker.checkForLeaks(5)) {
+  console.warn('Memory leak detected!');
+  console.log(`Growth rate: ${(tracker.getGrowthRate() / 1024).toFixed(2)} KB/s`);
+}
+
+// Get all snapshots for analysis
+const snapshots = tracker.getSnapshots();
+console.log(`Taken ${snapshots.length} snapshots`);
+```
+
+```typescript
+// Use in a test to verify no memory leaks
+async function testForLeaks(operation: () => void) {
+  const tracker = new MemoryTracker(20);
+
+  // Warmup
+  for (let i = 0; i < 5; i++) {
+    operation();
+    tracker.snapshot();
+  }
+
+  // Test
+  for (let i = 0; i < 100; i++) {
+    operation();
+    tracker.snapshot();
+  }
+
+  const isLeaking = tracker.checkForLeaks(10);
+  console.log(`Memory leak detected: ${isLeaking}`);
+  console.log(`Growth rate: ${tracker.getGrowthRate().toFixed(0)} bytes/sec`);
+
+  return !isLeaking;
+}
+```
+
+*Source: [performance.ts:606](packages/go-go-scope/src/performance.ts#L606)*
 
 ---
 
@@ -3809,9 +4802,54 @@ try {
 class AsyncDisposableResource<T>
 ```
 
-Async disposable resource wrapper
+Async disposable resource wrapper. Manages the lifecycle of an asynchronously acquired resource with automatic cleanup. Useful for resources like database connections, file handles, or network sockets that need async acquisition and disposal.
 
-*Source: [scope.ts:99](packages/go-go-scope/src/scope.ts#L99)*
+**Examples:**
+
+```typescript
+import { AsyncDisposableResource } from 'go-go-scope';
+
+// Create a resource wrapper for a database connection
+const dbResource = new AsyncDisposableResource(
+  async () => {
+    // Acquire the resource
+    const conn = await createDatabaseConnection();
+    console.log('Database connected');
+    return conn;
+  },
+  async (conn) => {
+    // Cleanup the resource
+    await conn.close();
+    console.log('Database disconnected');
+  }
+);
+
+// Acquire and use with automatic cleanup
+await using resource = await dbResource.acquire();
+await resource.query('SELECT * FROM users');
+
+// Resource is automatically closed when out of scope
+```
+
+```typescript
+// Using with scope's provide() for dependency injection
+import { scope } from 'go-go-scope';
+
+await using s = scope();
+
+const redisResource = new AsyncDisposableResource(
+  async () => await redis.connect(),
+  async (client) => await client.quit()
+);
+
+// Provide as a singleton service with automatic disposal
+s.provide('redis', () => redisResource, {
+  singleton: true,
+  dispose: async () => await redisResource[Symbol.asyncDispose]()
+});
+```
+
+*Source: [scope.ts:147](packages/go-go-scope/src/scope.ts#L147)*
 
 ---
 
@@ -3821,9 +4859,90 @@ Async disposable resource wrapper
 class Scope<Services extends Record<string, unknown> = Record<string, never>>
 ```
 
-A Scope for structured concurrency. // @ts-expect-error TypeScript may not recognize Symbol.asyncDispose in all configurations
+A Scope for structured concurrency. The Scope class is the core primitive of go-go-scope, providing: - Automatic cancellation propagation - Resource cleanup (LIFO order) - Task spawning with Result tuples - Timeout and retry support - Parallel and race execution - Channels, semaphores, and more // @ts-expect-error TypeScript may not recognize Symbol.asyncDispose in all configurations
 
-*Source: [scope.ts:260](packages/go-go-scope/src/scope.ts#L260)*
+**Examples:**
+
+```typescript
+import { scope } from 'go-go-scope';
+
+// Basic usage with automatic cleanup
+await using s = scope();
+
+// Spawn a task
+const [err, result] = await s.task(async ({ signal }) => {
+  const response = await fetch('https://api.example.com/data', { signal });
+  return response.json();
+});
+
+if (err) {
+  console.error('Task failed:', err);
+} else {
+  console.log('Result:', result);
+}
+// Scope is automatically cleaned up when out of scope
+```
+
+```typescript
+// Resource management with services
+await using s = scope();
+
+// Provide a service with automatic disposal
+s.provide('db', () => createConnection(), {
+  dispose: (conn) => conn.close()
+});
+
+// Use the service in tasks
+const [err, users] = await s.task(async ({ services }) => {
+  const db = services.db;
+  return db.query('SELECT * FROM users');
+});
+```
+
+```typescript
+// Parent-child scope hierarchy
+await using parent = scope({ timeout: 5000 });
+
+// Child scope inherits parent's signal and services
+await using child = scope({ parent });
+
+// Tasks in child are cancelled when parent times out
+const task = child.task(async ({ signal }) => {
+  await new Promise(resolve => setTimeout(resolve, 10000));
+  return 'completed';
+});
+
+// Task will be cancelled when parent scope times out
+const [err, result] = await task;
+// err will be a timeout error
+```
+
+```typescript
+// Parallel execution with progress tracking
+await using s = scope();
+
+const urls = ['https://api1.com', 'https://api2.com', 'https://api3.com'];
+
+const results = await s.parallel(
+  urls.map(url => async () => {
+    const res = await fetch(url);
+    return res.json();
+  }),
+  {
+    concurrency: 2, // Max 2 concurrent requests
+    onProgress: (completed, total, result) => {
+      console.log(`Progress: ${completed}/${total}`);
+    }
+  }
+);
+
+// results is an array of Result tuples [error, value]
+for (const [err, data] of results) {
+  if (!err) console.log(data);
+}
+```
+
+*Source: [scope.ts:399](packages/go-go-scope/src/scope.ts#L399)*
 
 ---
 
@@ -3835,9 +4954,74 @@ class Semaphore
 
 A Semaphore for limiting concurrent access to a resource. Respects scope cancellation and supports priority-based acquisition. #__PURE__
 
+**Examples:**
+
+```typescript
+import { scope, Semaphore } from "go-go-scope";
+
+await using s = scope();
+
+// Create a semaphore allowing 3 concurrent operations
+const dbSemaphore = new Semaphore(3, s.signal);
+
+// Simulate database operations with limited concurrency
+async function queryDatabase(query: string): Promise<string> {
+  return await dbSemaphore.acquire(async () => {
+    // Only 3 queries can run concurrently
+    console.log(`Executing: ${query} (available: ${dbSemaphore.available})`);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    return `Result for: ${query}`;
+  });
+}
+
+// Run multiple queries - only 3 at a time
+const results = await Promise.all([
+  queryDatabase("SELECT * FROM users"),
+  queryDatabase("SELECT * FROM orders"),
+  queryDatabase("SELECT * FROM products"),
+  queryDatabase("SELECT * FROM reviews"),
+  queryDatabase("SELECT * FROM categories"),
+]);
+
+console.log(`All queries completed: ${results.length}`);
+
+// Use priority to process critical tasks first
+const criticalResult = await dbSemaphore.acquire(
+  async () => {
+    console.log("Critical query executing");
+    return "critical-data";
+  },
+  10 // High priority - processed before normal priority tasks
+);
+
+// Try to acquire without blocking
+if (dbSemaphore.tryAcquire()) {
+  try {
+    console.log("Got permit immediately!");
+  } finally {
+    dbSemaphore.release();
+  }
+} else {
+  console.log("No permits available, try again later");
+}
+
+// Bulk acquire for batch operations
+const batchResult = await dbSemaphore.bulkAcquire(2, async () => {
+  console.log("Processing batch with 2 permits");
+  return "batch-complete";
+});
+
+// Check semaphore state
+console.log(`Available permits: ${dbSemaphore.available}`);
+console.log(`Waiting tasks: ${dbSemaphore.waiting}`);
+console.log(`Total permits: ${dbSemaphore.totalPermits}`);
+
+// Automatic cleanup when scope disposes
+```
+
 **@see:** (module-level documentation for detailed examples)
 
-*Source: [semaphore.ts:75](packages/go-go-scope/src/semaphore.ts#L75)*
+*Source: [semaphore.ts:139](packages/go-go-scope/src/semaphore.ts#L139)*
 
 ---
 
@@ -4291,7 +5475,7 @@ interface BenchmarkOptions
 
 Benchmark runner for performance testing
 
-*Source: [performance.ts:238](packages/go-go-scope/src/performance.ts#L238)*
+*Source: [performance.ts:325](packages/go-go-scope/src/performance.ts#L325)*
 
 ---
 
@@ -4314,7 +5498,7 @@ console.log(`Average: ${result.avgDuration}ms`);
 console.log(`Ops/sec: ${result.opsPerSecond}`);
 ```
 
-*Source: [performance.ts:269](packages/go-go-scope/src/performance.ts#L269)*
+*Source: [performance.ts:356](packages/go-go-scope/src/performance.ts#L356)*
 
 ---
 
@@ -4565,7 +5749,7 @@ interface ScopeOptions
 
 Options for creating a Scope
 
-*Source: [scope.ts:134](packages/go-go-scope/src/scope.ts#L134)*
+*Source: [scope.ts:182](packages/go-go-scope/src/scope.ts#L182)*
 
 ---
 
@@ -5512,7 +6696,7 @@ type WithPlugins = T & {
 
 Type helper to extract plugin-added methods
 
-*Source: [plugin.ts:91](packages/go-go-scope/src/plugin.ts#L91)*
+*Source: [plugin.ts:183](packages/go-go-scope/src/plugin.ts#L183)*
 
 ---
 
@@ -7364,7 +8548,7 @@ unsubscribe();
 
 **@returns:** Unsubscribe function
 
-*Source: [event-emitter.ts:77](packages/go-go-scope/src/event-emitter.ts#L77)*
+*Source: [event-emitter.ts:124](packages/go-go-scope/src/event-emitter.ts#L124)*
 
 ---
 
@@ -7395,7 +8579,7 @@ emitter.once("ready", () => {
 
 **@param:** - Event handler
 
-*Source: [event-emitter.ts:106](packages/go-go-scope/src/event-emitter.ts#L106)*
+*Source: [event-emitter.ts:153](packages/go-go-scope/src/event-emitter.ts#L153)*
 
 ---
 
@@ -7418,7 +8602,7 @@ Unsubscribe from an event.
 
 **@param:** - Handler to remove
 
-*Source: [event-emitter.ts:121](packages/go-go-scope/src/event-emitter.ts#L121)*
+*Source: [event-emitter.ts:168](packages/go-go-scope/src/event-emitter.ts#L168)*
 
 ---
 
@@ -7451,7 +8635,7 @@ emitter.emit("data", "Hello", 123);
 
 **@returns:** Number of handlers called
 
-*Source: [event-emitter.ts:137](packages/go-go-scope/src/event-emitter.ts#L137)*
+*Source: [event-emitter.ts:184](packages/go-go-scope/src/event-emitter.ts#L184)*
 
 ---
 
@@ -7478,7 +8662,7 @@ Number of handlers called
 
 **@returns:** Number of handlers called
 
-*Source: [event-emitter.ts:170](packages/go-go-scope/src/event-emitter.ts#L170)*
+*Source: [event-emitter.ts:217](packages/go-go-scope/src/event-emitter.ts#L217)*
 
 ---
 
@@ -7500,7 +8684,7 @@ Get the number of listeners for an event.
 
 **@param:** - Event name
 
-*Source: [event-emitter.ts:216](packages/go-go-scope/src/event-emitter.ts#L216)*
+*Source: [event-emitter.ts:263](packages/go-go-scope/src/event-emitter.ts#L263)*
 
 ---
 
@@ -7522,7 +8706,7 @@ Check if there are any listeners for an event.
 
 **@param:** - Event name
 
-*Source: [event-emitter.ts:225](packages/go-go-scope/src/event-emitter.ts#L225)*
+*Source: [event-emitter.ts:272](packages/go-go-scope/src/event-emitter.ts#L272)*
 
 ---
 
@@ -7536,7 +8720,7 @@ Get all event names that have listeners.
 
 **Returns:** `(keyof Events)[]`
 
-*Source: [event-emitter.ts:232](packages/go-go-scope/src/event-emitter.ts#L232)*
+*Source: [event-emitter.ts:279](packages/go-go-scope/src/event-emitter.ts#L279)*
 
 ---
 
@@ -7558,7 +8742,7 @@ Remove all listeners for an event.
 
 **@param:** - Event name (if not provided, removes all listeners)
 
-*Source: [event-emitter.ts:243](packages/go-go-scope/src/event-emitter.ts#L243)*
+*Source: [event-emitter.ts:290](packages/go-go-scope/src/event-emitter.ts#L290)*
 
 ---
 
@@ -7572,7 +8756,7 @@ Dispose the event emitter and remove all listeners.
 
 **Returns:** `void`
 
-*Source: [event-emitter.ts:254](packages/go-go-scope/src/event-emitter.ts#L254)*
+*Source: [event-emitter.ts:301](packages/go-go-scope/src/event-emitter.ts#L301)*
 
 ---
 
@@ -7592,7 +8776,7 @@ Register a task to be tracked during shutdown
 
 **Returns:** `{ complete: () => void }`
 
-*Source: [graceful-shutdown-enhanced.ts:98](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L98)*
+*Source: [graceful-shutdown-enhanced.ts:138](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L138)*
 
 ---
 
@@ -7612,7 +8796,7 @@ Register a shutdown hook
 
 **Returns:** `void`
 
-*Source: [graceful-shutdown-enhanced.ts:115](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L115)*
+*Source: [graceful-shutdown-enhanced.ts:155](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L155)*
 
 ---
 
@@ -7632,7 +8816,7 @@ Perform shutdown with configured strategy
 
 **Returns:** `Promise<void>`
 
-*Source: [graceful-shutdown-enhanced.ts:122](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L122)*
+*Source: [graceful-shutdown-enhanced.ts:162](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L162)*
 
 ---
 
@@ -7652,7 +8836,7 @@ Immediate shutdown - stop accepting new work immediately
 
 **Returns:** `Promise<void>`
 
-*Source: [graceful-shutdown-enhanced.ts:189](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L189)*
+*Source: [graceful-shutdown-enhanced.ts:229](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L229)*
 
 ---
 
@@ -7672,7 +8856,7 @@ Drain shutdown - wait for in-flight tasks to complete
 
 **Returns:** `Promise<void>`
 
-*Source: [graceful-shutdown-enhanced.ts:197](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L197)*
+*Source: [graceful-shutdown-enhanced.ts:237](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L237)*
 
 ---
 
@@ -7692,7 +8876,7 @@ Timeout shutdown - wait up to timeout, then force
 
 **Returns:** `Promise<void>`
 
-*Source: [graceful-shutdown-enhanced.ts:235](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L235)*
+*Source: [graceful-shutdown-enhanced.ts:275](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L275)*
 
 ---
 
@@ -7712,7 +8896,7 @@ Hybrid shutdown - drain with timeout fallback
 
 **Returns:** `Promise<void>`
 
-*Source: [graceful-shutdown-enhanced.ts:249](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L249)*
+*Source: [graceful-shutdown-enhanced.ts:289](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L289)*
 
 ---
 
@@ -7732,7 +8916,7 @@ Setup automatic task tracking
 
 **Returns:** `void`
 
-*Source: [graceful-shutdown-enhanced.ts:301](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L301)*
+*Source: [graceful-shutdown-enhanced.ts:341](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L341)*
 
 ---
 
@@ -7754,7 +8938,7 @@ Register a scope with the coordinator
 
 **Returns:** `EnhancedGracefulShutdownController`
 
-*Source: [graceful-shutdown-enhanced.ts:372](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L372)*
+*Source: [graceful-shutdown-enhanced.ts:523](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L523)*
 
 ---
 
@@ -7775,7 +8959,7 @@ Register a dependency between scopes (dependency must shutdown first)
 
 **Returns:** `void`
 
-*Source: [graceful-shutdown-enhanced.ts:385](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L385)*
+*Source: [graceful-shutdown-enhanced.ts:536](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L536)*
 
 ---
 
@@ -7795,7 +8979,7 @@ Shutdown all scopes in dependency order
 
 **Returns:** `Promise<Map<string, Error | undefined>>`
 
-*Source: [graceful-shutdown-enhanced.ts:395](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L395)*
+*Source: [graceful-shutdown-enhanced.ts:546](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L546)*
 
 ---
 
@@ -7809,7 +8993,7 @@ Calculate shutdown order based on dependencies
 
 **Returns:** `string[]`
 
-*Source: [graceful-shutdown-enhanced.ts:422](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L422)*
+*Source: [graceful-shutdown-enhanced.ts:573](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L573)*
 
 ---
 
@@ -7823,7 +9007,7 @@ Get overall shutdown status
 
 **Returns:** `Map<string, { state: ShutdownState; activeTasks: number }>`
 
-*Source: [graceful-shutdown-enhanced.ts:458](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L458)*
+*Source: [graceful-shutdown-enhanced.ts:609](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L609)*
 
 ---
 
@@ -7844,7 +9028,7 @@ Initialize process lifecycle
 
 **Returns:** `EnhancedGracefulShutdownController`
 
-*Source: [graceful-shutdown-enhanced.ts:493](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L493)*
+*Source: [graceful-shutdown-enhanced.ts:753](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L753)*
 
 ---
 
@@ -7858,7 +9042,7 @@ Initialize with coordinator for multi-scope apps
 
 **Returns:** `ShutdownCoordinator`
 
-*Source: [graceful-shutdown-enhanced.ts:520](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L520)*
+*Source: [graceful-shutdown-enhanced.ts:780](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L780)*
 
 ---
 
@@ -7872,7 +9056,7 @@ Get controller (throws if not initialized)
 
 **Returns:** `EnhancedGracefulShutdownController`
 
-*Source: [graceful-shutdown-enhanced.ts:547](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L547)*
+*Source: [graceful-shutdown-enhanced.ts:807](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L807)*
 
 ---
 
@@ -7886,7 +9070,7 @@ Get coordinator (throws if not initialized)
 
 **Returns:** `ShutdownCoordinator`
 
-*Source: [graceful-shutdown-enhanced.ts:557](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L557)*
+*Source: [graceful-shutdown-enhanced.ts:817](packages/go-go-scope/src/graceful-shutdown-enhanced.ts#L817)*
 
 ---
 
@@ -9101,7 +10285,7 @@ Start monitoring memory usage
 
 **Returns:** `void`
 
-*Source: [memory-monitor.ts:176](packages/go-go-scope/src/memory-monitor.ts#L176)*
+*Source: [memory-monitor.ts:220](packages/go-go-scope/src/memory-monitor.ts#L220)*
 
 ---
 
@@ -9115,7 +10299,7 @@ Check current memory usage and trigger callback if needed
 
 **Returns:** `void`
 
-*Source: [memory-monitor.ts:190](packages/go-go-scope/src/memory-monitor.ts#L190)*
+*Source: [memory-monitor.ts:234](packages/go-go-scope/src/memory-monitor.ts#L234)*
 
 ---
 
@@ -9129,7 +10313,7 @@ Get current memory usage
 
 **Returns:** `MemoryUsage`
 
-*Source: [memory-monitor.ts:234](packages/go-go-scope/src/memory-monitor.ts#L234)*
+*Source: [memory-monitor.ts:278](packages/go-go-scope/src/memory-monitor.ts#L278)*
 
 ---
 
@@ -9143,7 +10327,7 @@ Get the configured memory limit in bytes
 
 **Returns:** `number`
 
-*Source: [memory-monitor.ts:245](packages/go-go-scope/src/memory-monitor.ts#L245)*
+*Source: [memory-monitor.ts:289](packages/go-go-scope/src/memory-monitor.ts#L289)*
 
 ---
 
@@ -9163,7 +10347,7 @@ Update the memory limit
 
 **Returns:** `void`
 
-*Source: [memory-monitor.ts:252](packages/go-go-scope/src/memory-monitor.ts#L252)*
+*Source: [memory-monitor.ts:296](packages/go-go-scope/src/memory-monitor.ts#L296)*
 
 ---
 
@@ -9177,7 +10361,7 @@ Start monitoring
 
 **Returns:** `void`
 
-*Source: [performance.ts:83](packages/go-go-scope/src/performance.ts#L83)*
+*Source: [performance.ts:126](packages/go-go-scope/src/performance.ts#L126)*
 
 ---
 
@@ -9191,7 +10375,7 @@ Stop monitoring
 
 **Returns:** `void`
 
-*Source: [performance.ts:94](packages/go-go-scope/src/performance.ts#L94)*
+*Source: [performance.ts:137](packages/go-go-scope/src/performance.ts#L137)*
 
 ---
 
@@ -9205,7 +10389,7 @@ Take a manual snapshot
 
 **Returns:** `PerformanceSnapshot`
 
-*Source: [performance.ts:104](packages/go-go-scope/src/performance.ts#L104)*
+*Source: [performance.ts:147](packages/go-go-scope/src/performance.ts#L147)*
 
 ---
 
@@ -9219,7 +10403,7 @@ Get current metrics
 
 **Returns:** `PerformanceMetrics`
 
-*Source: [performance.ts:129](packages/go-go-scope/src/performance.ts#L129)*
+*Source: [performance.ts:172](packages/go-go-scope/src/performance.ts#L172)*
 
 ---
 
@@ -9233,7 +10417,7 @@ Get all snapshots
 
 **Returns:** `PerformanceSnapshot[]`
 
-*Source: [performance.ts:169](packages/go-go-scope/src/performance.ts#L169)*
+*Source: [performance.ts:212](packages/go-go-scope/src/performance.ts#L212)*
 
 ---
 
@@ -9253,7 +10437,7 @@ Get performance trends
 		durationTrend: "increasing" | "decreasing" | "stable";
 	}`
 
-*Source: [performance.ts:176](packages/go-go-scope/src/performance.ts#L176)*
+*Source: [performance.ts:219](packages/go-go-scope/src/performance.ts#L219)*
 
 ---
 
@@ -9267,7 +10451,7 @@ Take a memory snapshot
 
 **Returns:** `number`
 
-*Source: [performance.ts:426](packages/go-go-scope/src/performance.ts#L426)*
+*Source: [performance.ts:617](packages/go-go-scope/src/performance.ts#L617)*
 
 ---
 
@@ -9287,7 +10471,7 @@ Check for memory leaks Returns true if memory appears to be leaking
 
 **Returns:** `boolean`
 
-*Source: [performance.ts:443](packages/go-go-scope/src/performance.ts#L443)*
+*Source: [performance.ts:634](packages/go-go-scope/src/performance.ts#L634)*
 
 ---
 
@@ -9301,7 +10485,7 @@ Get memory growth rate in bytes per second
 
 **Returns:** `number`
 
-*Source: [performance.ts:459](packages/go-go-scope/src/performance.ts#L459)*
+*Source: [performance.ts:650](packages/go-go-scope/src/performance.ts#L650)*
 
 ---
 
@@ -9315,7 +10499,7 @@ Get all snapshots
 
 **Returns:** `{ timestamp: number; usage: number }[]`
 
-*Source: [performance.ts:475](packages/go-go-scope/src/performance.ts#L475)*
+*Source: [performance.ts:666](packages/go-go-scope/src/performance.ts#L666)*
 
 ---
 
@@ -9925,7 +11109,7 @@ A Task that can be awaited for a Result tuple
 
 **@returns:** A Task that can be awaited for a Result tuple
 
-*Source: [scope.ts:595](packages/go-go-scope/src/scope.ts#L595)*
+*Source: [scope.ts:734](packages/go-go-scope/src/scope.ts#L734)*
 
 ---
 
@@ -9983,7 +11167,7 @@ const [err, result] = await s.resumeTask('migration-job', async ({ checkpoint, p
 
 **@returns:** Promise that resolves to the task result
 
-*Source: [scope.ts:1079](packages/go-go-scope/src/scope.ts#L1079)*
+*Source: [scope.ts:1218](packages/go-go-scope/src/scope.ts#L1218)*
 
 ---
 
@@ -10036,7 +11220,7 @@ A Promise that resolves to a tuple of Results (one per factory)
 
 **@returns:** A Promise that resolves to a tuple of Results (one per factory)
 
-*Source: [scope.ts:1147](packages/go-go-scope/src/scope.ts#L1147)*
+*Source: [scope.ts:1286](packages/go-go-scope/src/scope.ts#L1286)*
 
 ---
 
@@ -10073,7 +11257,7 @@ A Promise that resolves to the Result of the winning task
 
 **@returns:** A Promise that resolves to the Result of the winning task
 
-*Source: [scope.ts:1290](packages/go-go-scope/src/scope.ts#L1290)*
+*Source: [scope.ts:1429](packages/go-go-scope/src/scope.ts#L1429)*
 
 ---
 
@@ -10094,7 +11278,7 @@ Wrap error according to errorClass or systemErrorClass options. If no options pr
 
 **Returns:** `unknown`
 
-*Source: [scope.ts:1427](packages/go-go-scope/src/scope.ts#L1427)*
+*Source: [scope.ts:1566](packages/go-go-scope/src/scope.ts#L1566)*
 
 ---
 
@@ -10137,7 +11321,7 @@ s.task(({ context }) => {
 
 **@returns:** This scope for chaining
 
-*Source: [scope.ts:1659](packages/go-go-scope/src/scope.ts#L1659)*
+*Source: [scope.ts:1798](packages/go-go-scope/src/scope.ts#L1798)*
 
 ---
 
@@ -10176,7 +11360,7 @@ const missing = s.getContext('nonexistent'); // undefined
 
 **@returns:** The context value or undefined
 
-*Source: [scope.ts:1686](packages/go-go-scope/src/scope.ts#L1686)*
+*Source: [scope.ts:1825](packages/go-go-scope/src/scope.ts#L1825)*
 
 ---
 
@@ -10202,7 +11386,7 @@ True if the key exists in context
 
 **@returns:** True if the key exists in context
 
-*Source: [scope.ts:1696](packages/go-go-scope/src/scope.ts#L1696)*
+*Source: [scope.ts:1835](packages/go-go-scope/src/scope.ts#L1835)*
 
 ---
 
@@ -10228,7 +11412,7 @@ True if the key was removed, false if it didn't exist
 
 **@returns:** True if the key was removed, false if it didn't exist
 
-*Source: [scope.ts:1706](packages/go-go-scope/src/scope.ts#L1706)*
+*Source: [scope.ts:1845](packages/go-go-scope/src/scope.ts#L1845)*
 
 ---
 
@@ -10246,7 +11430,7 @@ Readonly copy of the context object
 
 **@returns:** Readonly copy of the context object
 
-*Source: [scope.ts:1719](packages/go-go-scope/src/scope.ts#L1719)*
+*Source: [scope.ts:1858](packages/go-go-scope/src/scope.ts#L1858)*
 
 ---
 
@@ -10273,7 +11457,7 @@ emitter.on("data", (chunk) => console.log(chunk));
 emitter.emit("data", "Hello!");
 ```
 
-*Source: [scope.ts:1798](packages/go-go-scope/src/scope.ts#L1798)*
+*Source: [scope.ts:1937](packages/go-go-scope/src/scope.ts#L1937)*
 
 ---
 
@@ -10324,7 +11508,7 @@ const lock = s.acquireLock({
 })
 ```
 
-*Source: [scope.ts:1853](packages/go-go-scope/src/scope.ts#L1853)*
+*Source: [scope.ts:1992](packages/go-go-scope/src/scope.ts#L1992)*
 
 ---
 
@@ -10354,7 +11538,7 @@ A PollController for starting, stopping, and monitoring the poll
 
 **@returns:** A PollController for starting, stopping, and monitoring the poll
 
-*Source: [scope.ts:1883](packages/go-go-scope/src/scope.ts#L1883)*
+*Source: [scope.ts:2022](packages/go-go-scope/src/scope.ts#L2022)*
 
 ---
 
@@ -10383,7 +11567,7 @@ A debounced function that returns a Promise<Result>
 
 **@returns:** A debounced function that returns a Promise<Result>
 
-*Source: [scope.ts:1991](packages/go-go-scope/src/scope.ts#L1991)*
+*Source: [scope.ts:2130](packages/go-go-scope/src/scope.ts#L2130)*
 
 ---
 
@@ -10412,7 +11596,7 @@ A throttled function that returns a Promise<Result>
 
 **@returns:** A throttled function that returns a Promise<Result>
 
-*Source: [scope.ts:2012](packages/go-go-scope/src/scope.ts#L2012)*
+*Source: [scope.ts:2151](packages/go-go-scope/src/scope.ts#L2151)*
 
 ---
 
@@ -10450,7 +11634,7 @@ console.log('After 1 second')
 
 **@throws:** AbortError if the scope is cancelled during the delay
 
-*Source: [scope.ts:2036](packages/go-go-scope/src/scope.ts#L2036)*
+*Source: [scope.ts:2175](packages/go-go-scope/src/scope.ts#L2175)*
 
 ---
 
@@ -10500,7 +11684,7 @@ const [err, count] = await batcher.flush()
 
 **@returns:** Batch instance for adding items
 
-*Source: [scope.ts:2090](packages/go-go-scope/src/scope.ts#L2090)*
+*Source: [scope.ts:2229](packages/go-go-scope/src/scope.ts#L2229)*
 
 ---
 
@@ -10542,7 +11726,7 @@ stop()
 
 **@returns:** A function to stop the interval early
 
-*Source: [scope.ts:2116](packages/go-go-scope/src/scope.ts#L2116)*
+*Source: [scope.ts:2255](packages/go-go-scope/src/scope.ts#L2255)*
 
 ---
 
@@ -10582,7 +11766,7 @@ const [err, response] = await s.any([
 
 **@returns:** Result tuple with first success, or aggregate error if all fail
 
-*Source: [scope.ts:2176](packages/go-go-scope/src/scope.ts#L2176)*
+*Source: [scope.ts:2315](packages/go-go-scope/src/scope.ts#L2315)*
 
 ---
 
@@ -10599,7 +11783,7 @@ Get metrics for the scope. NOTE: Metrics have been moved to @go-go-scope/plugin-
 **@go-go-scope:** /plugin-metrics.
 This method returns undefined. Install the metrics plugin to get metrics.
 
-*Source: [scope.ts:2238](packages/go-go-scope/src/scope.ts#L2238)*
+*Source: [scope.ts:2377](packages/go-go-scope/src/scope.ts#L2377)*
 
 ---
 
@@ -10628,7 +11812,7 @@ if (usage) {
 
 **@returns:** MemoryUsage object or undefined if memory monitoring is not available
 
-*Source: [scope.ts:2258](packages/go-go-scope/src/scope.ts#L2258)*
+*Source: [scope.ts:2397](packages/go-go-scope/src/scope.ts#L2397)*
 
 ---
 
@@ -10659,7 +11843,7 @@ s.setMemoryLimit('200mb');
 
 **@param:** - New memory limit (bytes or string like '100mb')
 
-*Source: [scope.ts:2298](packages/go-go-scope/src/scope.ts#L2298)*
+*Source: [scope.ts:2437](packages/go-go-scope/src/scope.ts#L2437)*
 
 ---
 
@@ -10679,7 +11863,7 @@ Register a callback to be called before each task starts. Useful for plugins to 
 
 **Returns:** `void`
 
-*Source: [scope.ts:2318](packages/go-go-scope/src/scope.ts#L2318)*
+*Source: [scope.ts:2457](packages/go-go-scope/src/scope.ts#L2457)*
 
 ---
 
@@ -10709,7 +11893,7 @@ Register a callback to be called after each task completes. Useful for plugins t
 
 **Returns:** `void`
 
-*Source: [scope.ts:2328](packages/go-go-scope/src/scope.ts#L2328)*
+*Source: [scope.ts:2467](packages/go-go-scope/src/scope.ts#L2467)*
 
 ---
 
@@ -10749,7 +11933,7 @@ const child = parent.createChild({ name: 'child' });
 const grandchild = child.createChild({ name: 'grandchild' });
 ```
 
-*Source: [scope.ts:2358](packages/go-go-scope/src/scope.ts#L2358)*
+*Source: [scope.ts:2497](packages/go-go-scope/src/scope.ts#L2497)*
 
 ---
 
@@ -10790,7 +11974,7 @@ console.log(s.debugTree({ format: 'mermaid' }));
 //     scope_2 --> scope_3[📦 grandchild]
 ```
 
-*Source: [scope.ts:2403](packages/go-go-scope/src/scope.ts#L2403)*
+*Source: [scope.ts:2542](packages/go-go-scope/src/scope.ts#L2542)*
 
 ---
 
@@ -10842,7 +12026,7 @@ const normalResult = await sem.acquire(
 
 **@see:** {@link execute} for an alias of this method
 
-*Source: [semaphore.ts:154](packages/go-go-scope/src/semaphore.ts#L154)*
+*Source: [semaphore.ts:218](packages/go-go-scope/src/semaphore.ts#L218)*
 
 ---
 
@@ -10885,7 +12069,7 @@ const result = await rateLimiter.execute(async () => {
 
 **@throws:** If the scope is aborted while waiting
 
-*Source: [semaphore.ts:186](packages/go-go-scope/src/semaphore.ts#L186)*
+*Source: [semaphore.ts:250](packages/go-go-scope/src/semaphore.ts#L250)*
 
 ---
 
@@ -10924,7 +12108,7 @@ if (!sem.tryAcquire()) {
 
 **@see:** {@link tryAcquireWithFn} for automatic release after execution
 
-*Source: [semaphore.ts:218](packages/go-go-scope/src/semaphore.ts#L218)*
+*Source: [semaphore.ts:282](packages/go-go-scope/src/semaphore.ts#L282)*
 
 ---
 
@@ -10970,7 +12154,7 @@ if (result === undefined) {
 
 **@returns:** Promise that resolves to the function's return value, or undefined if no permit was available
 
-*Source: [semaphore.ts:258](packages/go-go-scope/src/semaphore.ts#L258)*
+*Source: [semaphore.ts:322](packages/go-go-scope/src/semaphore.ts#L322)*
 
 ---
 
@@ -11012,7 +12196,7 @@ console.log(acquired); // false (timeout)
 
 **@returns:** Promise that resolves to true if permit was acquired, false if timeout was reached
 
-*Source: [semaphore.ts:292](packages/go-go-scope/src/semaphore.ts#L292)*
+*Source: [semaphore.ts:356](packages/go-go-scope/src/semaphore.ts#L356)*
 
 ---
 
@@ -11061,7 +12245,7 @@ if (result === undefined) {
 
 **@returns:** Promise that resolves to the function's return value, or undefined if timeout was reached
 
-*Source: [semaphore.ts:362](packages/go-go-scope/src/semaphore.ts#L362)*
+*Source: [semaphore.ts:426](packages/go-go-scope/src/semaphore.ts#L426)*
 
 ---
 
@@ -11105,7 +12289,7 @@ const result = await sem.bulkAcquire(3, async () => {
 
 **@throws:** If count is not positive or exceeds total permits
 
-*Source: [semaphore.ts:400](packages/go-go-scope/src/semaphore.ts#L400)*
+*Source: [semaphore.ts:464](packages/go-go-scope/src/semaphore.ts#L464)*
 
 ---
 
@@ -11149,7 +12333,7 @@ if (sem.tryBulkAcquire(3)) {
 
 **@throws:** If count is not positive or exceeds total permits
 
-*Source: [semaphore.ts:442](packages/go-go-scope/src/semaphore.ts#L442)*
+*Source: [semaphore.ts:506](packages/go-go-scope/src/semaphore.ts#L506)*
 
 ---
 
@@ -11179,7 +12363,7 @@ Promise that resolves when a permit is acquired
 
 **@internal:** 
 
-*Source: [semaphore.ts:470](packages/go-go-scope/src/semaphore.ts#L470)*
+*Source: [semaphore.ts:534](packages/go-go-scope/src/semaphore.ts#L534)*
 
 ---
 
@@ -11195,7 +12379,7 @@ Release a permit. If there are waiting tasks, the permit is given to the highest
 
 **@internal:** 
 
-*Source: [semaphore.ts:511](packages/go-go-scope/src/semaphore.ts#L511)*
+*Source: [semaphore.ts:575](packages/go-go-scope/src/semaphore.ts#L575)*
 
 ---
 
@@ -11225,7 +12409,7 @@ Promise that resolves when all permits are acquired
 
 **@internal:** 
 
-*Source: [semaphore.ts:531](packages/go-go-scope/src/semaphore.ts#L531)*
+*Source: [semaphore.ts:595](packages/go-go-scope/src/semaphore.ts#L595)*
 
 ---
 
@@ -11249,7 +12433,7 @@ Release multiple permits.
 
 **@internal:** 
 
-*Source: [semaphore.ts:567](packages/go-go-scope/src/semaphore.ts#L567)*
+*Source: [semaphore.ts:631](packages/go-go-scope/src/semaphore.ts#L631)*
 
 ---
 
@@ -11265,7 +12449,7 @@ Drain the queue, rejecting all pending acquires.
 
 **@internal:** 
 
-*Source: [semaphore.ts:649](packages/go-go-scope/src/semaphore.ts#L649)*
+*Source: [semaphore.ts:713](packages/go-go-scope/src/semaphore.ts#L713)*
 
 ---
 

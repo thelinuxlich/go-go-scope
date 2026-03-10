@@ -55,6 +55,46 @@ export type ShutdownState =
 
 /**
  * Enhanced graceful shutdown controller with strategies
+ *
+ * Provides multiple shutdown strategies (immediate, drain, timeout, hybrid) with
+ * task tracking, health checks, and lifecycle hooks.
+ *
+ * @example
+ * ```typescript
+ * import { scope } from "go-go-scope";
+ * import { setupEnhancedGracefulShutdown } from "go-go-scope/graceful-shutdown-enhanced";
+ *
+ * await using s = scope();
+ *
+ * const shutdown = setupEnhancedGracefulShutdown(s, {
+ *   strategy: "hybrid",
+ *   drainTimeout: 30000,
+ *   timeout: 60000,
+ *   healthCheck: () => {
+ *     // Check if system is healthy
+ *     return db.isConnected();
+ *   },
+ *   beforeShutdown: async () => {
+ *     console.log("Preparing for shutdown...");
+ *   },
+ *   afterShutdown: async () => {
+ *     console.log("Shutdown complete");
+ *   }
+ * });
+ *
+ * // Spawn some tasks
+ * s.task(async () => {
+ *   // This task will be tracked during shutdown
+ *   await processData();
+ * });
+ *
+ * // Check shutdown state
+ * console.log(shutdown.currentState); // "running"
+ * console.log(shutdown.activeTaskCount); // 1
+ *
+ * // Later, trigger shutdown
+ * // await shutdown.shutdown("SIGTERM");
+ * ```
  */
 export class EnhancedGracefulShutdownController extends GracefulShutdownController {
 	private state: ShutdownState = "running";
@@ -342,6 +382,65 @@ export class EnhancedGracefulShutdownController extends GracefulShutdownControll
 
 /**
  * Setup enhanced graceful shutdown
+ *
+ * Creates and configures an {@link EnhancedGracefulShutdownController} for a scope.
+ * Supports multiple shutdown strategies with task tracking and lifecycle hooks.
+ *
+ * @example
+ * ```typescript
+ * import { scope } from "go-go-scope";
+ * import { setupEnhancedGracefulShutdown } from "go-go-scope/graceful-shutdown-enhanced";
+ *
+ * await using s = scope();
+ *
+ * // Immediate shutdown - cancels all tasks immediately
+ * const immediate = setupEnhancedGracefulShutdown(s, {
+ *   strategy: "immediate"
+ * });
+ * ```
+ *
+ * @example
+ * ```typescript
+ * import { scope } from "go-go-scope";
+ * import { setupEnhancedGracefulShutdown } from "go-go-scope/graceful-shutdown-enhanced";
+ *
+ * await using s = scope();
+ *
+ * // Drain shutdown - wait for in-flight tasks to complete
+ * const drain = setupEnhancedGracefulShutdown(s, {
+ *   strategy: "drain",
+ *   drainTimeout: 30000, // Wait up to 30 seconds
+ *   healthCheckInterval: 1000,
+ *   healthCheck: () => {
+ *     return service.isHealthy();
+ *   }
+ * });
+ * ```
+ *
+ * @example
+ * ```typescript
+ * import { scope } from "go-go-scope";
+ * import { setupEnhancedGracefulShutdown } from "go-go-scope/graceful-shutdown-enhanced";
+ *
+ * await using s = scope();
+ *
+ * // Hybrid shutdown - drain with timeout fallback
+ * const hybrid = setupEnhancedGracefulShutdown(s, {
+ *   strategy: "hybrid",
+ *   drainTimeout: 30000,
+ *   timeout: 60000,
+ *   enableRollback: true,
+ *   rollback: async () => {
+ *     // Restore state if shutdown fails
+ *     await restoreCheckpoint();
+ *   }
+ * });
+ *
+ * // Add custom shutdown hook
+ * hybrid.onShutdownHook(async () => {
+ *   await closeDatabaseConnections();
+ * });
+ * ```
  */
 export function setupEnhancedGracefulShutdown(
 	scope: Scope<Record<string, unknown>>,
@@ -361,6 +460,58 @@ export function setupEnhancedGracefulShutdown(
 
 /**
  * Shutdown coordinator for multi-scope applications
+ *
+ * Manages graceful shutdown of multiple scopes with dependency ordering.
+ * Dependencies are shut down before the scopes that depend on them.
+ *
+ * @example
+ * ```typescript
+ * import { scope } from "go-go-scope";
+ * import { ShutdownCoordinator, createShutdownCoordinator } from "go-go-scope/graceful-shutdown-enhanced";
+ *
+ * const coordinator = createShutdownCoordinator();
+ *
+ * // Create multiple scopes for different services
+ * await using apiScope = scope();
+ * await using workerScope = scope();
+ * await using dbScope = scope();
+ *
+ * // Register scopes with the coordinator
+ * coordinator.register("database", dbScope, {
+ *   strategy: "drain",
+ *   drainTimeout: 10000
+ * });
+ *
+ * coordinator.register("worker", workerScope, {
+ *   strategy: "drain",
+ *   drainTimeout: 30000
+ * });
+ *
+ * coordinator.register("api", apiScope, {
+ *   strategy: "drain",
+ *   drainTimeout: 20000
+ * });
+ *
+ * // Define dependencies: API depends on database, worker depends on database
+ * coordinator.addDependency("api", "database");
+ * coordinator.addDependency("worker", "database");
+ *
+ * // Check status before shutdown
+ * const status = coordinator.getStatus();
+ * for (const [name, info] of status) {
+ *   console.log(`${name}: ${info.state}, ${info.activeTasks} tasks`);
+ * }
+ *
+ * // Shutdown all scopes in dependency order (database last)
+ * const results = await coordinator.shutdownAll("SIGTERM");
+ * for (const [name, error] of results) {
+ *   if (error) {
+ *     console.error(`Shutdown failed for ${name}:`, error);
+ *   } else {
+ *     console.log(`${name} shut down successfully`);
+ *   }
+ * }
+ * ```
  */
 export class ShutdownCoordinator {
 	private controllers = new Map<string, EnhancedGracefulShutdownController>();
@@ -474,6 +625,56 @@ export class ShutdownCoordinator {
 
 /**
  * Create a shutdown coordinator
+ *
+ * Factory function to create a new {@link ShutdownCoordinator} instance.
+ * Use this for managing shutdown of multiple scopes with dependencies.
+ *
+ * @example
+ * ```typescript
+ * import { scope } from "go-go-scope";
+ * import { createShutdownCoordinator } from "go-go-scope/graceful-shutdown-enhanced";
+ *
+ * // Create coordinator
+ * const coordinator = createShutdownCoordinator();
+ *
+ * // Setup services with different scopes
+ * await using httpScope = scope();
+ * await using wsScope = scope();
+ * await using queueScope = scope();
+ *
+ * // Register each service
+ * coordinator.register("http-server", httpScope, {
+ *   strategy: "drain",
+ *   drainTimeout: 15000
+ * });
+ *
+ * coordinator.register("websocket-server", wsScope, {
+ *   strategy: "drain",
+ *   drainTimeout: 10000
+ * });
+ *
+ * coordinator.register("job-queue", queueScope, {
+ *   strategy: "hybrid",
+ *   drainTimeout: 60000,
+ *   timeout: 120000
+ * });
+ *
+ * // WebSocket depends on HTTP server
+ * coordinator.addDependency("websocket-server", "http-server");
+ *
+ * // Graceful shutdown on SIGTERM
+ * process.on("SIGTERM", async () => {
+ *   const results = await coordinator.shutdownAll("SIGTERM");
+ *   const failed = Array.from(results.entries())
+ *     .filter(([_, error]) => error !== undefined);
+ *
+ *   if (failed.length > 0) {
+ *     console.error("Some services failed to shut down:", failed);
+ *     process.exit(1);
+ *   }
+ *   process.exit(0);
+ * });
+ * ```
  */
 export function createShutdownCoordinator(): ShutdownCoordinator {
 	return new ShutdownCoordinator();
@@ -481,6 +682,65 @@ export function createShutdownCoordinator(): ShutdownCoordinator {
 
 /**
  * Process lifecycle manager with graceful shutdown
+ *
+ * Manages the entire process lifecycle including signal handling,
+ * uncaught exception handling, and coordinated shutdown.
+ *
+ * Use the global {@link processLifecycle} instance for singleton access.
+ *
+ * @example
+ * ```typescript
+ * import { scope } from "go-go-scope";
+ * import { processLifecycle } from "go-go-scope/graceful-shutdown-enhanced";
+ *
+ * await using s = scope();
+ *
+ * // Initialize process lifecycle with single scope
+ * const controller = processLifecycle.init(s, {
+ *   strategy: "hybrid",
+ *   drainTimeout: 30000,
+ *   timeout: 60000,
+ *   beforeShutdown: async () => {
+ *     console.log("Received shutdown signal, starting graceful shutdown...");
+ *   },
+ *   afterShutdown: async () => {
+ *     console.log("Cleanup complete, process will exit");
+ *   }
+ * });
+ *
+ * // Access controller later
+ * const currentController = processLifecycle.getController();
+ * console.log("Shutdown state:", currentController.currentState);
+ *
+ * // The process will automatically handle SIGTERM/SIGINT
+ * // and uncaught exceptions
+ * ```
+ *
+ * @example
+ * ```typescript
+ * import { scope } from "go-go-scope";
+ * import { processLifecycle } from "go-go-scope/graceful-shutdown-enhanced";
+ *
+ * // Initialize with coordinator for multi-scope application
+ * const coordinator = processLifecycle.initWithCoordinator();
+ *
+ * // Register multiple scopes
+ * await using apiScope = scope();
+ * await using workerScope = scope();
+ *
+ * coordinator.register("api", apiScope, { strategy: "drain", drainTimeout: 20000 });
+ * coordinator.register("worker", workerScope, { strategy: "drain", drainTimeout: 30000 });
+ *
+ * // Add dependency
+ * coordinator.addDependency("api", "worker");
+ *
+ * // Access coordinator later
+ * const currentCoordinator = processLifecycle.getCoordinator();
+ * const status = currentCoordinator.getStatus();
+ *
+ * // Handle process signals automatically
+ * // SIGTERM/SIGINT will trigger coordinator.shutdownAll()
+ * ```
  */
 export class ProcessLifecycle {
 	private controller?: EnhancedGracefulShutdownController;

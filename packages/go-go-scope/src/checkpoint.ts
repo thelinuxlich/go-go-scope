@@ -336,6 +336,35 @@ export function createCheckpointContext<T>(state: CheckpointState<T>): {
  *
  * @internal
  * @returns A ProgressContext with update, get, and onUpdate methods
+ *
+ * @example
+ * ```typescript
+ * import { scope, createProgressContext } from "go-go-scope";
+ *
+ * // Create a progress context to track task completion
+ * const progress = createProgressContext();
+ *
+ * // Listen for progress updates
+ * const unsubscribe = progress.onUpdate(({ percentage, eta }) => {
+ *   console.log(`Progress: ${percentage.toFixed(1)}%`);
+ *   if (eta !== undefined) {
+ *     console.log(`Estimated time remaining: ${Math.round(eta / 1000)}s`);
+ *   }
+ * });
+ *
+ * // Update progress during a long-running task
+ * progress.update(25);  // 25% complete
+ * progress.update(50);  // 50% complete
+ * progress.update(75);  // 75% complete
+ * progress.update(100); // Complete
+ *
+ * // Get current progress
+ * const current = progress.get();
+ * console.log(current.percentage); // 100
+ *
+ * // Unsubscribe when done
+ * unsubscribe();
+ * ```
  */
 export function createProgressContext(): ProgressContext {
 	const listeners = new Set<
@@ -378,6 +407,28 @@ export function createProgressContext(): ProgressContext {
  * @internal
  * @param options - Task options to check
  * @returns `true` if checkpoint configuration is present
+ *
+ * @example
+ * ```typescript
+ * import { scope, hasCheckpointConfig } from "go-go-scope";
+ *
+ * // Task without checkpoint config
+ * const options1 = { id: 'simple-task' };
+ * console.log(hasCheckpointConfig(options1)); // false
+ *
+ * // Task with checkpoint config
+ * const options2 = {
+ *   id: 'checkpointed-task',
+ *   checkpoint: { interval: 30000 }
+ * };
+ * console.log(hasCheckpointConfig(options2)); // true
+ *
+ * // Check before configuring task
+ * const options: TaskOptions = { id: 'my-task' };
+ * if (!hasCheckpointConfig(options)) {
+ *   console.log('Task will not use checkpointing');
+ * }
+ * ```
  */
 export function hasCheckpointConfig(options?: TaskOptions): boolean {
 	return options?.checkpoint !== undefined;
@@ -392,6 +443,42 @@ export function hasCheckpointConfig(options?: TaskOptions): boolean {
  * @param taskId - The task ID to resume
  * @param onResume - Optional callback when a checkpoint is loaded
  * @returns The latest checkpoint or undefined
+ *
+ * @example
+ * ```typescript
+ * import { scope, loadCheckpointForTask, InMemoryCheckpointProvider } from "go-go-scope";
+ *
+ * const provider = new InMemoryCheckpointProvider();
+ *
+ * // Simulate an existing checkpoint
+ * await provider.save({
+ *   id: 'task-1-1234567890-1',
+ *   taskId: 'data-import',
+ *   sequence: 1,
+ *   timestamp: Date.now(),
+ *   progress: 45,
+ *   data: { processedRows: 4500, totalRows: 10000 }
+ * });
+ *
+ * // Load checkpoint with callback
+ * const checkpoint = await loadCheckpointForTask<{
+ *   processedRows: number;
+ *   totalRows: number;
+ * }>(
+ *   provider,
+ *   'data-import',
+ *   (cp) => {
+ *     console.log(`Resuming from checkpoint ${cp.sequence}`);
+ *     console.log(`Progress: ${cp.progress}%`);
+ *   }
+ * );
+ *
+ * if (checkpoint) {
+ *   console.log(`Resume from row ${checkpoint.data.processedRows}`);
+ * } else {
+ *   console.log('Starting fresh - no checkpoint found');
+ * }
+ * ```
  */
 export async function loadCheckpointForTask<T>(
 	provider: CheckpointProvider,
@@ -411,6 +498,43 @@ export async function loadCheckpointForTask<T>(
  * @internal
  * @param provider - The checkpoint provider
  * @param taskId - The task ID to clean up
+ *
+ * @example
+ * ```typescript
+ * import { scope, cleanupTaskCheckpoints, InMemoryCheckpointProvider } from "go-go-scope";
+ *
+ * const provider = new InMemoryCheckpointProvider();
+ *
+ * await using s = scope({
+ *   persistence: { checkpoint: provider }
+ * });
+ *
+ * // Run a checkpointed task
+ * const [err, result] = await s.task(
+ *   async ({ checkpoint, progress }) => {
+ *     for (let i = 0; i < 10; i++) {
+ *       await checkpoint.save({ step: i });
+ *       progress.update((i + 1) * 10);
+ *     }
+ *     return 'completed';
+ *   },
+ *   { id: 'cleanup-demo-task', checkpoint: { interval: 1000 } }
+ * );
+ *
+ * // Check checkpoints exist
+ * const beforeCleanup = await provider.list('cleanup-demo-task');
+ * console.log(`Checkpoints before cleanup: ${beforeCleanup.length}`);
+ *
+ * // Clean up all checkpoints after successful completion
+ * if (!err) {
+ *   await cleanupTaskCheckpoints(provider, 'cleanup-demo-task');
+ *   console.log('Task checkpoints cleaned up');
+ * }
+ *
+ * // Verify cleanup
+ * const afterCleanup = await provider.list('cleanup-demo-task');
+ * console.log(`Checkpoints after cleanup: ${afterCleanup.length}`); // 0
+ * ```
  */
 export async function cleanupTaskCheckpoints(
 	provider: CheckpointProvider,

@@ -78,6 +78,23 @@ function parseMemoryLimit(limit: number | string): number {
 
 /**
  * Get current memory usage
+ *
+ * @example
+ * ```typescript
+ * const usage = getMemoryUsage();
+ * console.log(`Heap used: ${(usage.used / 1024 / 1024).toFixed(2)} MB`);
+ * console.log(`Heap total: ${(usage.total / 1024 / 1024).toFixed(2)} MB`);
+ * console.log(`Usage: ${usage.percentageUsed.toFixed(1)}%`);
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Check if memory usage is high before performing heavy operation
+ * const usage = getMemoryUsage();
+ * if (usage.percentageUsed > 80) {
+ *   console.warn('High memory usage detected, consider delaying operation');
+ * }
+ * ```
  */
 export function getMemoryUsage(): MemoryUsage {
 	// Node.js / Bun memory usage
@@ -141,6 +158,33 @@ export function getMemoryUsage(): MemoryUsage {
 
 /**
  * Memory monitor that tracks heap usage and triggers callbacks on pressure
+ *
+ * @example
+ * ```typescript
+ * // Monitor memory with a 100MB limit
+ * using monitor = new MemoryMonitor({
+ *   limit: '100mb',
+ *   pressureThreshold: 75,
+ *   checkInterval: 1000,
+ *   onPressure: (usage) => {
+ *     console.warn(`Memory pressure: ${usage.percentageUsed.toFixed(1)}% used`);
+ *   }
+ * });
+ *
+ * // Get current usage anytime
+ * const usage = monitor.getUsage();
+ * console.log(`Using ${usage.percentageUsed.toFixed(1)}% of limit`);
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Dynamic limit adjustment
+ * using monitor = new MemoryMonitor({ limit: '50mb' });
+ *
+ * // Increase limit as needed
+ * monitor.setLimit('100mb');
+ * console.log(`New limit: ${(monitor.getLimit() / 1024 / 1024).toFixed(0)} MB`);
+ * ```
  */
 export class MemoryMonitor {
 	private limit: number;
@@ -280,6 +324,27 @@ export class MemoryMonitor {
 
 /**
  * Check if memory monitoring is available in the current environment
+ *
+ * @example
+ * ```typescript
+ * if (isMemoryMonitoringAvailable()) {
+ *   const usage = getMemoryUsage();
+ *   console.log(`Memory: ${usage.percentageUsed.toFixed(1)}%`);
+ * } else {
+ *   console.log('Memory monitoring not available in this environment');
+ * }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Gracefully degrade when memory monitoring is unavailable
+ * function logMemoryIfAvailable() {
+ *   if (!isMemoryMonitoringAvailable()) return;
+ *
+ *   const usage = getMemoryUsage();
+ *   console.log(`Heap: ${(usage.used / 1024 / 1024).toFixed(2)} MB`);
+ * }
+ * ```
  */
 export function isMemoryMonitoringAvailable(): boolean {
 	if (typeof process !== "undefined" && "memoryUsage" in process) {

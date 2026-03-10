@@ -41,6 +41,53 @@ type EventMap = Record<string, EventHandler>;
  * Scoped EventEmitter with automatic cleanup
  *
  * All listeners are automatically removed when the parent scope is disposed.
+ * This prevents memory leaks from forgotten event listeners in long-running
+ * applications.
+ *
+ * @example
+ * ```typescript
+ * import { scope } from "go-go-scope";
+ *
+ * await using s = scope();
+ *
+ * // Create a typed event emitter
+ * const emitter = s.eventEmitter<{
+ *   userLogin: (userId: string, timestamp: number) => void;
+ *   userLogout: (userId: string) => void;
+ *   dataReceived: (payload: { id: string; data: unknown }) => void;
+ * }>();
+ *
+ * // Listen to events - automatically cleaned up when scope disposes
+ * emitter.on("userLogin", (userId, timestamp) => {
+ *   console.log(`User ${userId} logged in at ${new Date(timestamp)}`);
+ * });
+ *
+ * emitter.on("userLogout", (userId) => {
+ *   console.log(`User ${userId} logged out`);
+ * });
+ *
+ * // Listen once - handler is removed after first emit
+ * emitter.once("dataReceived", (payload) => {
+ *   console.log(`First data received: ${payload.id}`);
+ * });
+ *
+ * // Emit events within the scope
+ * emitter.emit("userLogin", "user-123", Date.now());
+ * emitter.emit("dataReceived", { id: "msg-1", data: "Hello" });
+ * emitter.emit("dataReceived", { id: "msg-2", data: "World" }); // once handler not called
+ * emitter.emit("userLogout", "user-123");
+ *
+ * // Check listener count
+ * console.log(`Login listeners: ${emitter.listenerCount("userLogin")}`);
+ *
+ * // Manual cleanup of specific listeners
+ * const unsubscribe = emitter.on("dataReceived", (payload) => {
+ *   console.log(`Data: ${payload.id}`);
+ * });
+ * unsubscribe(); // Remove this specific listener
+ *
+ * // All listeners are automatically removed when scope exits
+ * ```
  */
 export class ScopedEventEmitter<Events extends EventMap = EventMap> {
 	private listeners: Map<keyof Events, Set<EventHandler>> = new Map();

@@ -72,8 +72,43 @@ export interface PersistenceJobStorageOptions {
 }
 
 /**
- * Redis-based job storage
- * Requires Redis adapter with hash and set support
+ * Redis-based job storage for distributed scheduling.
+ *
+ * Requires a Redis client with hash, set, and sorted set operations.
+ * Supports Lua scripting for atomic check-and-schedule operations (Redis 6.0+).
+ *
+ * Use this storage for production deployments with multiple scheduler instances.
+ *
+ * @example
+ * ```typescript
+ * import { RedisJobStorage } from '@go-go-scope/scheduler';
+ * import { createRedisAdapter } from '@go-go-scope/persistence-redis';
+ * import Redis from 'ioredis';
+ *
+ * // Create Redis client and adapter
+ * const redis = new Redis({ host: 'localhost', port: 6379 });
+ * const lockProvider = createRedisAdapter(redis);
+ *
+ * // Create storage with default prefix
+ * const storage = new RedisJobStorage(redis, lockProvider);
+ *
+ * // Create storage with custom key prefix
+ * const storage = new RedisJobStorage(redis, lockProvider, {
+ *   keyPrefix: 'myapp:scheduler:'
+ * });
+ *
+ * // Use with Scheduler
+ * const scheduler = new Scheduler({
+ *   storage,
+ *   enableWebUI: true,
+ *   webUIPort: 8080
+ * });
+ *
+ * await scheduler.createSchedule('cleanup', {
+ *   cron: '0 0 * * *',
+ *   defaultPayload: { maxAge: 86400000 }
+ * });
+ * ```
  */
 export class RedisJobStorage implements JobStorage {
 	private redis: {
@@ -449,7 +484,57 @@ export class RedisJobStorage implements JobStorage {
 }
 
 /**
- * SQL-based job storage (PostgreSQL, MySQL, SQLite)
+ * SQL-based job storage for distributed scheduling.
+ *
+ * Supports PostgreSQL, MySQL, and SQLite databases.
+ * Uses UPSERT operations for atomic job updates.
+ *
+ * Use this storage for production deployments where Redis is not available,
+ * or when you prefer to use your existing SQL database for job persistence.
+ *
+ * @example
+ * ```typescript
+ * import { SQLJobStorage } from '@go-go-scope/scheduler';
+ * import { createPostgresAdapter } from '@go-go-scope/persistence-postgres';
+ * import { Pool } from 'pg';
+ *
+ * // PostgreSQL setup
+ * const pool = new Pool({
+ *   host: 'localhost',
+ *   database: 'scheduler',
+ *   user: 'postgres',
+ *   password: 'secret'
+ * });
+ *
+ * const db = {
+ *   query: (sql: string, params?: unknown[]) => pool.query(sql, params),
+ *   exec: (sql: string, params?: unknown[]) => pool.query(sql, params).then(() => {})
+ * };
+ *
+ * const lockProvider = createPostgresAdapter(pool);
+ * const storage = new SQLJobStorage(db, lockProvider, 'postgres', {
+ *   keyPrefix: 'scheduler_'
+ * });
+ *
+ * // MySQL setup
+ * import { createMysqlAdapter } from '@go-go-scope/persistence-mysql';
+ * import mysql from 'mysql2/promise';
+ *
+ * const mysqlPool = mysql.createPool({ host: 'localhost', database: 'scheduler' });
+ * const mysqlDb = {
+ *   query: (sql: string, params?: unknown[]) => mysqlPool.execute(sql, params),
+ *   exec: (sql: string, params?: unknown[]) => mysqlPool.execute(sql, params).then(() => {})
+ * };
+ * const mysqlLockProvider = createMysqlAdapter(mysqlPool);
+ * const mysqlStorage = new SQLJobStorage(mysqlDb, mysqlLockProvider, 'mysql');
+ *
+ * // SQLite setup (for development)
+ * import { createSqliteAdapter } from '@go-go-scope/persistence-sqlite';
+ * import sqlite3 from 'sqlite3';
+ *
+ * const sqliteDb = new sqlite3.Database(':memory:');
+ * // ... wrap with query/exec interface
+ * ```
  */
 export class SQLJobStorage implements JobStorage {
 	private db: {

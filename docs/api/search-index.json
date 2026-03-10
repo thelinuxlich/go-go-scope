@@ -1438,7 +1438,7 @@
     "name": "ScopedEventEmitter",
     "kind": "class",
     "package": "go-go-scope",
-    "description": "Scoped EventEmitter with automatic cleanup All listeners are automatically removed when the parent scope is disposed.",
+    "description": "Scoped EventEmitter with automatic cleanup All listeners are automatically removed when the parent scope is disposed. This prevents memory leaks from forgotten event listeners in long-running applicat",
     "file": "packages/go-go-scope/src/event-emitter.ts"
   },
   {
@@ -1550,7 +1550,7 @@
     "name": "EnhancedGracefulShutdownController",
     "kind": "class",
     "package": "go-go-scope",
-    "description": "Enhanced graceful shutdown controller with strategies",
+    "description": "Enhanced graceful shutdown controller with strategies Provides multiple shutdown strategies (immediate, drain, timeout, hybrid) with task tracking, health checks, and lifecycle hooks.",
     "file": "packages/go-go-scope/src/graceful-shutdown-enhanced.ts"
   },
   {
@@ -1613,14 +1613,14 @@
     "name": "setupEnhancedGracefulShutdown",
     "kind": "function",
     "package": "go-go-scope",
-    "description": "Setup enhanced graceful shutdown",
+    "description": "Setup enhanced graceful shutdown Creates and configures an {@link EnhancedGracefulShutdownController} for a scope. Supports multiple shutdown strategies with task tracking and lifecycle hooks.",
     "file": "packages/go-go-scope/src/graceful-shutdown-enhanced.ts"
   },
   {
     "name": "ShutdownCoordinator",
     "kind": "class",
     "package": "go-go-scope",
-    "description": "Shutdown coordinator for multi-scope applications",
+    "description": "Shutdown coordinator for multi-scope applications Manages graceful shutdown of multiple scopes with dependency ordering. Dependencies are shut down before the scopes that depend on them.",
     "file": "packages/go-go-scope/src/graceful-shutdown-enhanced.ts"
   },
   {
@@ -1662,14 +1662,14 @@
     "name": "createShutdownCoordinator",
     "kind": "function",
     "package": "go-go-scope",
-    "description": "Create a shutdown coordinator",
+    "description": "Create a shutdown coordinator Factory function to create a new {@link ShutdownCoordinator} instance. Use this for managing shutdown of multiple scopes with dependencies.",
     "file": "packages/go-go-scope/src/graceful-shutdown-enhanced.ts"
   },
   {
     "name": "ProcessLifecycle",
     "kind": "class",
     "package": "go-go-scope",
-    "description": "Process lifecycle manager with graceful shutdown",
+    "description": "Process lifecycle manager with graceful shutdown Manages the entire process lifecycle including signal handling, uncaught exception handling, and coordinated shutdown. Use the global {@link processLif",
     "file": "packages/go-go-scope/src/graceful-shutdown-enhanced.ts"
   },
   {
@@ -2523,14 +2523,14 @@
     "name": "hasPlugin",
     "kind": "function",
     "package": "go-go-scope",
-    "description": "Check if a plugin is installed on a scope",
+    "description": "Check if a plugin is installed on a scope.",
     "file": "packages/go-go-scope/src/plugin.ts"
   },
   {
     "name": "registerPlugin",
     "kind": "function",
     "package": "go-go-scope",
-    "description": "Register a plugin as installed on a scope",
+    "description": "Register a plugin as installed on a scope. This is called automatically when plugins are passed to scope options, but can also be called manually for dynamic plugin registration.",
     "file": "packages/go-go-scope/src/plugin.ts"
   },
   {
@@ -2768,7 +2768,7 @@
     "name": "AsyncDisposableResource",
     "kind": "class",
     "package": "go-go-scope",
-    "description": "Async disposable resource wrapper",
+    "description": "Async disposable resource wrapper. Manages the lifecycle of an asynchronously acquired resource with automatic cleanup. Useful for resources like database connections, file handles, or network sockets",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
@@ -2782,7 +2782,7 @@
     "name": "Scope",
     "kind": "class",
     "package": "go-go-scope",
-    "description": "A Scope for structured concurrency. // @ts-expect-error TypeScript may not recognize Symbol.asyncDispose in all configurations",
+    "description": "A Scope for structured concurrency. The Scope class is the core primitive of go-go-scope, providing: - Automatic cancellation propagation - Resource cleanup (LIFO order) - Task spawning with Result tu",
     "file": "packages/go-go-scope/src/scope.ts"
   },
   {
@@ -4875,7 +4875,7 @@
     "name": "parseCron",
     "kind": "function",
     "package": "scheduler",
-    "description": "Parse a cron expression and return the next occurrence",
+    "description": "Parse a cron expression and return the next occurrence. Supports: `*` (any), `*`/`n` (step), `n` (value), `n-m` (range), `n,m` (list) Day names: sun, mon, tue, wed, thu, fri, sat",
     "file": "packages/scheduler/src/cron.ts"
   },
   {
@@ -4896,7 +4896,7 @@
     "name": "describeCron",
     "kind": "function",
     "package": "scheduler",
-    "description": "Human-readable description of a cron expression",
+    "description": "Human-readable description of a cron expression. Returns preset names for known expressions (e.g., \"every 5 minutes\"), or the raw cron expression for custom schedules.",
     "file": "packages/scheduler/src/cron.ts"
   },
   {
@@ -4910,7 +4910,7 @@
     "name": "RedisJobStorage",
     "kind": "class",
     "package": "scheduler",
-    "description": "Redis-based job storage Requires Redis adapter with hash and set support",
+    "description": "Redis-based job storage for distributed scheduling. Requires a Redis client with hash, set, and sorted set operations. Supports Lua scripting for atomic check-and-schedule operations (Redis 6.0+). Use",
     "file": "packages/scheduler/src/persistence-storage.ts"
   },
   {
@@ -4924,7 +4924,7 @@
     "name": "SQLJobStorage",
     "kind": "class",
     "package": "scheduler",
-    "description": "SQL-based job storage (PostgreSQL, MySQL, SQLite)",
+    "description": "SQL-based job storage for distributed scheduling. Supports PostgreSQL, MySQL, and SQLite databases. Uses UPSERT operations for atomic job updates. Use this storage for production deployments where Red",
     "file": "packages/scheduler/src/persistence-storage.ts"
   },
   {
@@ -5344,7 +5344,7 @@
     "name": "InMemoryJobStorage",
     "kind": "class",
     "package": "scheduler",
-    "description": "In-memory job storage (single-node deployments, testing)",
+    "description": "In-memory job storage for single-node deployments and testing. Stores jobs and schedules in JavaScript Maps. Data is lost when the process exits. This is ideal for development, testing, or single-inst",
     "file": "packages/scheduler/src/types.ts"
   },
   {
@@ -5666,14 +5666,14 @@
     "name": "createWebUI",
     "kind": "function",
     "package": "scheduler",
-    "description": "Create web UI server.",
+    "description": "Create web UI server for managing scheduler schedules. Provides a web interface and REST API for creating, updating, deleting, and monitoring schedules. Includes a responsive dashboard showing schedul",
     "file": "packages/scheduler/src/web-ui.ts"
   },
   {
     "name": "stopWebUI",
     "kind": "function",
     "package": "scheduler",
-    "description": "Stop web UI server.",
+    "description": "Stop web UI server gracefully. Closes the HTTP server and waits for all pending connections to close. This should be called during application shutdown to ensure clean termination.",
     "file": "packages/scheduler/src/web-ui.ts"
   },
   {

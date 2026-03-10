@@ -177,7 +177,7 @@ Convert a local date back to the target timezone's UTC equivalent
 function parseCron(expression: string, timezone?: string): CronExpression
 ```
 
-Parse a cron expression and return the next occurrence
+Parse a cron expression and return the next occurrence. Supports: `*` (any), `*`/`n` (step), `n` (value), `n-m` (range), `n,m` (list) Day names: sun, mon, tue, wed, thu, fri, sat
 
 **Parameters:**
 
@@ -190,11 +190,34 @@ Parse a cron expression and return the next occurrence
 
 CronExpression object for getting next occurrence
 
+**Examples:**
+
+```typescript
+import { parseCron } from '@go-go-scope/scheduler';
+
+// Parse a daily at midnight expression
+const daily = parseCron('0 0 * * *');
+const nextRun = daily.next();
+console.log(nextRun); // Date object for next midnight
+
+// Parse weekdays at 9 AM
+const workHours = parseCron('0 9 * * 1-5');
+
+// Parse with timezone (America/New_York)
+const nySchedule = parseCron('0 9 * * 1-5', 'America/New_York');
+const nextRunNY = nySchedule.next();
+
+// Use presets
+import { CronPresets } from '@go-go-scope/scheduler';
+const hourly = parseCron(CronPresets.EVERY_HOUR);
+const weekly = parseCron(CronPresets.WEEKLY);
+```
+
 **@param:** - Optional IANA timezone (e.g., "America/New_York")
 
 **@returns:** CronExpression object for getting next occurrence
 
-*Source: [cron.ts:72](packages/scheduler/src/cron.ts#L72)*
+*Source: [cron.ts:98](packages/scheduler/src/cron.ts#L98)*
 
 ---
 
@@ -217,7 +240,7 @@ Check if a value matches a cron field expression
 
 **Returns:** `boolean`
 
-*Source: [cron.ts:142](packages/scheduler/src/cron.ts#L142)*
+*Source: [cron.ts:168](packages/scheduler/src/cron.ts#L168)*
 
 ---
 
@@ -238,7 +261,7 @@ Check if day of week matches Supports both 0-6 (Sun-Sat) and names
 
 **Returns:** `boolean`
 
-*Source: [cron.ts:197](packages/scheduler/src/cron.ts#L197)*
+*Source: [cron.ts:223](packages/scheduler/src/cron.ts#L223)*
 
 ---
 
@@ -248,17 +271,48 @@ Check if day of week matches Supports both 0-6 (Sun-Sat) and names
 function describeCron(expression: string): string
 ```
 
-Human-readable description of a cron expression
+Human-readable description of a cron expression. Returns preset names for known expressions (e.g., "every 5 minutes"), or the raw cron expression for custom schedules.
 
 **Parameters:**
 
 | Name | Type | Description |
 |------|------|-------------|
-| `expression` | `string` |  |
+| `expression` | `string` | - Cron expression string |
 
 **Returns:** `string`
 
-*Source: [cron.ts:286](packages/scheduler/src/cron.ts#L286)*
+Human-readable description
+
+**Examples:**
+
+```typescript
+import { describeCron, CronPresets } from '@go-go-scope/scheduler';
+
+// Describe a preset expression
+console.log(describeCron(CronPresets.EVERY_5_MINUTES));
+// Output: "every 5 minutes"
+
+console.log(describeCron(CronPresets.DAILY));
+// Output: "daily"
+
+console.log(describeCron(CronPresets.WEEKDAYS_9AM));
+// Output: "weekdays 9am"
+
+// Describe a custom expression
+console.log(describeCron('0 30 10 * * 1'));
+// Output: "cron: 0 30 10 * * 1"
+
+// Use with parseCron for debugging
+const schedule = parseCron('0 0 * * *');
+console.log(`Schedule: ${describeCron('0 0 * * *')}`);
+console.log(`Next run: ${schedule.next()?.toLocaleString()}`);
+```
+
+**@param:** - Cron expression string
+
+**@returns:** Human-readable description
+
+*Source: [cron.ts:342](packages/scheduler/src/cron.ts#L342)*
 
 ---
 
@@ -364,7 +418,7 @@ Parse request body
 function createWebUI(options: WebUIOptions): Promise<Server>
 ```
 
-Create web UI server.
+Create web UI server for managing scheduler schedules. Provides a web interface and REST API for creating, updating, deleting, and monitoring schedules. Includes a responsive dashboard showing schedule statistics, job status, and execution history. REST API endpoints: - GET /api/schedules - List all schedules - POST /api/schedules - Create a new schedule - DELETE /api/schedules/:name - Delete a schedule - POST /api/schedules/:name/pause - Pause a schedule - POST /api/schedules/:name/resume - Resume a schedule - GET /api/schedules/:name/jobs?limit=20 - Get jobs for a schedule
 
 **Parameters:**
 
@@ -376,11 +430,85 @@ Create web UI server.
 
 HTTP server instance
 
+**Examples:**
+
+```typescript
+import { createWebUI, stopWebUI, InMemoryJobStorage } from '@go-go-scope/scheduler';
+import type { Server } from 'node:http';
+
+const storage = new InMemoryJobStorage();
+
+// Create web UI with basic configuration
+const server: Server = await createWebUI({
+  port: 8080,
+  host: '0.0.0.0',
+  path: '/',
+  storage,
+  getScheduleStats: async (name) => {
+    // Return schedule statistics
+    return {
+      name,
+      state: 'ACTIVE',
+      totalJobs: 10,
+      pendingJobs: 2,
+      runningJobs: 1,
+      completedJobs: 7,
+      failedJobs: 0,
+      cancelledJobs: 0,
+      successRate: 100,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+  },
+  createSchedule: async (name, options) => {
+    // Create schedule in your storage
+    const schedule: Schedule = {
+      id: crypto.randomUUID(),
+      name,
+      cron: options.cron,
+      interval: options.interval,
+      timezone: options.timezone,
+      state: ScheduleState.ACTIVE,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      payload: options.defaultPayload
+    };
+    await storage.saveSchedule(schedule);
+    return schedule;
+  },
+  updateSchedule: async (name, options) => { return schedule; },
+  deleteSchedule: async (name) => { await storage.deleteSchedule(name); },
+  pauseSchedule: async (name) => { },
+  resumeSchedule: async (name) => { },
+  getScheduleJobs: async (name, limit) => {
+    const allJobs = await storage.getJobsByStatus('pending');
+    return allJobs.filter(j => j.scheduleName === name).slice(0, limit);
+  },
+  logger: {
+    info: (msg, meta) => console.log(`[WebUI] ${msg}`, meta),
+    error: (msg, meta) => console.error(`[WebUI] ${msg}`, meta)
+  }
+});
+
+console.log('Web UI available at http://localhost:8080');
+
+// With API key authentication
+const secureServer = await createWebUI({
+  port: 8080,
+  host: '0.0.0.0',
+  apiKey: 'your-secret-api-key',
+  // ... other options
+});
+
+// Access API with authentication
+// curl -H "Authorization: Bearer your-secret-api-key" http://localhost:8080/api/schedules
+```
+
 **@param:** - Optional logger for web UI events
 
 **@returns:** HTTP server instance
 
-*Source: [web-ui.ts:845](packages/scheduler/src/web-ui.ts#L845)*
+*Source: [web-ui.ts:930](packages/scheduler/src/web-ui.ts#L930)*
 
 ---
 
@@ -390,23 +518,65 @@ HTTP server instance
 function stopWebUI(server: Server): Promise<void>
 ```
 
-Stop web UI server.
+Stop web UI server gracefully. Closes the HTTP server and waits for all pending connections to close. This should be called during application shutdown to ensure clean termination.
 
 **Parameters:**
 
 | Name | Type | Description |
 |------|------|-------------|
-| `server` | `Server` | - HTTP server instance to stop |
+| `server` | `Server` | - HTTP server instance returned by createWebUI |
 
 **Returns:** `Promise<void>`
 
 Promise that resolves when server is closed
 
-**@param:** - HTTP server instance to stop
+**Examples:**
+
+```typescript
+import { createWebUI, stopWebUI } from '@go-go-scope/scheduler';
+import { scope } from 'go-go-scope';
+
+await using s = scope();
+
+// Create and start web UI
+const server = await createWebUI({
+  port: 8080,
+  host: '0.0.0.0',
+  path: '/',
+  storage,
+  getScheduleStats: async (name) => { return stats; },
+  createSchedule: async (name, options) => { return schedule; },
+  updateSchedule: async (name, options) => { return schedule; },
+  deleteSchedule: async (name) => { },
+  pauseSchedule: async (name) => { },
+  resumeSchedule: async (name) => { },
+  getScheduleJobs: async (name, limit) => { return jobs; }
+});
+
+// Use in your application...
+
+// Graceful shutdown with structured concurrency
+s.onDispose(async () => {
+  console.log('Shutting down web UI...');
+  await stopWebUI(server);
+  console.log('Web UI stopped');
+});
+
+// Or stop manually when needed
+async function shutdown() {
+  await stopWebUI(server);
+  process.exit(0);
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+```
+
+**@param:** - HTTP server instance returned by createWebUI
 
 **@returns:** Promise that resolves when server is closed
 
-*Source: [web-ui.ts:1019](packages/scheduler/src/web-ui.ts#L1019)*
+*Source: [web-ui.ts:1148](packages/scheduler/src/web-ui.ts#L1148)*
 
 ---
 
@@ -418,9 +588,41 @@ Promise that resolves when server is closed
 class RedisJobStorage
 ```
 
-Redis-based job storage Requires Redis adapter with hash and set support
+Redis-based job storage for distributed scheduling. Requires a Redis client with hash, set, and sorted set operations. Supports Lua scripting for atomic check-and-schedule operations (Redis 6.0+). Use this storage for production deployments with multiple scheduler instances.
 
-*Source: [persistence-storage.ts:78](packages/scheduler/src/persistence-storage.ts#L78)*
+**Examples:**
+
+```typescript
+import { RedisJobStorage } from '@go-go-scope/scheduler';
+import { createRedisAdapter } from '@go-go-scope/persistence-redis';
+import Redis from 'ioredis';
+
+// Create Redis client and adapter
+const redis = new Redis({ host: 'localhost', port: 6379 });
+const lockProvider = createRedisAdapter(redis);
+
+// Create storage with default prefix
+const storage = new RedisJobStorage(redis, lockProvider);
+
+// Create storage with custom key prefix
+const storage = new RedisJobStorage(redis, lockProvider, {
+  keyPrefix: 'myapp:scheduler:'
+});
+
+// Use with Scheduler
+const scheduler = new Scheduler({
+  storage,
+  enableWebUI: true,
+  webUIPort: 8080
+});
+
+await scheduler.createSchedule('cleanup', {
+  cron: '0 0 * * *',
+  defaultPayload: { maxAge: 86400000 }
+});
+```
+
+*Source: [persistence-storage.ts:113](packages/scheduler/src/persistence-storage.ts#L113)*
 
 ---
 
@@ -430,9 +632,54 @@ Redis-based job storage Requires Redis adapter with hash and set support
 class SQLJobStorage
 ```
 
-SQL-based job storage (PostgreSQL, MySQL, SQLite)
+SQL-based job storage for distributed scheduling. Supports PostgreSQL, MySQL, and SQLite databases. Uses UPSERT operations for atomic job updates. Use this storage for production deployments where Redis is not available, or when you prefer to use your existing SQL database for job persistence.
 
-*Source: [persistence-storage.ts:454](packages/scheduler/src/persistence-storage.ts#L454)*
+**Examples:**
+
+```typescript
+import { SQLJobStorage } from '@go-go-scope/scheduler';
+import { createPostgresAdapter } from '@go-go-scope/persistence-postgres';
+import { Pool } from 'pg';
+
+// PostgreSQL setup
+const pool = new Pool({
+  host: 'localhost',
+  database: 'scheduler',
+  user: 'postgres',
+  password: 'secret'
+});
+
+const db = {
+  query: (sql: string, params?: unknown[]) => pool.query(sql, params),
+  exec: (sql: string, params?: unknown[]) => pool.query(sql, params).then(() => {})
+};
+
+const lockProvider = createPostgresAdapter(pool);
+const storage = new SQLJobStorage(db, lockProvider, 'postgres', {
+  keyPrefix: 'scheduler_'
+});
+
+// MySQL setup
+import { createMysqlAdapter } from '@go-go-scope/persistence-mysql';
+import mysql from 'mysql2/promise';
+
+const mysqlPool = mysql.createPool({ host: 'localhost', database: 'scheduler' });
+const mysqlDb = {
+  query: (sql: string, params?: unknown[]) => mysqlPool.execute(sql, params),
+  exec: (sql: string, params?: unknown[]) => mysqlPool.execute(sql, params).then(() => {})
+};
+const mysqlLockProvider = createMysqlAdapter(mysqlPool);
+const mysqlStorage = new SQLJobStorage(mysqlDb, mysqlLockProvider, 'mysql');
+
+// SQLite setup (for development)
+import { createSqliteAdapter } from '@go-go-scope/persistence-sqlite';
+import sqlite3 from 'sqlite3';
+
+const sqliteDb = new sqlite3.Database(':memory:');
+// ... wrap with query/exec interface
+```
+
+*Source: [persistence-storage.ts:539](packages/scheduler/src/persistence-storage.ts#L539)*
 
 ---
 
@@ -495,9 +742,48 @@ await scheduler.triggerSchedule('send-email', {
 class InMemoryJobStorage
 ```
 
-In-memory job storage (single-node deployments, testing)
+In-memory job storage for single-node deployments and testing. Stores jobs and schedules in JavaScript Maps. Data is lost when the process exits. This is ideal for development, testing, or single-instance deployments where persistence is not required. Features: - In-memory locking (no distributed coordination needed) - Dead Letter Queue (DLQ) support - Fast access for development and testing
 
-*Source: [types.ts:353](packages/scheduler/src/types.ts#L353)*
+**Examples:**
+
+```typescript
+import { Scheduler, InMemoryJobStorage } from '@go-go-scope/scheduler';
+
+// Create in-memory storage
+const storage = new InMemoryJobStorage();
+
+// Use for testing
+const scheduler = new Scheduler({
+  storage,
+  checkInterval: 1000 // Check for due jobs every second
+});
+
+// Create a schedule
+await scheduler.createSchedule('test-job', {
+  interval: 5000, // Run every 5 seconds
+  defaultPayload: { message: 'Hello from scheduler!' }
+});
+
+// Register handler
+scheduler.onSchedule('test-job', async (job) => {
+  console.log('Received payload:', job.payload);
+});
+
+scheduler.start();
+
+// For testing with DLQ support
+const storage = new InMemoryJobStorage();
+const scheduler = new Scheduler({
+  storage,
+  deadLetterQueue: { enabled: true }
+});
+
+// Access DLQ jobs directly
+const dlqJobs = await storage.getDLQJobs();
+await storage.replayFromDLQ(jobId); // Retry a failed job
+```
+
+*Source: [types.ts:400](packages/scheduler/src/types.ts#L400)*
 
 ---
 
@@ -535,7 +821,7 @@ await scheduler.triggerSchedule('send-email', {
 
 **@template:** - Record mapping schedule names to their payload types
 
-*Source: [types.ts:1012](packages/scheduler/src/types.ts#L1012)*
+*Source: [types.ts:1059](packages/scheduler/src/types.ts#L1059)*
 
 ---
 
@@ -681,7 +967,7 @@ interface SchedulerEvents
 
 Scheduler events for monitoring and observability
 
-*Source: [types.ts:608](packages/scheduler/src/types.ts#L608)*
+*Source: [types.ts:655](packages/scheduler/src/types.ts#L655)*
 
 ---
 
@@ -693,7 +979,7 @@ interface DeadLetterJob
 
 Dead Letter Queue job - contains additional metadata for failed jobs
 
-*Source: [types.ts:659](packages/scheduler/src/types.ts#L659)*
+*Source: [types.ts:706](packages/scheduler/src/types.ts#L706)*
 
 ---
 
@@ -705,7 +991,7 @@ interface DeadLetterQueueOptions
 
 Dead Letter Queue configuration options
 
-*Source: [types.ts:671](packages/scheduler/src/types.ts#L671)*
+*Source: [types.ts:718](packages/scheduler/src/types.ts#L718)*
 
 ---
 
@@ -717,7 +1003,7 @@ interface JobResult
 
 Job execution result
 
-*Source: [types.ts:685](packages/scheduler/src/types.ts#L685)*
+*Source: [types.ts:732](packages/scheduler/src/types.ts#L732)*
 
 ---
 
@@ -729,7 +1015,7 @@ interface SchedulerHooks
 
 Job lifecycle hooks
 
-*Source: [types.ts:694](packages/scheduler/src/types.ts#L694)*
+*Source: [types.ts:741](packages/scheduler/src/types.ts#L741)*
 
 ---
 
@@ -741,7 +1027,7 @@ interface SchedulerMetrics
 
 Scheduler metrics for export
 
-*Source: [types.ts:715](packages/scheduler/src/types.ts#L715)*
+*Source: [types.ts:762](packages/scheduler/src/types.ts#L762)*
 
 ---
 
@@ -753,7 +1039,7 @@ interface MetricsExportOptions
 
 Metrics export options
 
-*Source: [types.ts:750](packages/scheduler/src/types.ts#L750)*
+*Source: [types.ts:797](packages/scheduler/src/types.ts#L797)*
 
 ---
 
@@ -765,7 +1051,7 @@ interface SchedulerOptions
 
 Scheduler configuration options
 
-*Source: [types.ts:760](packages/scheduler/src/types.ts#L760)*
+*Source: [types.ts:807](packages/scheduler/src/types.ts#L807)*
 
 ---
 
@@ -777,7 +1063,7 @@ interface JobProfile
 
 Job execution profile for detailed timing
 
-*Source: [types.ts:911](packages/scheduler/src/types.ts#L911)*
+*Source: [types.ts:958](packages/scheduler/src/types.ts#L958)*
 
 ---
 
@@ -789,7 +1075,7 @@ interface TriggerOptions
 
 Options for triggering a schedule
 
-*Source: [types.ts:967](packages/scheduler/src/types.ts#L967)*
+*Source: [types.ts:1014](packages/scheduler/src/types.ts#L1014)*
 
 ---
 
@@ -801,7 +1087,7 @@ interface ScheduleJobOptions
 
 Options for scheduling a job
 
-*Source: [types.ts:977](packages/scheduler/src/types.ts#L977)*
+*Source: [types.ts:1024](packages/scheduler/src/types.ts#L1024)*
 
 ---
 
@@ -899,7 +1185,7 @@ type AppSchedules = {
 const scheduler = new Scheduler<AppSchedules>({ storage });
 ```
 
-*Source: [types.ts:942](packages/scheduler/src/types.ts#L942)*
+*Source: [types.ts:989](packages/scheduler/src/types.ts#L989)*
 
 ---
 
@@ -911,7 +1197,7 @@ type SchedulePayload = Schedules[Name]
 
 Helper type to extract the payload type for a specific schedule
 
-*Source: [types.ts:947](packages/scheduler/src/types.ts#L947)*
+*Source: [types.ts:994](packages/scheduler/src/types.ts#L994)*
 
 ---
 
@@ -931,7 +1217,7 @@ type MySchedules = SchedulesOf<typeof scheduler>;
 // MySchedules = AppSchedules
 ```
 
-*Source: [types.ts:962](packages/scheduler/src/types.ts#L962)*
+*Source: [types.ts:1009](packages/scheduler/src/types.ts#L1009)*
 
 ---
 
@@ -953,7 +1239,7 @@ Calculate the next run time for a schedule. Handles cron expressions, intervals,
 
 **Returns:** `Date | null`
 
-*Source: [persistence-storage.ts:423](packages/scheduler/src/persistence-storage.ts#L423)*
+*Source: [persistence-storage.ts:458](packages/scheduler/src/persistence-storage.ts#L458)*
 
 ---
 
@@ -1877,7 +2163,7 @@ Register a typed handler for a schedule. The handler will be called when jobs fo
 
 **@param:** - Handler function with typed payload
 
-*Source: [types.ts:1027](packages/scheduler/src/types.ts#L1027)*
+*Source: [types.ts:1074](packages/scheduler/src/types.ts#L1074)*
 
 ---
 
@@ -1901,7 +2187,7 @@ Trigger a schedule to run immediately. Creates a job that will execute as soon a
 
 **@param:** - Optional trigger options
 
-*Source: [types.ts:1040](packages/scheduler/src/types.ts#L1040)*
+*Source: [types.ts:1087](packages/scheduler/src/types.ts#L1087)*
 
 ---
 
@@ -1925,7 +2211,7 @@ Schedule a one-time job.
 
 **@param:** - Optional scheduling options
 
-*Source: [types.ts:1053](packages/scheduler/src/types.ts#L1053)*
+*Source: [types.ts:1100](packages/scheduler/src/types.ts#L1100)*
 
 ---
 
@@ -1948,7 +2234,7 @@ Create a schedule for recurring job execution.
 
 **@param:** - Schedule configuration
 
-*Source: [types.ts:1065](packages/scheduler/src/types.ts#L1065)*
+*Source: [types.ts:1112](packages/scheduler/src/types.ts#L1112)*
 
 ---
 
@@ -1968,7 +2254,7 @@ Remove a handler for a schedule.
 
 **Returns:** `boolean`
 
-*Source: [types.ts:1073](packages/scheduler/src/types.ts#L1073)*
+*Source: [types.ts:1120](packages/scheduler/src/types.ts#L1120)*
 
 ---
 
@@ -1988,7 +2274,7 @@ Delete a schedule by name.
 
 **Returns:** `Promise<boolean>`
 
-*Source: [types.ts:1078](packages/scheduler/src/types.ts#L1078)*
+*Source: [types.ts:1125](packages/scheduler/src/types.ts#L1125)*
 
 ---
 
@@ -2002,7 +2288,7 @@ List all schedules.
 
 **Returns:** `Promise<Schedule[]>`
 
-*Source: [types.ts:1083](packages/scheduler/src/types.ts#L1083)*
+*Source: [types.ts:1130](packages/scheduler/src/types.ts#L1130)*
 
 ---
 
@@ -2022,7 +2308,7 @@ Get a schedule by name.
 
 **Returns:** `Promise<Schedule | null>`
 
-*Source: [types.ts:1088](packages/scheduler/src/types.ts#L1088)*
+*Source: [types.ts:1135](packages/scheduler/src/types.ts#L1135)*
 
 ---
 
@@ -2043,7 +2329,7 @@ Update an existing schedule.
 
 **Returns:** `Promise<Schedule>`
 
-*Source: [types.ts:1093](packages/scheduler/src/types.ts#L1093)*
+*Source: [types.ts:1140](packages/scheduler/src/types.ts#L1140)*
 
 ---
 
@@ -2063,7 +2349,7 @@ Pause a schedule. No new jobs will be created until resumed.
 
 **Returns:** `Promise<Schedule>`
 
-*Source: [types.ts:1101](packages/scheduler/src/types.ts#L1101)*
+*Source: [types.ts:1148](packages/scheduler/src/types.ts#L1148)*
 
 ---
 
@@ -2083,7 +2369,7 @@ Resume a paused schedule.
 
 **Returns:** `Promise<Schedule>`
 
-*Source: [types.ts:1106](packages/scheduler/src/types.ts#L1106)*
+*Source: [types.ts:1153](packages/scheduler/src/types.ts#L1153)*
 
 ---
 
@@ -2103,7 +2389,7 @@ Disable a schedule. Workers will skip disabled schedules.
 
 **Returns:** `Promise<Schedule>`
 
-*Source: [types.ts:1111](packages/scheduler/src/types.ts#L1111)*
+*Source: [types.ts:1158](packages/scheduler/src/types.ts#L1158)*
 
 ---
 
@@ -2123,7 +2409,7 @@ Get statistics for a schedule.
 
 **Returns:** `Promise<ScheduleStats>`
 
-*Source: [types.ts:1116](packages/scheduler/src/types.ts#L1116)*
+*Source: [types.ts:1163](packages/scheduler/src/types.ts#L1163)*
 
 ---
 
@@ -2137,7 +2423,7 @@ Get all schedules with their statistics.
 
 **Returns:** `Promise<ScheduleStats[]>`
 
-*Source: [types.ts:1121](packages/scheduler/src/types.ts#L1121)*
+*Source: [types.ts:1168](packages/scheduler/src/types.ts#L1168)*
 
 ---
 
@@ -2157,7 +2443,7 @@ Cancel a pending job.
 
 **Returns:** `Promise<boolean>`
 
-*Source: [types.ts:1126](packages/scheduler/src/types.ts#L1126)*
+*Source: [types.ts:1173](packages/scheduler/src/types.ts#L1173)*
 
 ---
 
@@ -2177,7 +2463,7 @@ Get a job by ID.
 
 **Returns:** `Promise<Job | null>`
 
-*Source: [types.ts:1131](packages/scheduler/src/types.ts#L1131)*
+*Source: [types.ts:1178](packages/scheduler/src/types.ts#L1178)*
 
 ---
 
@@ -2197,7 +2483,7 @@ Get jobs by status.
 
 **Returns:** `Promise<Job[]>`
 
-*Source: [types.ts:1136](packages/scheduler/src/types.ts#L1136)*
+*Source: [types.ts:1183](packages/scheduler/src/types.ts#L1183)*
 
 ---
 
@@ -2211,7 +2497,7 @@ Start the scheduler polling loop.
 
 **Returns:** `void`
 
-*Source: [types.ts:1141](packages/scheduler/src/types.ts#L1141)*
+*Source: [types.ts:1188](packages/scheduler/src/types.ts#L1188)*
 
 ---
 
@@ -2225,7 +2511,7 @@ Stop the scheduler and cancel all running jobs.
 
 **Returns:** `Promise<void>`
 
-*Source: [types.ts:1146](packages/scheduler/src/types.ts#L1146)*
+*Source: [types.ts:1193](packages/scheduler/src/types.ts#L1193)*
 
 ---
 
@@ -2249,7 +2535,7 @@ Get scheduler status.
 		instanceId: string;
 	}`
 
-*Source: [types.ts:1151](packages/scheduler/src/types.ts#L1151)*
+*Source: [types.ts:1198](packages/scheduler/src/types.ts#L1198)*
 
 ---
 
@@ -2263,7 +2549,7 @@ Get the web UI URL if enabled.
 
 **Returns:** `string | null`
 
-*Source: [types.ts:1161](packages/scheduler/src/types.ts#L1161)*
+*Source: [types.ts:1208](packages/scheduler/src/types.ts#L1208)*
 
 ---
 
@@ -2277,7 +2563,7 @@ Collect current metrics from the scheduler.
 
 **Returns:** `Promise<SchedulerMetrics>`
 
-*Source: [types.ts:1174](packages/scheduler/src/types.ts#L1174)*
+*Source: [types.ts:1221](packages/scheduler/src/types.ts#L1221)*
 
 ---
 
@@ -2297,7 +2583,7 @@ Export metrics in various formats.
 
 **Returns:** `Promise<string>`
 
-*Source: [types.ts:1179](packages/scheduler/src/types.ts#L1179)*
+*Source: [types.ts:1226](packages/scheduler/src/types.ts#L1226)*
 
 ---
 
@@ -2317,7 +2603,7 @@ Get job profile for detailed execution analysis.
 
 **Returns:** `JobProfile | undefined`
 
-*Source: [types.ts:1184](packages/scheduler/src/types.ts#L1184)*
+*Source: [types.ts:1231](packages/scheduler/src/types.ts#L1231)*
 
 ---
 
@@ -2331,7 +2617,7 @@ Get all job profiles.
 
 **Returns:** `JobProfile[]`
 
-*Source: [types.ts:1189](packages/scheduler/src/types.ts#L1189)*
+*Source: [types.ts:1236](packages/scheduler/src/types.ts#L1236)*
 
 ---
 
@@ -2351,7 +2637,7 @@ Clear old job profiles.
 
 **Returns:** `void`
 
-*Source: [types.ts:1194](packages/scheduler/src/types.ts#L1194)*
+*Source: [types.ts:1241](packages/scheduler/src/types.ts#L1241)*
 
 ---
 

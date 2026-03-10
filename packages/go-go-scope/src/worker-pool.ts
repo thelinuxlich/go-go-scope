@@ -881,6 +881,87 @@ function getDefaultWorkerCount(): number {
 /**
  * Create a worker pool with the given options.
  * Convenience function for API consistency.
+ *
+ * @example
+ * ```typescript
+ * import { workerPool } from 'go-go-scope';
+ *
+ * // Create a worker pool with 4 workers
+ * await using pool = workerPool({ size: 4 });
+ *
+ * // Execute a CPU-intensive task in a worker
+ * const [err, result] = await pool.execute(
+ *   (n: number) => {
+ *     // This runs in a worker thread
+ *     function fibonacci(num: number): number {
+ *       return num <= 1 ? num : fibonacci(num - 1) + fibonacci(num - 2);
+ *     }
+ *     return fibonacci(n);
+ *   },
+ *   35  // Input value
+ * );
+ *
+ * if (err) {
+ *   console.error('Calculation failed:', err);
+ * } else {
+ *   console.log('Fibonacci result:', result);
+ * }
+ * // Pool is automatically terminated when out of scope
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Batch processing with error handling
+ * import { workerPool } from 'go-go-scope';
+ *
+ * await using pool = workerPool({ size: 4, idleTimeout: 30000 });
+ *
+ * const numbers = [30, 35, 40, 45];
+ *
+ * // Process multiple items in parallel
+ * const results = await pool.executeBatch(
+ *   numbers,
+ *   (n) => {
+ *     // Heavy computation
+ *     let sum = 0;
+ *     for (let i = 0; i < n * 1000000; i++) {
+ *       sum += i;
+ *     }
+ *     return { n, sum };
+ *   },
+ *   { ordered: true }  // Results in same order as input
+ * );
+ *
+ * for (const [err, result] of results) {
+ *   if (!err) {
+ *     console.log(`Sum for n=${result.n}:`, result.sum);
+ *   }
+ * }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Using with scope's worker option
+ * import { scope } from 'go-go-scope';
+ *
+ * // Create scope with worker pool configuration
+ * await using s = scope({
+ *   workerPool: { size: 4, idleTimeout: 60000 }
+ * });
+ *
+ * // Execute task in worker automatically
+ * const [err, result] = await s.task(
+ *   async () => {
+ *     // This function is serialized and runs in a worker
+ *     const data = (ctx as any).data;
+ *     return data.map((x: number) => x * x);
+ *   },
+ *   {
+ *     worker: true,
+ *     data: [1, 2, 3, 4, 5]  // Data passed to worker
+ *   }
+ * );
+ * ```
  */
 export function workerPool(options?: WorkerPoolOptions): WorkerPool {
 	return new WorkerPool(options);

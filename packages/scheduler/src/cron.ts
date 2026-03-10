@@ -64,10 +64,36 @@ function convertToTargetTimezone(localDate: Date, timezone: string): Date {
 }
 
 /**
- * Parse a cron expression and return the next occurrence
+ * Parse a cron expression and return the next occurrence.
+ *
+ * Supports: `*` (any), `*`/`n` (step), `n` (value), `n-m` (range), `n,m` (list)
+ * Day names: sun, mon, tue, wed, thu, fri, sat
+ *
  * @param expression - Cron expression (5 fields: minute hour day month dayOfWeek)
  * @param timezone - Optional IANA timezone (e.g., "America/New_York")
  * @returns CronExpression object for getting next occurrence
+ *
+ * @example
+ * ```typescript
+ * import { parseCron } from '@go-go-scope/scheduler';
+ *
+ * // Parse a daily at midnight expression
+ * const daily = parseCron('0 0 * * *');
+ * const nextRun = daily.next();
+ * console.log(nextRun); // Date object for next midnight
+ *
+ * // Parse weekdays at 9 AM
+ * const workHours = parseCron('0 9 * * 1-5');
+ *
+ * // Parse with timezone (America/New_York)
+ * const nySchedule = parseCron('0 9 * * 1-5', 'America/New_York');
+ * const nextRunNY = nySchedule.next();
+ *
+ * // Use presets
+ * import { CronPresets } from '@go-go-scope/scheduler';
+ * const hourly = parseCron(CronPresets.EVERY_HOUR);
+ * const weekly = parseCron(CronPresets.WEEKLY);
+ * ```
  */
 export function parseCron(
 	expression: string,
@@ -281,7 +307,37 @@ export const CronPresets = {
 } as const;
 
 /**
- * Human-readable description of a cron expression
+ * Human-readable description of a cron expression.
+ *
+ * Returns preset names for known expressions (e.g., "every 5 minutes"),
+ * or the raw cron expression for custom schedules.
+ *
+ * @param expression - Cron expression string
+ * @returns Human-readable description
+ *
+ * @example
+ * ```typescript
+ * import { describeCron, CronPresets } from '@go-go-scope/scheduler';
+ *
+ * // Describe a preset expression
+ * console.log(describeCron(CronPresets.EVERY_5_MINUTES));
+ * // Output: "every 5 minutes"
+ *
+ * console.log(describeCron(CronPresets.DAILY));
+ * // Output: "daily"
+ *
+ * console.log(describeCron(CronPresets.WEEKDAYS_9AM));
+ * // Output: "weekdays 9am"
+ *
+ * // Describe a custom expression
+ * console.log(describeCron('0 30 10 * * 1'));
+ * // Output: "cron: 0 30 10 * * 1"
+ *
+ * // Use with parseCron for debugging
+ * const schedule = parseCron('0 0 * * *');
+ * console.log(`Schedule: ${describeCron('0 0 * * *')}`);
+ * console.log(`Next run: ${schedule.next()?.toLocaleString()}`);
+ * ```
  */
 export function describeCron(expression: string): string {
 	const presets = Object.entries(CronPresets).find(([, v]) => v === expression);

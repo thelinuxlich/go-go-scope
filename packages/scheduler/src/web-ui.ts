@@ -824,7 +824,19 @@ function parseBody(req: IncomingMessage): Promise<Record<string, unknown>> {
 }
 
 /**
- * Create web UI server.
+ * Create web UI server for managing scheduler schedules.
+ *
+ * Provides a web interface and REST API for creating, updating, deleting,
+ * and monitoring schedules. Includes a responsive dashboard showing schedule
+ * statistics, job status, and execution history.
+ *
+ * REST API endpoints:
+ * - GET /api/schedules - List all schedules
+ * - POST /api/schedules - Create a new schedule
+ * - DELETE /api/schedules/:name - Delete a schedule
+ * - POST /api/schedules/:name/pause - Pause a schedule
+ * - POST /api/schedules/:name/resume - Resume a schedule
+ * - GET /api/schedules/:name/jobs?limit=20 - Get jobs for a schedule
  *
  * @param options - Web UI configuration options
  * @param options.port - Port to listen on (e.g., 8080)
@@ -841,6 +853,79 @@ function parseBody(req: IncomingMessage): Promise<Record<string, unknown>> {
  * @param options.getScheduleJobs - Function to get jobs for a schedule
  * @param options.logger - Optional logger for web UI events
  * @returns HTTP server instance
+ *
+ * @example
+ * ```typescript
+ * import { createWebUI, stopWebUI, InMemoryJobStorage } from '@go-go-scope/scheduler';
+ * import type { Server } from 'node:http';
+ *
+ * const storage = new InMemoryJobStorage();
+ *
+ * // Create web UI with basic configuration
+ * const server: Server = await createWebUI({
+ *   port: 8080,
+ *   host: '0.0.0.0',
+ *   path: '/',
+ *   storage,
+ *   getScheduleStats: async (name) => {
+ *     // Return schedule statistics
+ *     return {
+ *       name,
+ *       state: 'ACTIVE',
+ *       totalJobs: 10,
+ *       pendingJobs: 2,
+ *       runningJobs: 1,
+ *       completedJobs: 7,
+ *       failedJobs: 0,
+ *       cancelledJobs: 0,
+ *       successRate: 100,
+ *       createdAt: new Date(),
+ *       updatedAt: new Date()
+ *     };
+ *   },
+ *   createSchedule: async (name, options) => {
+ *     // Create schedule in your storage
+ *     const schedule: Schedule = {
+ *       id: crypto.randomUUID(),
+ *       name,
+ *       cron: options.cron,
+ *       interval: options.interval,
+ *       timezone: options.timezone,
+ *       state: ScheduleState.ACTIVE,
+ *       createdAt: new Date(),
+ *       updatedAt: new Date(),
+ *       payload: options.defaultPayload
+ *     };
+ *     await storage.saveSchedule(schedule);
+ *     return schedule;
+ *   },
+ *   updateSchedule: async (name, options) => { return schedule; },
+ *   deleteSchedule: async (name) => { await storage.deleteSchedule(name); },
+ *   pauseSchedule: async (name) => { },
+ *   resumeSchedule: async (name) => { },
+ *   getScheduleJobs: async (name, limit) => {
+ *     const allJobs = await storage.getJobsByStatus('pending');
+ *     return allJobs.filter(j => j.scheduleName === name).slice(0, limit);
+ *   },
+ *   logger: {
+ *     info: (msg, meta) => console.log(`[WebUI] ${msg}`, meta),
+ *     error: (msg, meta) => console.error(`[WebUI] ${msg}`, meta)
+ *   }
+ * });
+ *
+ * console.log('Web UI available at http://localhost:8080');
+ *
+ * // With API key authentication
+ * const secureServer = await createWebUI({
+ *   port: 8080,
+ *   host: '0.0.0.0',
+ *   apiKey: 'your-secret-api-key',
+ *   // ... other options
+ * });
+ *
+ * // Access API with authentication
+ * // curl -H "Authorization: Bearer your-secret-api-key" http://localhost:8080/api/schedules
+ * ```
  */
 export async function createWebUI(options: WebUIOptions): Promise<Server> {
 	const { createServer } = await import("node:http");
@@ -1011,10 +1096,54 @@ export async function createWebUI(options: WebUIOptions): Promise<Server> {
 }
 
 /**
- * Stop web UI server.
+ * Stop web UI server gracefully.
  *
- * @param server - HTTP server instance to stop
+ * Closes the HTTP server and waits for all pending connections to close.
+ * This should be called during application shutdown to ensure clean termination.
+ *
+ * @param server - HTTP server instance returned by createWebUI
  * @returns Promise that resolves when server is closed
+ *
+ * @example
+ * ```typescript
+ * import { createWebUI, stopWebUI } from '@go-go-scope/scheduler';
+ * import { scope } from 'go-go-scope';
+ *
+ * await using s = scope();
+ *
+ * // Create and start web UI
+ * const server = await createWebUI({
+ *   port: 8080,
+ *   host: '0.0.0.0',
+ *   path: '/',
+ *   storage,
+ *   getScheduleStats: async (name) => { return stats; },
+ *   createSchedule: async (name, options) => { return schedule; },
+ *   updateSchedule: async (name, options) => { return schedule; },
+ *   deleteSchedule: async (name) => { },
+ *   pauseSchedule: async (name) => { },
+ *   resumeSchedule: async (name) => { },
+ *   getScheduleJobs: async (name, limit) => { return jobs; }
+ * });
+ *
+ * // Use in your application...
+ *
+ * // Graceful shutdown with structured concurrency
+ * s.onDispose(async () => {
+ *   console.log('Shutting down web UI...');
+ *   await stopWebUI(server);
+ *   console.log('Web UI stopped');
+ * });
+ *
+ * // Or stop manually when needed
+ * async function shutdown() {
+ *   await stopWebUI(server);
+ *   process.exit(0);
+ * }
+ *
+ * process.on('SIGTERM', shutdown);
+ * process.on('SIGINT', shutdown);
+ * ```
  */
 export async function stopWebUI(server: Server): Promise<void> {
 	return new Promise((resolve) => {

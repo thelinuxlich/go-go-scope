@@ -1043,45 +1043,6 @@
             </section>
 
             <!-- Scope Section -->
-            <section id="scope" class="content">
-                <h2 class="section-anchor">The Scope</h2>
-                <p>A <strong>Scope</strong> is a container for async operations. Think of it as a "workspace" for your tasks with automatic cleanup and cancellation propagation.</p>
-                
-                <h3>Key Features</h3>
-                <ul>
-                    <li><strong>Contains tasks</strong> - All tasks are created within a scope</li>
-                    <li><strong>Propagates cancellation</strong> - When the scope ends, tasks are cancelled</li>
-                    <li><strong>Manages resources</strong> - Services you provide are cleaned up automatically</li>
-                    <li><strong>Tracks execution</strong> - Knows what tasks are running</li>
-                    <li><strong>Collects telemetry</strong> - Creates spans for tracing</li>
-                </ul>
-
-                <h3>Creating a Scope</h3>
-                <pre><code><span class="comment">// Simple scope</span>
-<span class="keyword">await using</span> s = <span class="function">scope</span>()
-
-<span class="comment">// With timeout</span>
-<span class="keyword">await using</span> s = <span class="function">scope</span>({ timeout: <span class="number">5000</span> })
-
-<span class="comment">// With OpenTelemetry tracing</span>
-<span class="keyword">await using</span> s = <span class="function">scope</span>({
-  name: <span class="string">'my-operation'</span>,
-  tracer: trace.<span class="function">getTracer</span>(<span class="string">'my-app'</span>)
-})
-
-<span class="comment">// With concurrency limit</span>
-<span class="keyword">await using</span> s = <span class="function">scope</span>({ concurrency: <span class="number">3</span> })
-
-<span class="comment">// With circuit breaker</span>
-<span class="keyword">await using</span> s = <span class="function">scope</span>({
-  circuitBreaker: {
-    failureThreshold: <span class="number">5</span>,
-    resetTimeout: <span class="number">30000</span>
-  }
-})</code></pre>
-            </section>
-
-            <!-- Task Section -->
             <!-- API Reference Section - Links to Auto-Generated Documentation -->
 
 <section id="api" class="content">
@@ -1226,6 +1187,8 @@
         <p style="margin: 0; color: var(--text-muted);">📚 For detailed guides and examples, see the <a href="./03-api-reference.md" style="color: var(--primary);">API Reference Overview</a> or explore the <a href="https://github.com/thelinuxlich/go-go-scope/tree/main/examples" style="color: var(--primary);" target="_blank">examples directory</a>.</p>
     </div>
 </section>
+
+<!-- /API Reference Section -->
 
 <!-- /API Reference Section -->
 

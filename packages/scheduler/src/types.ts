@@ -348,7 +348,54 @@ export interface JobStorage {
 }
 
 /**
- * In-memory job storage (single-node deployments, testing)
+ * In-memory job storage for single-node deployments and testing.
+ *
+ * Stores jobs and schedules in JavaScript Maps. Data is lost when the process exits.
+ * This is ideal for development, testing, or single-instance deployments where
+ * persistence is not required.
+ *
+ * Features:
+ * - In-memory locking (no distributed coordination needed)
+ * - Dead Letter Queue (DLQ) support
+ * - Fast access for development and testing
+ *
+ * @example
+ * ```typescript
+ * import { Scheduler, InMemoryJobStorage } from '@go-go-scope/scheduler';
+ *
+ * // Create in-memory storage
+ * const storage = new InMemoryJobStorage();
+ *
+ * // Use for testing
+ * const scheduler = new Scheduler({
+ *   storage,
+ *   checkInterval: 1000 // Check for due jobs every second
+ * });
+ *
+ * // Create a schedule
+ * await scheduler.createSchedule('test-job', {
+ *   interval: 5000, // Run every 5 seconds
+ *   defaultPayload: { message: 'Hello from scheduler!' }
+ * });
+ *
+ * // Register handler
+ * scheduler.onSchedule('test-job', async (job) => {
+ *   console.log('Received payload:', job.payload);
+ * });
+ *
+ * scheduler.start();
+ *
+ * // For testing with DLQ support
+ * const storage = new InMemoryJobStorage();
+ * const scheduler = new Scheduler({
+ *   storage,
+ *   deadLetterQueue: { enabled: true }
+ * });
+ *
+ * // Access DLQ jobs directly
+ * const dlqJobs = await storage.getDLQJobs();
+ * await storage.replayFromDLQ(jobId); // Retry a failed job
+ * ```
  */
 export class InMemoryJobStorage implements JobStorage {
 	private jobs = new Map<string, Job>();

@@ -70,6 +70,70 @@ interface QueueItem {
  * Respects scope cancellation and supports priority-based acquisition.
  *
  * @see Semaphore (module-level documentation for detailed examples)
+ *
+ * @example
+ * ```typescript
+ * import { scope, Semaphore } from "go-go-scope";
+ *
+ * await using s = scope();
+ *
+ * // Create a semaphore allowing 3 concurrent operations
+ * const dbSemaphore = new Semaphore(3, s.signal);
+ *
+ * // Simulate database operations with limited concurrency
+ * async function queryDatabase(query: string): Promise<string> {
+ *   return await dbSemaphore.acquire(async () => {
+ *     // Only 3 queries can run concurrently
+ *     console.log(`Executing: ${query} (available: ${dbSemaphore.available})`);
+ *     await new Promise(resolve => setTimeout(resolve, 100));
+ *     return `Result for: ${query}`;
+ *   });
+ * }
+ *
+ * // Run multiple queries - only 3 at a time
+ * const results = await Promise.all([
+ *   queryDatabase("SELECT * FROM users"),
+ *   queryDatabase("SELECT * FROM orders"),
+ *   queryDatabase("SELECT * FROM products"),
+ *   queryDatabase("SELECT * FROM reviews"),
+ *   queryDatabase("SELECT * FROM categories"),
+ * ]);
+ *
+ * console.log(`All queries completed: ${results.length}`);
+ *
+ * // Use priority to process critical tasks first
+ * const criticalResult = await dbSemaphore.acquire(
+ *   async () => {
+ *     console.log("Critical query executing");
+ *     return "critical-data";
+ *   },
+ *   10 // High priority - processed before normal priority tasks
+ * );
+ *
+ * // Try to acquire without blocking
+ * if (dbSemaphore.tryAcquire()) {
+ *   try {
+ *     console.log("Got permit immediately!");
+ *   } finally {
+ *     dbSemaphore.release();
+ *   }
+ * } else {
+ *   console.log("No permits available, try again later");
+ * }
+ *
+ * // Bulk acquire for batch operations
+ * const batchResult = await dbSemaphore.bulkAcquire(2, async () => {
+ *   console.log("Processing batch with 2 permits");
+ *   return "batch-complete";
+ * });
+ *
+ * // Check semaphore state
+ * console.log(`Available permits: ${dbSemaphore.available}`);
+ * console.log(`Waiting tasks: ${dbSemaphore.waiting}`);
+ * console.log(`Total permits: ${dbSemaphore.totalPermits}`);
+ *
+ * // Automatic cleanup when scope disposes
+ * ```
  */
 /* #__PURE__ */
 export class Semaphore implements AsyncDisposable {

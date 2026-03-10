@@ -55,6 +55,49 @@ export interface PerformanceMonitorOptions {
 
 /**
  * Performance monitor for a scope
+ *
+ * @example
+ * ```typescript
+ * import { scope, PerformanceMonitor } from "go-go-scope";
+ *
+ * await using s = scope();
+ *
+ * // Create and start monitoring
+ * using monitor = new PerformanceMonitor(s, {
+ *   sampleInterval: 500,
+ *   maxSnapshots: 50,
+ *   trackMemory: true
+ * });
+ * monitor.start();
+ *
+ * // Run some tasks
+ * await s.task(async () => {
+ *   await new Promise(r => setTimeout(r, 100));
+ * }).run();
+ *
+ * // Check metrics
+ * const metrics = monitor.getMetrics();
+ * console.log(`Tasks: ${metrics.taskCount}, Active: ${metrics.activeTaskCount}`);
+ *
+ * // Check trends
+ * const trends = monitor.getTrends();
+ * console.log(`Task rate is ${trends.taskRateTrend}`);
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Take periodic snapshots for analysis
+ * using monitor = new PerformanceMonitor(scope(), {
+ *   sampleInterval: 1000,
+ *   maxSnapshots: 100
+ * });
+ * monitor.start();
+ *
+ * // After some time...
+ * const snapshots = monitor.getSnapshots();
+ * const avgTaskRate = snapshots.reduce((sum, s) => sum + s.metrics.tasksPerSecond, 0) / snapshots.length;
+ * console.log(`Average task rate: ${avgTaskRate.toFixed(2)} tasks/sec`);
+ * ```
  */
 export class PerformanceMonitor {
 	private scope: Scope<Record<string, unknown>>;
@@ -222,6 +265,50 @@ export class PerformanceMonitor {
 
 /**
  * Create a performance monitor for a scope
+ *
+ * @example
+ * ```typescript
+ * import { scope, performanceMonitor } from "go-go-scope";
+ *
+ * await using s = scope();
+ *
+ * // Create and auto-start monitoring
+ * using monitor = performanceMonitor(s, {
+ *   sampleInterval: 1000,
+ *   trackMemory: true
+ * });
+ *
+ * // Spawn some tasks
+ * for (let i = 0; i < 10; i++) {
+ *   s.task(async () => {
+ *     await new Promise(r => setTimeout(r, 100));
+ *   });
+ * }
+ *
+ * // Get current metrics
+ * const metrics = monitor.getMetrics();
+ * console.log(`Tasks/sec: ${metrics.tasksPerSecond.toFixed(2)}`);
+ * console.log(`Avg duration: ${metrics.averageTaskDuration.toFixed(2)}ms`);
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Monitor with memory tracking
+ * await using s = scope();
+ * using monitor = performanceMonitor(s, {
+ *   sampleInterval: 500,
+ *   trackMemory: true
+ * });
+ *
+ * // Check memory growth over time
+ * setInterval(() => {
+ *   const metrics = monitor.getMetrics();
+ *   if (metrics.memoryUsage) {
+ *     const mb = (metrics.memoryUsage.used / 1024 / 1024).toFixed(2);
+ *     console.log(`Memory: ${mb} MB`);
+ *   }
+ * }, 1000);
+ * ```
  */
 export function performanceMonitor(
 	scope: Scope<Record<string, unknown>>,
@@ -356,6 +443,56 @@ async function benchmarkInWorker(
 
 /**
  * Run a benchmark
+ *
+ * @example
+ * ```typescript
+ * import { benchmark } from "go-go-scope";
+ *
+ * // Benchmark a simple function
+ * const result = await benchmark('array-sum', () => {
+ *   const arr = new Array(1000).fill(0).map((_, i) => i);
+ *   return arr.reduce((a, b) => a + b, 0);
+ * }, {
+ *   warmup: 100,
+ *   iterations: 1000
+ * });
+ *
+ * console.log(`${result.name}:`);
+ * console.log(`  Average: ${result.avgDuration.toFixed(3)}ms`);
+ * console.log(`  Ops/sec: ${result.opsPerSecond.toFixed(0)}`);
+ * console.log(`  Min/Max: ${result.minDuration.toFixed(3)}ms / ${result.maxDuration.toFixed(3)}ms`);
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Benchmark an async operation
+ * const result = await benchmark('fetch-data', async () => {
+ *   await fetch('https://api.example.com/data');
+ * }, {
+ *   warmup: 10,
+ *   iterations: 100,
+ *   minDuration: 5000
+ * });
+ *
+ * console.log(`API latency: ${result.avgDuration.toFixed(2)}ms average`);
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Run benchmark in a worker thread (for CPU-intensive tasks)
+ * const result = await benchmark('heavy-calculation', () => {
+ *   let sum = 0;
+ *   for (let i = 0; i < 1000000; i++) {
+ *     sum += Math.sqrt(i);
+ *   }
+ *   return sum;
+ * }, {
+ *   worker: true,
+ *   iterations: 100
+ * });
+ *
+ * console.log(`Throughput: ${result.opsPerSecond.toFixed(0)} ops/sec`);
+ * ```
  */
 export async function benchmark(
 	name: string,
@@ -411,6 +548,60 @@ export async function benchmark(
 
 /**
  * Memory tracker for detecting leaks
+ *
+ * @example
+ * ```typescript
+ * import { MemoryTracker } from "go-go-scope";
+ *
+ * // Create a tracker
+ * const tracker = new MemoryTracker(50);
+ *
+ * // Take initial snapshot
+ * tracker.snapshot();
+ *
+ * // Perform some operations
+ * const data = [];
+ * for (let i = 0; i < 1000; i++) {
+ *   data.push(new Array(1000).fill(i));
+ *   tracker.snapshot();
+ * }
+ *
+ * // Check for memory leaks
+ * if (tracker.checkForLeaks(5)) {
+ *   console.warn('Memory leak detected!');
+ *   console.log(`Growth rate: ${(tracker.getGrowthRate() / 1024).toFixed(2)} KB/s`);
+ * }
+ *
+ * // Get all snapshots for analysis
+ * const snapshots = tracker.getSnapshots();
+ * console.log(`Taken ${snapshots.length} snapshots`);
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Use in a test to verify no memory leaks
+ * async function testForLeaks(operation: () => void) {
+ *   const tracker = new MemoryTracker(20);
+ *
+ *   // Warmup
+ *   for (let i = 0; i < 5; i++) {
+ *     operation();
+ *     tracker.snapshot();
+ *   }
+ *
+ *   // Test
+ *   for (let i = 0; i < 100; i++) {
+ *     operation();
+ *     tracker.snapshot();
+ *   }
+ *
+ *   const isLeaking = tracker.checkForLeaks(10);
+ *   console.log(`Memory leak detected: ${isLeaking}`);
+ *   console.log(`Growth rate: ${tracker.getGrowthRate().toFixed(0)} bytes/sec`);
+ *
+ *   return !isLeaking;
+ * }
+ * ```
  */
 export class MemoryTracker {
 	private snapshots: { timestamp: number; usage: number }[] = [];
