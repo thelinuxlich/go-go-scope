@@ -947,14 +947,14 @@ async function main() {
   await writeFile(join(DOCS_DIR, "03-api-reference.md"), apiRefOverview);
   console.log(`   ✓ Generated docs/03-api-reference.md`);
 
-  // Update index.html
-  await updateIndexHtml(allDocs);
+  // Note: docs/index.html is now manually curated and not auto-generated
+  // await updateIndexHtml(allDocs);
 
   console.log(`\n✅ Documentation generated in ${OUTPUT_DIR}/`);
   console.log(`   - ${allDocs.length} documented items across ${packages.length} packages`);
   console.log(`   - Search index: search-index.json`);
   console.log(`   - API overview: docs/03-api-reference.md`);
-  console.log(`   - Updated: docs/index.html`);
+  console.log(`   - Note: docs/index.html is manually curated (not auto-updated)`);
 }
 
 main().catch((error) => {

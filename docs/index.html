@@ -6,25 +6,75 @@
     <title>go-go-scope - Structured Concurrency for TypeScript</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
+        /* ============================================
+           CSS VARIABLES - THEME SYSTEM
+           ============================================ */
         :root {
+            /* Primary Colors */
             --primary: #ff6b6b;
             --primary-dark: #ee5a5a;
+            --primary-light: #ff8585;
             --secondary: #4ecdc4;
+            --secondary-dark: #3dbdb5;
             --accent: #ffe66d;
-            --background: #f5f2ed;
-            --surface: #faf8f5;
-            --text: #2a2a2a;
-            --text-muted: #5a5a5a;
-            --text-subtle: #7a7a7a;
-            --border: #2a2a2a;
-            --code-bg: #1a1a1a;
-            --shadow: 4px 4px 0px #2a2a2a;
-            --shadow-hover: 6px 6px 0px #2a2a2a;
+            
+            /* Light Theme (default) */
+            --bg-primary: #f5f2ed;
+            --bg-secondary: #faf8f5;
+            --bg-tertiary: #ffffff;
+            --bg-code: #1a1a1a;
+            --text-primary: #2a2a2a;
+            --text-secondary: #5a5a5a;
+            --text-tertiary: #7a7a7a;
+            --text-muted: #9a9a9a;
+            --border-color: #2a2a2a;
+            --border-light: #e0ddd8;
+            --shadow-color: rgba(42, 42, 42, 0.15);
+            
+            /* Layout */
+            --header-height: 64px;
+            --sidebar-width: 280px;
+            --toc-width: 240px;
+            --content-max-width: 900px;
+            
+            /* Transitions */
+            --transition-fast: 150ms ease;
+            --transition-medium: 250ms ease;
+            --transition-slow: 350ms ease;
+            
+            /* Z-index scale */
+            --z-backdrop: 100;
+            --z-sidebar: 200;
+            --z-header: 300;
+            --z-modal: 400;
+            --z-tooltip: 500;
         }
 
-        * {
+        /* Dark Theme */
+        [data-theme="dark"] {
+            --bg-primary: #0f0f0f;
+            --bg-secondary: #1a1a1a;
+            --bg-tertiary: #242424;
+            --bg-code: #0d0d0d;
+            --text-primary: #f0f0f0;
+            --text-secondary: #b0b0b0;
+            --text-tertiary: #808080;
+            --text-muted: #606060;
+            --border-color: #404040;
+            --border-light: #2a2a2a;
+            --shadow-color: rgba(0, 0, 0, 0.5);
+            --primary: #ff7b7b;
+            --primary-dark: #ff6b6b;
+            --secondary: #5eddd4;
+            --accent: #fff07d;
+        }
+
+        /* ============================================
+           BASE STYLES
+           ============================================ */
+        *, *::before, *::after {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
@@ -32,52 +82,85 @@
 
         html {
             scroll-behavior: smooth;
+            font-size: 16px;
         }
 
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: var(--background);
-            color: var(--text);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
             line-height: 1.6;
+            font-weight: 400;
             overflow-x: hidden;
-            font-weight: 500;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
         /* Scrollbar */
         ::-webkit-scrollbar {
-            width: 10px;
-            height: 10px;
+            width: 8px;
+            height: 8px;
         }
 
         ::-webkit-scrollbar-track {
-            background: var(--background);
-            border-left: 2px solid var(--border);
+            background: var(--bg-secondary);
         }
 
         ::-webkit-scrollbar-thumb {
-            background: var(--primary);
-            border: 2px solid var(--border);
+            background: var(--border-light);
+            border-radius: 4px;
         }
 
         ::-webkit-scrollbar-thumb:hover {
-            background: var(--primary-dark);
+            background: var(--text-tertiary);
         }
 
-        /* Header */
+        /* Selection */
+        ::selection {
+            background: var(--primary);
+            color: white;
+        }
+
+        /* ============================================
+           HEADER
+           ============================================ */
         .header {
             position: fixed;
             top: 0;
             left: 0;
             right: 0;
-            height: 70px;
-            background: var(--surface);
-            border-bottom: 3px solid var(--border);
-            z-index: 1000;
+            height: var(--header-height);
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-light);
+            z-index: var(--z-header);
             display: flex;
             align-items: center;
             justify-content: space-between;
             padding: 0 24px;
-            box-shadow: var(--shadow);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .menu-toggle {
+            display: none;
+            width: 40px;
+            height: 40px;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: none;
+            cursor: pointer;
+            border-radius: 8px;
+            color: var(--text-primary);
+            transition: background var(--transition-fast);
+        }
+
+        .menu-toggle:hover {
+            background: var(--bg-tertiary);
         }
 
         .logo {
@@ -85,172 +168,295 @@
             align-items: center;
             gap: 12px;
             text-decoration: none;
-            color: var(--text);
+            color: var(--text-primary);
         }
 
         .logo-icon {
-            width: 36px;
-            height: 36px;
+            width: 32px;
+            height: 32px;
             background: #00add8;
-            border: 3px solid var(--border);
+            border-radius: 6px;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: 700;
-            font-size: 16px;
+            font-size: 14px;
             color: white;
-            box-shadow: 3px 3px 0px var(--border);
             font-family: 'JetBrains Mono', monospace;
+            box-shadow: 0 2px 8px rgba(0, 173, 216, 0.3);
         }
 
         .logo-text {
-            font-size: 20px;
+            font-size: 18px;
             font-weight: 700;
-            color: var(--text);
+            color: var(--text-primary);
             letter-spacing: -0.5px;
+        }
+
+        .header-center {
+            flex: 1;
+            max-width: 400px;
+            margin: 0 24px;
+        }
+
+        .search-button {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            color: var(--text-tertiary);
+            font-size: 14px;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+
+        .search-button:hover {
+            border-color: var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        .search-button svg {
+            width: 16px;
+            height: 16px;
+            opacity: 0.6;
+        }
+
+        .search-shortcut {
+            margin-left: auto;
+            padding: 2px 8px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-tertiary);
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
 
         .header-nav {
             display: flex;
-            gap: 12px;
-            align-items: center;
+            gap: 8px;
         }
 
         .header-nav a {
-            color: var(--text);
+            padding: 8px 12px;
+            color: var(--text-secondary);
             text-decoration: none;
-            font-weight: 600;
-            transition: all 0.15s;
             font-size: 14px;
-            padding: 8px 16px;
-            border: 2px solid transparent;
+            font-weight: 500;
+            border-radius: 6px;
+            transition: all var(--transition-fast);
         }
 
         .header-nav a:hover {
-            background: var(--accent);
-            border-color: var(--border);
-            box-shadow: 3px 3px 0px var(--border);
+            color: var(--text-primary);
+            background: var(--bg-tertiary);
+        }
+
+        .theme-toggle {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: none;
+            cursor: pointer;
+            border-radius: 8px;
+            color: var(--text-secondary);
+            transition: all var(--transition-fast);
+        }
+
+        .theme-toggle:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
         }
 
         .github-link {
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 10px 18px;
-            background: var(--secondary);
-            color: var(--border);
+            padding: 8px 16px;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
             text-decoration: none;
-            font-weight: 700;
             font-size: 14px;
-            transition: all 0.15s;
-            border: 3px solid var(--border);
-            box-shadow: 3px 3px 0px var(--border);
+            font-weight: 600;
+            border-radius: 8px;
+            border: 1px solid var(--border-light);
+            transition: all var(--transition-fast);
         }
 
         .github-link:hover {
-            transform: translate(-2px, -2px);
-            box-shadow: 5px 5px 0px var(--border);
+            border-color: var(--border-color);
+            background: var(--bg-primary);
         }
 
-        /* Layout */
+        /* ============================================
+           LAYOUT
+           ============================================ */
         .layout {
             display: flex;
             min-height: 100vh;
-            padding-top: 64px;
+            padding-top: var(--header-height);
         }
 
-        /* Sidebar */
+        /* ============================================
+           SIDEBAR
+           ============================================ */
+        .sidebar-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: var(--z-backdrop);
+            opacity: 0;
+            transition: opacity var(--transition-medium);
+        }
+
+        .sidebar-backdrop.active {
+            opacity: 1;
+        }
+
         .sidebar {
             position: fixed;
             left: 0;
-            top: 70px;
+            top: var(--header-height);
             bottom: 0;
-            width: 280px;
-            background: var(--surface);
-            border-right: 3px solid var(--border);
+            width: var(--sidebar-width);
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-light);
             overflow-y: auto;
-            padding: 24px 0;
+            overflow-x: hidden;
+            z-index: var(--z-sidebar);
+            padding: 16px 0;
         }
 
-        .search-box {
-            padding: 0 20px 20px;
-        }
-
-        .search-input {
-            width: 100%;
-            padding: 12px 16px;
-            background: var(--background);
-            border: 3px solid var(--border);
-            color: var(--text);
-            font-size: 14px;
-            outline: none;
-            transition: all 0.15s;
-            font-weight: 500;
-        }
-
-        .search-input:focus {
-            background: var(--accent);
-            box-shadow: 3px 3px 0px var(--border);
-        }
-
-        .search-input::placeholder {
-            color: var(--text-subtle);
+        .sidebar-nav {
+            padding: 0 12px;
         }
 
         .nav-section {
-            margin-bottom: 8px;
+            margin-bottom: 4px;
+        }
+
+        .nav-section-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            padding: 8px 12px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: background var(--transition-fast);
+            text-align: left;
+        }
+
+        .nav-section-header:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .nav-chevron {
+            width: 16px;
+            height: 16px;
+            transition: transform var(--transition-fast);
+            color: var(--text-tertiary);
+            flex-shrink: 0;
+        }
+
+        .nav-section.collapsed .nav-chevron {
+            transform: rotate(-90deg);
         }
 
         .nav-section-title {
-            padding: 12px 20px;
-            font-size: 11px;
-            font-weight: 800;
+            font-size: 12px;
+            font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--text-muted);
+            letter-spacing: 0.5px;
+            color: var(--text-tertiary);
+        }
+
+        .nav-section-items {
+            overflow: hidden;
+            transition: height var(--transition-medium);
+        }
+
+        .nav-section.collapsed .nav-section-items {
+            height: 0 !important;
         }
 
         .nav-link {
             display: block;
-            padding: 10px 20px;
-            color: var(--text);
+            padding: 6px 12px 6px 36px;
+            color: var(--text-secondary);
             text-decoration: none;
             font-size: 14px;
-            transition: all 0.15s;
-            border-left: 4px solid transparent;
-            font-weight: 600;
+            border-radius: 6px;
+            transition: all var(--transition-fast);
+            position: relative;
         }
 
         .nav-link:hover {
-            background: var(--accent);
-            border-left-color: var(--border);
+            color: var(--text-primary);
+            background: var(--bg-tertiary);
         }
 
         .nav-link.active {
+            color: var(--primary);
+            background: var(--bg-primary);
+            font-weight: 500;
+        }
+
+        .nav-link.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3px;
+            height: 16px;
             background: var(--primary);
-            color: var(--border);
-            border-left-color: var(--border);
+            border-radius: 0 2px 2px 0;
         }
 
         .nav-link.sub {
-            padding-left: 36px;
+            padding-left: 48px;
             font-size: 13px;
         }
 
-        /* Main Content */
+        /* ============================================
+           MAIN CONTENT
+           ============================================ */
         .main {
-            margin-left: 280px;
             flex: 1;
-            max-width: 1200px;
-            padding: 40px 48px;
-            width: calc(100% - 280px);
+            margin-left: var(--sidebar-width);
+            margin-right: var(--toc-width);
+            min-width: 0;
         }
 
-        /* Hero */
+        .content-wrapper {
+            max-width: var(--content-max-width);
+            margin: 0 auto;
+            padding: 48px 64px;
+        }
+
+        /* ============================================
+           HERO SECTION
+           ============================================ */
         .hero {
             text-align: center;
-            padding: 60px 0 80px;
-            position: relative;
+            padding: 64px 0 80px;
         }
 
         .hero-badge {
@@ -259,31 +465,30 @@
             gap: 8px;
             padding: 8px 16px;
             background: var(--accent);
-            border: 3px solid var(--border);
+            border-radius: 20px;
             font-size: 13px;
-            color: var(--border);
+            color: var(--text-primary);
             margin-bottom: 32px;
             font-family: 'JetBrains Mono', monospace;
-            font-weight: 700;
-            box-shadow: 3px 3px 0px var(--border);
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(255, 230, 109, 0.3);
         }
 
         .hero h1 {
             font-size: 56px;
-            font-weight: 900;
+            font-weight: 800;
             line-height: 1.1;
             margin-bottom: 24px;
-            color: var(--text);
-            letter-spacing: -1px;
+            color: var(--text-primary);
+            letter-spacing: -1.5px;
         }
 
         .hero p {
-            font-size: 18px;
-            color: var(--text-muted);
+            font-size: 20px;
+            color: var(--text-secondary);
             max-width: 600px;
             margin: 0 auto 40px;
             line-height: 1.6;
-            font-weight: 500;
         }
 
         .hero-buttons {
@@ -297,125 +502,189 @@
             align-items: center;
             gap: 8px;
             padding: 14px 28px;
-            font-weight: 700;
-            font-size: 16px;
+            font-weight: 600;
+            font-size: 15px;
             text-decoration: none;
-            transition: all 0.15s;
-            border: 3px solid var(--border);
+            transition: all var(--transition-fast);
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
         }
 
         .btn-primary {
             background: var(--primary);
-            color: var(--border);
-            box-shadow: 4px 4px 0px var(--border);
+            color: white;
+            box-shadow: 0 4px 14px rgba(255, 107, 107, 0.35);
         }
 
         .btn-primary:hover {
-            transform: translate(-2px, -2px);
-            box-shadow: 6px 6px 0px var(--border);
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.45);
         }
 
         .btn-secondary {
-            background: var(--surface);
-            color: var(--text);
-            box-shadow: 4px 4px 0px var(--border);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-light);
         }
 
         .btn-secondary:hover {
-            transform: translate(-2px, -2px);
-            box-shadow: 6px 6px 0px var(--border);
+            border-color: var(--border-color);
+            background: var(--bg-secondary);
         }
 
-        /* Content */
+        /* ============================================
+           CONTENT STYLES
+           ============================================ */
         .content h2 {
-            font-size: 32px;
-            font-weight: 800;
-            margin: 60px 0 24px;
-            color: var(--text);
-            text-transform: uppercase;
+            font-size: 30px;
+            font-weight: 700;
+            margin: 64px 0 24px;
+            color: var(--text-primary);
             letter-spacing: -0.5px;
+            scroll-margin-top: calc(var(--header-height) + 24px);
         }
 
         .content h3 {
             font-size: 22px;
-            font-weight: 700;
-            margin: 48px 0 16px;
-            color: var(--text);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            font-weight: 600;
+            margin: 40px 0 16px;
+            color: var(--text-primary);
+            letter-spacing: -0.3px;
+            scroll-margin-top: calc(var(--header-height) + 24px);
         }
 
         .content h4 {
-            font-size: 16px;
-            font-weight: 700;
-            margin: 32px 0 12px;
-            color: var(--text);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            font-size: 18px;
+            font-weight: 600;
+            margin: 28px 0 12px;
+            color: var(--text-primary);
+            scroll-margin-top: calc(var(--header-height) + 24px);
         }
 
         .content p {
-            color: var(--text-muted);
+            color: var(--text-secondary);
             margin-bottom: 16px;
-            font-weight: 500;
+            line-height: 1.7;
         }
 
         .content a {
-            color: var(--primary-dark);
-            text-decoration: underline;
-            font-weight: 600;
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color var(--transition-fast);
         }
 
         .content a:hover {
-            background: var(--accent);
+            color: var(--primary-dark);
+            text-decoration: underline;
         }
 
         .content ul, .content ol {
-            color: var(--text);
+            color: var(--text-secondary);
             margin-bottom: 16px;
             padding-left: 24px;
-            font-weight: 500;
         }
 
         .content li {
             margin-bottom: 8px;
+            line-height: 1.7;
+        }
+
+        .content strong {
+            color: var(--text-primary);
+            font-weight: 600;
         }
 
         .content code {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 14px;
-            background: var(--surface);
+            font-size: 0.9em;
+            background: var(--bg-tertiary);
             padding: 2px 6px;
-            border: 2px solid var(--border);
-            color: var(--text);
+            border-radius: 4px;
+            color: var(--primary);
             font-weight: 500;
         }
 
-        .content pre {
-            background: var(--code-bg);
-            border: 3px solid var(--border);
+        /* Code Blocks */
+        .code-block-wrapper {
+            position: relative;
+            margin: 24px 0;
+            border-radius: 12px;
+            overflow: hidden;
+            background: var(--bg-code);
+        }
+
+        .code-block-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .code-block-lang {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .code-block-copy {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 6px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+
+        .code-block-copy:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: var(--text-primary);
+        }
+
+        .code-block-copy.copied {
+            background: var(--secondary);
+            color: white;
+        }
+
+        .code-block-wrapper pre {
             padding: 20px;
             overflow-x: auto;
-            margin: 20px 0;
-            box-shadow: 4px 4px 0px var(--border);
+            background: var(--bg-code);
+            margin: 0;
         }
 
-        .content pre code {
+        .code-block-wrapper pre code {
             background: transparent;
             padding: 0;
-            color: #f7f7f7;
+            color: #e0e0e0;
             font-size: 14px;
             line-height: 1.6;
-            font-weight: 500;
-            border: none;
-            font-family: 'JetBrains Mono', monospace;
+            font-weight: 400;
+            border-radius: 0;
+            display: block;
         }
-        .keyword { color: #ff6b6b; }
-        .string { color: #4ecdc4; }
-        .function { color: #ffe66d; }
-        .comment { color: #888888; }
-        .number { color: #ff6b9d; }
-        .type { color: #95e1d3; }
+
+        /* Syntax Highlighting */
+        .token.keyword { color: #ff6b6b; }
+        .token.string { color: #4ecdc4; }
+        .token.function { color: #ffe66d; }
+        .token.comment { color: #6a737d; font-style: italic; }
+        .token.number { color: #ff6b9d; }
+        .token.type { color: #95e1d3; }
+        .token.operator { color: #d4d4d4; }
+        .token.punctuation { color: #d4d4d4; }
 
         /* Tables */
         .content table {
@@ -423,880 +692,2038 @@
             border-collapse: collapse;
             margin: 24px 0;
             font-size: 14px;
-            display: table;
         }
-        
+
         .content table th,
         .content table td {
             padding: 12px 16px;
             text-align: left;
-            border: 2px solid var(--border);
+            border: 1px solid var(--border-light);
         }
-        
-        .content table {
-            border-collapse: separate;
-            border-spacing: 0;
-            border: 3px solid var(--border);
-            box-shadow: 4px 4px 0px var(--border);
-        }
-        
+
         .content table th {
-            font-weight: 700;
-            background: var(--primary);
-            color: var(--border);
-            text-transform: uppercase;
+            font-weight: 600;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
             font-size: 12px;
+            text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-        
+
         .content table td {
-            color: var(--text);
-            background: var(--surface);
-            font-weight: 500;
+            color: var(--text-secondary);
+            background: var(--bg-secondary);
         }
-        
+
         .content table tr:hover td {
-            background: var(--accent);
+            background: var(--bg-tertiary);
         }
 
         /* Feature Cards */
-        .features {
+        .features-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(2, 1fr);
             gap: 20px;
-            margin: 60px 0;
-        }
-
-        @media (max-width: 1200px) {
-            .features {
-                grid-template-columns: repeat(2, 1fr);
-            }
+            margin: 32px 0;
         }
 
         @media (max-width: 640px) {
-            .features {
+            .features-grid {
                 grid-template-columns: 1fr;
             }
         }
 
         .feature-card {
-            background: var(--surface);
-            border: 3px solid var(--border);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
             padding: 24px;
-            transition: all 0.15s;
-            box-shadow: 4px 4px 0px var(--border);
+            border-radius: 12px;
+            transition: all var(--transition-fast);
         }
 
         .feature-card:hover {
-            transform: translate(-2px, -2px);
-            box-shadow: 6px 6px 0px var(--border);
+            border-color: var(--border-color);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px var(--shadow-color);
         }
 
         .feature-icon {
-            width: 48px;
-            height: 48px;
+            width: 44px;
+            height: 44px;
             background: var(--secondary);
-            border: 3px solid var(--border);
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 24px;
+            font-size: 22px;
             margin-bottom: 16px;
-            box-shadow: 3px 3px 0px var(--border);
+            box-shadow: 0 4px 12px rgba(78, 205, 196, 0.25);
         }
 
         .feature-card h3 {
             font-size: 16px;
-            font-weight: 800;
+            font-weight: 600;
             margin: 0 0 8px;
-            color: var(--text);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            color: var(--text-primary);
         }
 
         .feature-card p {
             font-size: 14px;
-            color: var(--text-muted);
+            color: var(--text-secondary);
             margin: 0;
             line-height: 1.5;
-            font-weight: 500;
         }
 
-        /* Installation */
-        .install-section {
-            background: var(--surface);
-            border: 3px solid var(--border);
-            padding: 24px;
-            margin: 40px 0;
-            box-shadow: 4px 4px 0px var(--border);
-        }
-
+        /* Installation Tabs */
         .install-tabs {
             display: flex;
             gap: 8px;
-            margin-bottom: 16px;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 16px;
+            margin-bottom: 0;
+            background: var(--bg-tertiary);
+            padding: 8px;
+            border-radius: 10px 10px 0 0;
+            border: 1px solid var(--border-light);
+            border-bottom: none;
         }
 
         .install-tab {
             padding: 8px 16px;
-            background: var(--background);
-            border: 3px solid var(--border);
-            color: var(--text);
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
             font-size: 14px;
-            font-weight: 700;
+            font-weight: 500;
             cursor: pointer;
-            transition: all 0.15s;
+            transition: all var(--transition-fast);
+            border-radius: 6px;
         }
 
         .install-tab:hover {
-            background: var(--accent);
+            color: var(--text-primary);
+            background: var(--bg-secondary);
         }
 
         .install-tab.active {
-            background: var(--primary);
-            color: var(--border);
+            background: var(--bg-code);
+            color: white;
+        }
+
+        .install-code-wrapper {
+            position: relative;
+            background: var(--bg-code);
+            border-radius: 0 0 10px 10px;
+            overflow: hidden;
         }
 
         .install-code {
             font-family: 'JetBrains Mono', monospace;
             font-size: 14px;
-            color: #f7f7f7;
-            background: var(--code-bg);
-            padding: 16px;
-            font-weight: 500;
-        }
-
-        /* Quick Start */
-        .quick-start {
-            background: var(--surface);
-            border: 3px solid var(--border);
-            padding: 24px;
-            margin: 40px 0;
-            box-shadow: 4px 4px 0px var(--border);
-        }
-
-        .quick-start h3 {
-            margin-top: 0;
-        }
-
-        .quick-start pre {
-            background: var(--code-bg);
-            border: 3px solid var(--border);
+            color: #e0e0e0;
+            background: var(--bg-code);
             padding: 20px;
+            margin: 0;
             overflow-x: auto;
-            margin: 20px 0;
-            box-shadow: 4px 4px 0px var(--border);
         }
 
-        .quick-start pre code {
-            color: #f7f7f7;
-            font-size: 14px;
-            line-height: 1.6;
-            font-weight: 500;
+        .install-copy {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.1);
             border: none;
+            border-radius: 6px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+
+        .install-copy:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: var(--text-primary);
+        }
+
+        /* Info Boxes */
+        .info-box {
+            padding: 20px 24px;
+            border-radius: 10px;
+            margin: 24px 0;
+            border-left: 4px solid;
+        }
+
+        .info-box.info {
+            background: rgba(78, 205, 196, 0.1);
+            border-color: var(--secondary);
+        }
+
+        .info-box.warning {
+            background: rgba(255, 230, 109, 0.15);
+            border-color: var(--accent);
+        }
+
+        .info-box.tip {
+            background: rgba(255, 107, 107, 0.1);
+            border-color: var(--primary);
+        }
+
+        .info-box-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .info-box p {
+            margin: 0;
+            font-size: 14px;
+        }
+
+        /* ============================================
+           TABLE OF CONTENTS (Right Sidebar)
+           ============================================ */
+        .toc-sidebar {
+            position: fixed;
+            right: 0;
+            top: var(--header-height);
+            bottom: 0;
+            width: var(--toc-width);
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border-light);
+            padding: 24px 16px;
+            overflow-y: auto;
+            z-index: 10;
+        }
+
+        .toc-title {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-tertiary);
+            margin-bottom: 12px;
+            padding: 0 8px;
+        }
+
+        .toc-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .toc-item {
+            margin: 0;
+        }
+
+        .toc-link {
+            display: block;
+            padding: 6px 8px;
+            color: var(--text-tertiary);
+            text-decoration: none;
+            font-size: 13px;
+            line-height: 1.4;
+            border-radius: 6px;
+            transition: all var(--transition-fast);
+            border-left: 2px solid transparent;
+            margin-left: -2px;
+        }
+
+        .toc-link:hover {
+            color: var(--text-primary);
+            background: var(--bg-tertiary);
+        }
+
+        .toc-link.active {
+            color: var(--primary);
+            border-left-color: var(--primary);
+            font-weight: 500;
+        }
+
+        .toc-link.level-3 {
+            padding-left: 20px;
+            font-size: 12px;
+        }
+
+        /* ============================================
+           PAGE NAVIGATION (Prev/Next)
+           ============================================ */
+        .page-nav {
+            display: flex;
+            gap: 16px;
+            margin-top: 64px;
+            padding-top: 32px;
+            border-top: 1px solid var(--border-light);
+        }
+
+        .page-nav-link {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 16px 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 10px;
+            text-decoration: none;
+            transition: all var(--transition-fast);
+        }
+
+        .page-nav-link:hover {
+            border-color: var(--border-color);
+            background: var(--bg-tertiary);
+            transform: translateY(-1px);
+        }
+
+        .page-nav-link.next {
+            align-items: flex-end;
+            text-align: right;
+        }
+
+        .page-nav-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .page-nav-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* ============================================
+           SEARCH MODAL
+           ============================================ */
+        .search-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: var(--z-modal);
+            align-items: flex-start;
+            justify-content: center;
+            padding-top: 120px;
+        }
+
+        .search-modal.active {
+            display: flex;
+        }
+
+        .search-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            opacity: 0;
+            transition: opacity var(--transition-medium);
+        }
+
+        .search-modal.active .search-backdrop {
+            opacity: 1;
+        }
+
+        .search-container {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+            transform: scale(0.95);
+            opacity: 0;
+            transition: all var(--transition-medium);
+        }
+
+        .search-modal.active .search-container {
+            transform: scale(1);
+            opacity: 1;
+        }
+
+        .search-input-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        .search-input-wrapper svg {
+            width: 20px;
+            height: 20px;
+            color: var(--text-tertiary);
+        }
+
+        .search-input {
+            flex: 1;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 16px;
+            outline: none;
+        }
+
+        .search-input::placeholder {
+            color: var(--text-tertiary);
+        }
+
+        .search-shortcut-hint {
+            padding: 4px 8px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            font-size: 12px;
+            color: var(--text-tertiary);
             font-family: 'JetBrains Mono', monospace;
         }
 
-        /* Footer */
-        .footer {
-            margin-top: 100px;
-            padding: 40px 0;
-            border-top: 3px solid var(--border);
-            text-align: center;
-            color: var(--text-muted);
-            font-size: 14px;
-            font-weight: 500;
+        .search-results {
+            max-height: 400px;
+            overflow-y: auto;
         }
 
-        .footer a {
-            color: var(--text);
+        .search-result {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 12px 20px;
+            cursor: pointer;
+            transition: background var(--transition-fast);
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        .search-result:last-child {
+            border-bottom: none;
+        }
+
+        .search-result:hover,
+        .search-result.selected {
+            background: var(--bg-tertiary);
+        }
+
+        .search-result-title {
+            font-weight: 500;
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+
+        .search-result-desc {
+            color: var(--text-tertiary);
+            font-size: 13px;
+        }
+
+        .search-result-section {
+            font-size: 11px;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
             font-weight: 600;
         }
 
-        /* Mobile Responsive */
-        /* Large screens (1440px and up) */
-        @media (min-width: 1440px) {
-            .main {
-                max-width: 1400px;
-                padding: 40px 64px;
-            }
-            
-            .content pre {
-                font-size: 15px;
-                padding: 28px;
-            }
-            
-            .content pre code {
-                font-size: 15px;
-                line-height: 1.7;
-            }
-            
-            .content table {
-                font-size: 15px;
-            }
-            
-            .content table th,
-            .content table td {
-                padding: 14px 20px;
-            }
-            
-            .content h2 {
-                font-size: 34px;
-            }
-            
-            .content h3 {
-                font-size: 26px;
-            }
+        .search-empty {
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--text-tertiary);
         }
 
-        /* Extra large screens (1920px and up) */
-        @media (min-width: 1920px) {
+        .search-footer {
+            display: flex;
+            gap: 16px;
+            padding: 12px 20px;
+            background: var(--bg-tertiary);
+            border-top: 1px solid var(--border-light);
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        .search-footer kbd {
+            padding: 2px 6px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* ============================================
+           FOOTER
+           ============================================ */
+        .footer {
+            margin-top: 80px;
+            padding: 40px 0;
+            border-top: 1px solid var(--border-light);
+            text-align: center;
+        }
+
+        .footer p {
+            color: var(--text-tertiary);
+            font-size: 14px;
+            margin: 0;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            margin-top: 12px;
+        }
+
+        .footer-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            transition: color var(--transition-fast);
+        }
+
+        .footer-links a:hover {
+            color: var(--primary);
+        }
+
+        /* ============================================
+           MOBILE RESPONSIVE
+           ============================================ */
+        @media (max-width: 1200px) {
+            .toc-sidebar {
+                display: none;
+            }
+
             .main {
-                max-width: 1600px;
-                padding: 48px 100px;
-            }
-            
-            .content h2 {
-                font-size: 38px;
-            }
-            
-            .content h3 {
-                font-size: 30px;
-            }
-            
-            .content h4 {
-                font-size: 22px;
-            }
-            
-            .content pre {
-                font-size: 16px;
-                padding: 32px;
-            }
-            
-            .content pre code {
-                font-size: 16px;
-                line-height: 1.75;
-            }
-            
-            .content table {
-                font-size: 16px;
-            }
-            
-            .content table th,
-            .content table td {
-                padding: 16px 24px;
-            }
-            
-            .hero h1 {
-                font-size: 64px;
+                margin-right: 0;
             }
         }
 
         @media (max-width: 1024px) {
+            .menu-toggle {
+                display: flex;
+            }
+
+            .header-nav {
+                display: none;
+            }
+
+            .header-center {
+                max-width: 200px;
+                margin: 0 16px;
+            }
+
             .sidebar {
                 transform: translateX(-100%);
-                transition: transform 0.2s;
+                transition: transform var(--transition-medium);
+                box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
             }
 
             .sidebar.open {
                 transform: translateX(0);
             }
 
-            .main {
-                margin-left: 0;
-                width: 100%;
-                max-width: none;
-                padding: 24px;
+            .sidebar-backdrop {
+                display: block;
             }
 
-            .menu-toggle {
-                display: flex;
+            .main {
+                margin-left: 0;
+            }
+
+            .content-wrapper {
+                padding: 32px 24px;
+            }
+
+            .hero h1 {
+                font-size: 40px;
+            }
+
+            .hero p {
+                font-size: 18px;
             }
         }
 
         @media (max-width: 640px) {
+            .header {
+                padding: 0 16px;
+            }
+
+            .search-shortcut {
+                display: none;
+            }
+
+            .header-center {
+                display: none;
+            }
+
+            .github-link span {
+                display: none;
+            }
+
+            .github-link {
+                padding: 8px;
+            }
+
+            .hero {
+                padding: 40px 0 60px;
+            }
+
             .hero h1 {
-                font-size: 36px;
+                font-size: 32px;
             }
 
             .hero-buttons {
                 flex-direction: column;
+                padding: 0 20px;
             }
 
             .btn {
                 width: 100%;
                 justify-content: center;
             }
+
+            .content h2 {
+                font-size: 24px;
+            }
+
+            .content h3 {
+                font-size: 20px;
+            }
+
+            .page-nav {
+                flex-direction: column;
+            }
+
+            .page-nav-link.next {
+                align-items: flex-start;
+                text-align: left;
+            }
+
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
-        /* Search Results */
-        .search-results {
+        /* ============================================
+           UTILITY CLASSES
+           ============================================ */
+        .sr-only {
             position: absolute;
-            top: calc(100% + 4px);
-            left: 20px;
-            right: 20px;
-            background: var(--surface);
-            border: 3px solid var(--border);
-            max-height: 400px;
-            overflow-y: auto;
-            z-index: 1000;
-            display: none;
-            box-shadow: 4px 4px 0px var(--border);
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
 
-        .search-results.active {
-            display: block;
+        .hidden {
+            display: none !important;
         }
 
-        .search-result {
-            display: block;
-            padding: 12px 16px;
-            border-bottom: 2px solid var(--border);
-            cursor: pointer;
-            transition: all 0.15s;
-            user-select: none;
-            -webkit-user-select: none;
-            text-decoration: none;
-            color: inherit;
-            font-weight: 500;
-        }
-
-        .search-result:hover,
-        .search-result:focus {
-            background: var(--accent);
-            outline: none;
-        }
-        
-        .search-result:last-child {
-            border-bottom: none;
-        }
-
-        .search-result-title {
-            font-weight: 600;
-            color: var(--text);
-            font-size: 14px;
-        }
-
-        .search-result-desc {
-            color: var(--text-muted);
-            font-size: 12px;
-            margin-top: 4px;
-        }
-
-        /* Section anchor */
-        .section-anchor {
-            position: relative;
-        }
-
-        .section-anchor:hover::before {
-            content: '#';
-            position: absolute;
-            left: -20px;
-            color: var(--text-subtle);
+        /* Smooth section transitions */
+        section[id] {
+            scroll-margin-top: calc(var(--header-height) + 24px);
         }
     </style>
 </head>
 <body>
     <!-- Header -->
     <header class="header">
-        <a href="#" class="logo">
-            <div class="logo-icon">{⇄}</div>
-            <span class="logo-text">go-go-scope</span>
-        </a>
-        <nav class="header-nav">
-            <a href="#features">Features</a>
-            <a href="#quickstart">Quick Start</a>
-            <a href="#api">API</a>
-        </nav>
-        <a href="https://github.com/thelinuxlich/go-go-scope" class="github-link" target="_blank">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-            </svg>
-            GitHub
-        </a>
+        <div class="header-left">
+            <button class="menu-toggle" id="menuToggle" aria-label="Toggle menu">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+            <a href="#" class="logo">
+                <div class="logo-icon">{⇄}</div>
+                <span class="logo-text">go-go-scope</span>
+            </a>
+        </div>
+
+        <div class="header-center">
+            <button class="search-button" id="searchButton">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="m21 21-4.35-4.35"></path>
+                </svg>
+                <span>Search documentation...</span>
+                <span class="search-shortcut">Ctrl K</span>
+            </button>
+        </div>
+
+        <div class="header-right">
+            <nav class="header-nav">
+                <a href="#features">Features</a>
+                <a href="#quickstart">Quick Start</a>
+                <a href="#api">API</a>
+            </nav>
+            <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+                <svg class="sun-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="5"></circle>
+                    <line x1="12" y1="1" x2="12" y2="3"></line>
+                    <line x1="12" y1="21" x2="12" y2="23"></line>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                    <line x1="1" y1="12" x2="3" y2="12"></line>
+                    <line x1="21" y1="12" x2="23" y2="12"></line>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                </svg>
+                <svg class="moon-icon hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                </svg>
+            </button>
+            <a href="https://github.com/thelinuxlich/go-go-scope" class="github-link" target="_blank">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+                <span>GitHub</span>
+            </a>
+        </div>
     </header>
 
+    <!-- Search Modal -->
+    <div class="search-modal" id="searchModal">
+        <div class="search-backdrop" id="searchBackdrop"></div>
+        <div class="search-container">
+            <div class="search-input-wrapper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="m21 21-4.35-4.35"></path>
+                </svg>
+                <input type="text" class="search-input" id="searchInput" placeholder="Search documentation..." autocomplete="off">
+                <span class="search-shortcut-hint">ESC to close</span>
+            </div>
+            <div class="search-results" id="searchResults"></div>
+            <div class="search-footer">
+                <span><kbd>↑</kbd> <kbd>↓</kbd> to navigate</span>
+                <span><kbd>↵</kbd> to select</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar Backdrop -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <!-- Layout -->
     <div class="layout">
         <!-- Sidebar -->
         <aside class="sidebar" id="sidebar">
-            <div class="search-box">
-                <input type="text" class="search-input" placeholder="Search documentation..." id="searchInput">
-                <div class="search-results" id="searchResults"></div>
-            </div>
-
-            <nav>
-                <div class="nav-section">
-                    <div class="nav-section-title">Getting Started</div>
-                    <a href="#introduction" class="nav-link">Introduction</a>
-                    <a href="#installation" class="nav-link">Installation</a>
-                    <a href="#quickstart" class="nav-link">Quick Start</a>
+            <nav class="sidebar-nav" id="sidebarNav">
+                <!-- Getting Started -->
+                <div class="nav-section" data-section="getting-started">
+                    <button class="nav-section-header">
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                        <span class="nav-section-title">Getting Started</span>
+                    </button>
+                    <div class="nav-section-items">
+                        <a href="#introduction" class="nav-link">Introduction</a>
+                        <a href="#installation" class="nav-link">Installation</a>
+                        <a href="#quickstart" class="nav-link">Quick Start</a>
+                    </div>
                 </div>
 
-                <div class="nav-section">
-                    <div class="nav-section-title">Core Concepts</div>
-                    <a href="#scope" class="nav-link">Scope</a>
-                    <a href="#task" class="nav-link">Task</a>
-                    <a href="#channels" class="nav-link">Channels</a>
-                    <a href="#cancellation" class="nav-link">Cancellation</a>
+                <!-- Core Concepts -->
+                <div class="nav-section" data-section="concepts">
+                    <button class="nav-section-header">
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                        <span class="nav-section-title">Core Concepts</span>
+                    </button>
+                    <div class="nav-section-items">
+                        <a href="#structured-concurrency" class="nav-link">Structured Concurrency</a>
+                        <a href="#the-scope" class="nav-link">The Scope</a>
+                        <a href="#the-task" class="nav-link">The Task</a>
+                        <a href="#result-tuples" class="nav-link">Result Tuples</a>
+                        <a href="#cancellation" class="nav-link">Cancellation</a>
+                        <a href="#channels" class="nav-link">Channels</a>
+                        <a href="#error-handling" class="nav-link">Error Handling</a>
+                    </div>
                 </div>
 
-                <div class="nav-section">
-                    <div class="nav-section-title">Examples</div>
-                    <a href="#examples" class="nav-link">Overview</a>
-                    <a href="#checkpoint-example" class="nav-link sub">✨ Checkpoint Example</a>
-                    <a href="#example-http-client" class="nav-link sub">Resilient HTTP Client</a>
-                    <a href="#example-data-pipeline" class="nav-link sub">Data Pipeline</a>
-                    <a href="#example-websocket" class="nav-link sub">WebSocket Fan-out</a>
-                    <a href="#example-db-transaction" class="nav-link sub">DB Transactions</a>
-                    <a href="#example-scheduler" class="nav-link sub">Job Scheduler</a>
-                    <a href="#example-distributed-lock" class="nav-link sub">Distributed Lock</a>
-                    <a href="#example-worker-threads" class="nav-link sub">Worker Threads</a>
+                <!-- Guides -->
+                <div class="nav-section" data-section="guides">
+                    <button class="nav-section-header">
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                        <span class="nav-section-title">Guides</span>
+                    </button>
+                    <div class="nav-section-items">
+                        <a href="#guide-http-client" class="nav-link">HTTP Client</a>
+                        <a href="#guide-db-pool" class="nav-link">DB Connection Pool</a>
+                        <a href="#guide-websocket" class="nav-link">WebSocket Manager</a>
+                        <a href="#guide-pipeline" class="nav-link">Data Pipeline</a>
+                        <a href="#guide-circuit-breaker" class="nav-link">Circuit Breaker</a>
+                        <a href="#guide-retry" class="nav-link">Retry Patterns</a>
+                        <a href="#guide-parallel" class="nav-link">Parallel Processing</a>
+                        <a href="#guide-rate-limiting" class="nav-link">Rate Limiting</a>
+                    </div>
                 </div>
 
-                <div class="nav-section">
-                    <div class="nav-section-title">API Reference</div>
-                    <a href="#api" class="nav-link">Overview</a>
-                    <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/go-go-scope.md" target="_blank" class="nav-link sub">Core (go-go-scope) →</a>
-                    <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/stream.md" target="_blank" class="nav-link sub">Stream →</a>
-                    <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/scheduler.md" target="_blank" class="nav-link sub">Scheduler →</a>
-                    <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/testing.md" target="_blank" class="nav-link sub">Testing →</a>
-                    <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/README.md" target="_blank" class="nav-link" style="background: var(--accent); font-weight: 700;">Complete API Docs →</a>
+                <!-- Concurrency -->
+                <div class="nav-section" data-section="concurrency">
+                    <button class="nav-section-header">
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                        <span class="nav-section-title">Concurrency</span>
+                    </button>
+                    <div class="nav-section-items">
+                        <a href="#channels-guide" class="nav-link">Channels</a>
+                        <a href="#broadcast-channels" class="nav-link">Broadcast Channels</a>
+                        <a href="#select" class="nav-link">Select Statement</a>
+                        <a href="#worker-threads" class="nav-link">Worker Threads</a>
+                        <a href="#semaphores" class="nav-link">Semaphores</a>
+                    </div>
+                </div>
+
+                <!-- Resilience -->
+                <div class="nav-section" data-section="resilience">
+                    <button class="nav-section-header">
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                        <span class="nav-section-title">Resilience</span>
+                    </button>
+                    <div class="nav-section-items">
+                        <a href="#circuit-breaker" class="nav-link">Circuit Breaker</a>
+                        <a href="#retry" class="nav-link">Retry</a>
+                        <a href="#timeout" class="nav-link">Timeout</a>
+                        <a href="#deadlock-detection" class="nav-link">Deadlock Detection</a>
+                    </div>
+                </div>
+
+                <!-- API Reference -->
+                <div class="nav-section" data-section="api-ref">
+                    <button class="nav-section-header">
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                        <span class="nav-section-title">API Reference</span>
+                    </button>
+                    <div class="nav-section-items">
+                        <a href="#api" class="nav-link">Overview</a>
+                        <a href="#api-scope" class="nav-link sub">Scope</a>
+                        <a href="#api-task" class="nav-link sub">Task</a>
+                        <a href="#api-channel" class="nav-link sub">Channel</a>
+                        <a href="#api-stream" class="nav-link sub">Stream</a>
+                        <a href="#api-full" class="nav-link">Complete API Docs →</a>
+                    </div>
                 </div>
             </nav>
         </aside>
 
         <!-- Main Content -->
         <main class="main">
-            <!-- Hero Section -->
-            <!-- API Reference Section - Links to Auto-Generated Documentation -->
+            <div class="content-wrapper">
+                <!-- Hero Section -->
+                <section class="hero" id="introduction">
+                    <div class="hero-badge">TypeScript 5.2+ • ES2022 • Node.js 24+</div>
+                    <h1>Structured Concurrency<br>for TypeScript</h1>
+                    <p>Write concurrent code with automatic cleanup and cancellation propagation using the <code>using</code> and <code>await using</code> syntax.</p>
+                    <div class="hero-buttons">
+                        <a href="#quickstart" class="btn btn-primary">
+                            Get Started
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                                <polyline points="12 5 19 12 12 19"></polyline>
+                            </svg>
+                        </a>
+                        <a href="https://github.com/thelinuxlich/go-go-scope" class="btn btn-secondary" target="_blank">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                            </svg>
+                            GitHub
+                        </a>
+                    </div>
+                </section>
 
-<section id="api" class="content">
-    <h2 class="section-anchor">API Reference</h2>
-    <p>The complete API documentation is automatically generated from JSDoc comments in the source code, ensuring it's always up-to-date with the latest changes.</p>
+                <!-- Features -->
+                <section id="features" class="content">
+                    <h2>Key Features</h2>
+                    <div class="features-grid">
+                        <div class="feature-card">
+                            <div class="feature-icon">⚡</div>
+                            <h3>Native Resource Management</h3>
+                            <p>Use <code>using</code> and <code>await using</code> for automatic cleanup with ES2022+ Disposable symbols.</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">🎯</div>
+                            <h3>Structured Concurrency</h3>
+                            <p>Automatic parent-child cancellation propagation with proper task boundaries.</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">🔄</div>
+                            <h3>Built-in Retry</h3>
+                            <p>Exponential backoff, jitter, and linear strategies with configurable conditions.</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">📡</div>
+                            <h3>Go-Style Channels</h3>
+                            <p>Concurrent communication with map, filter, reduce, and select operations.</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">🛡️</div>
+                            <h3>Circuit Breaker</h3>
+                            <p>Prevent cascading failures with automatic recovery and state transitions.</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">📊</div>
+                            <h3>Observability</h3>
+                            <p>OpenTelemetry tracing, metrics collection, and Prometheus integration.</p>
+                        </div>
+                    </div>
+                </section>
 
-    <div style="margin: 32px 0; padding: 24px; background: linear-gradient(135deg, var(--accent) 0%, var(--secondary) 100%); border: 3px solid var(--border); box-shadow: var(--shadow);">
-        <h3 style="margin-top: 0; color: var(--border);">📚 Auto-Generated API Docs</h3>
-        <p style="color: var(--border); margin-bottom: 16px;">Browse the complete API reference organized by package:</p>
-        <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/README.md" target="_blank" style="display: inline-block; padding: 12px 24px; background: var(--border); color: var(--surface); text-decoration: none; font-weight: 700; border: 3px solid var(--border); box-shadow: 4px 4px 0px rgba(0,0,0,0.2);">View Complete API Reference →</a>
-    </div>
+                <!-- Installation -->
+                <section id="installation" class="content">
+                    <h2>Installation</h2>
+                    <p>Install go-go-scope using your favorite package manager:</p>
+                    
+                    <div class="install-tabs" id="installTabs">
+                        <button class="install-tab active" data-tab="npm">npm</button>
+                        <button class="install-tab" data-tab="pnpm">pnpm</button>
+                        <button class="install-tab" data-tab="yarn">yarn</button>
+                        <button class="install-tab" data-tab="bun">bun</button>
+                    </div>
+                    <div class="install-code-wrapper">
+                        <button class="install-copy" data-copy-target="installCode">Copy</button>
+                        <pre class="install-code" id="installCode">npm install go-go-scope</pre>
+                    </div>
 
-    <h3>Core Packages</h3>
-    <div class="feature-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 24px 0;">
-        <div class="feature-card" style="padding: 20px;">
-            <div class="feature-title" style="font-size: 16px;">🏃 go-go-scope</div>
-            <p class="feature-desc">Core library with Scope, Task, Channel, and concurrency primitives</p>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/go-go-scope.md" target="_blank" class="code" style="color: var(--primary);">View API (388 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 20px;">
-            <div class="feature-title" style="font-size: 16px;">🌊 @go-go-scope/stream</div>
-            <p class="feature-desc">Lazy stream processing with 92+ operators</p>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/stream.md" target="_blank" class="code" style="color: var(--primary);">View API (95 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 20px;">
-            <div class="feature-title" style="font-size: 16px;">⏰ @go-go-scope/scheduler</div>
-            <p class="feature-desc">Distributed job scheduler with cron support</p>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/scheduler.md" target="_blank" class="code" style="color: var(--primary);">View API (117 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 20px;">
-            <div class="feature-title" style="font-size: 16px;">🧪 @go-go-scope/testing</div>
-            <p class="feature-desc">Testing utilities and mock helpers</p>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/testing.md" target="_blank" class="code" style="color: var(--primary);">View API (25 items) →</a>
-        </div>
-    </div>
+                    <div class="info-box info">
+                        <div class="info-box-title">Requirements</div>
+                        <p><strong>TypeScript 5.2+</strong> with <code>"target": "ES2022"</code> or higher. Requires native support for <code>Symbol.dispose</code> and <code>Symbol.asyncDispose</code> (Node.js 24+ or Bun 1.2+).</p>
+                    </div>
+                </section>
 
-    <h3>Framework Adapters</h3>
-    <div class="feature-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 24px 0;">
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Astro</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/adapter-astro.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (4 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Aws-lambda-edge</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/adapter-aws-lambda-edge.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (9 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Cloudflare-workers</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/adapter-cloudflare-workers.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (4 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Elysia</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/adapter-elysia.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (3 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Express</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/adapter-express.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (2 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Fresh</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/adapter-fresh.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (6 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Hapi</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/adapter-hapi.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (3 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Hono</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/adapter-hono.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (3 items) →</a>
-        </div>
-    </div>
+                <!-- Quick Start -->
+                <section id="quickstart" class="content">
+                    <h2>Quick Start</h2>
+                    
+                    <h3>Your First Example</h3>
+                    <p>The simplest way to understand <code>go-go-scope</code> is with a timeout example:</p>
+                    
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">import { scope } from 'go-go-scope'
 
-    <h3>Persistence & Plugins</h3>
-    <div class="feature-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 24px 0;">
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Cloudflare-do</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/persistence-cloudflare-do.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (3 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Deno-kv</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/persistence-deno-kv.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (2 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Dynamodb</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/persistence-dynamodb.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (2 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Mongodb</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/persistence-mongodb.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (2 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Deadlock-detector</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/plugin-deadlock-detector.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (9 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Metrics</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/plugin-metrics.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (43 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Opentelemetry</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/plugin-opentelemetry.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (49 items) →</a>
-        </div>
-        <div class="feature-card" style="padding: 16px;">
-            <div class="feature-title" style="font-size: 14px;">Profiler</div>
-            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/plugin-profiler.md" target="_blank" class="code" style="color: var(--primary); font-size: 12px;">View (14 items) →</a>
-        </div>
-    </div>
+// Fetch data with a 5-second timeout
+async function fetchData() {
+  await using s = scope({ timeout: 5000 })
+  
+  const [err, data] = await s.task(async ({ signal }) => {
+    const response = await fetch('/api/data', { signal })
+    return response.json()
+  })
+  
+  if (err) {
+    console.log('Failed:', err.message)
+    return null
+  }
+  
+  return data
+}</code></pre>
+                    </div>
 
-    <h3>Quick API Stats</h3>
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 24px 0; text-align: center;">
-        <div style="padding: 20px; background: var(--surface); border: 2px solid var(--border);">
-            <div style="font-size: 32px; font-weight: 700; color: var(--primary);">955</div>
-            <div style="font-size: 12px; color: var(--text-muted);">Documented Items</div>
-        </div>
-        <div style="padding: 20px; background: var(--surface); border: 2px solid var(--border);">
-            <div style="font-size: 32px; font-weight: 700; color: var(--primary);">40</div>
-            <div style="font-size: 12px; color: var(--text-muted);">Packages</div>
-        </div>
-        <div style="padding: 20px; background: var(--surface); border: 2px solid var(--border);">
-            <div style="font-size: 32px; font-weight: 700; color: var(--primary);">92</div>
-            <div style="font-size: 12px; color: var(--text-muted);">Stream Operators</div>
-        </div>
-        <div style="padding: 20px; background: var(--surface); border: 2px solid var(--border);">
-            <div style="font-size: 32px; font-weight: 700; color: var(--primary);">18</div>
-            <div style="font-size: 12px; color: var(--text-muted);">Framework Adapters</div>
-        </div>
-    </div>
+                    <div class="info-box tip">
+                        <div class="info-box-title">What just happened?</div>
+                        <ul>
+                            <li><code>scope({ timeout: 5000 })</code> creates a scope that auto-cancels after 5 seconds</li>
+                            <li><code>s.task()</code> creates a task that can be cancelled</li>
+                            <li><code>{ signal }</code> is an <code>AbortSignal</code> you pass to <code>fetch()</code> for cancellation</li>
+                            <li><code>[err, data]</code> is a Result tuple - always <code>[error, value]</code></li>
+                            <li><code>await using</code> automatically cleans up when done</li>
+                        </ul>
+                    </div>
 
-    <div style="margin: 32px 0; padding: 24px; background: var(--surface); border: 2px solid var(--border); border-radius: 8px;">
-        <h4 style="margin-top: 0;">🔍 Searchable API Index</h4>
-        <p style="color: var(--text-muted);">A JSON search index is available for building custom search functionality:</p>
-        <code style="display: block; padding: 12px; background: var(--code-bg); color: var(--surface); border-radius: 4px; margin-top: 12px;">./api/search-index.json</code>
-    </div>
+                    <h3>Key Pattern: The Result Tuple</h3>
+                    <p>Every task returns <code>[error, value]</code>:</p>
 
-    <div style="margin: 32px 0; padding: 24px; background: var(--surface); border-left: 4px solid var(--primary);">
-        <h4 style="margin-top: 0;">📝 Contributing to Documentation</h4>
-        <p style="color: var(--text-muted);">When adding new functions, please include comprehensive JSDoc comments with <code>@example</code> blocks. The API docs are automatically generated using:</p>
-        <pre style="margin-top: 12px;"><code>pnpm docs:generate</code></pre>
-    </div>
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">const [err, user] = await s.task(() => fetchUser(1))
 
-    <div style="margin: 40px 0; padding: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px;">
-        <p style="margin: 0; color: var(--text-muted);">📚 For detailed guides and examples, see the <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/03-api-reference.md" target="_blank" style="color: var(--primary);">API Reference Overview</a> or explore the <a href="https://github.com/thelinuxlich/go-go-scope/tree/main/examples" style="color: var(--primary);" target="_blank">examples directory</a>.</p>
-    </div>
-</section>
+if (err) {
+  // Handle error
+} else {
+  // Use user
+}</code></pre>
+                    </div>
 
-<!-- /API Reference Section -->
-            <!-- Footer -->
-            <footer class="footer">
-                <p>Released under the MIT License • Made with ❤️ by <a href="https://github.com/thelinuxlich" target="_blank">thelinuxlich</a></p>
-                <p style="margin-top: 8px;">
-                    <a href="https://github.com/thelinuxlich/go-go-scope" target="_blank">GitHub</a> • 
-                    <a href="https://www.npmjs.com/package/go-go-scope" target="_blank">npm</a> • 
-                    <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/README.md" target="_blank">API Reference</a>
-                </p>
-            </footer>
+                    <p>This is different from Promises that throw errors. <strong>Result tuples never throw!</strong></p>
+                </section>
+
+                <!-- Core Concepts -->
+                <section id="structured-concurrency" class="content">
+                    <h2>Structured Concurrency</h2>
+                    
+                    <p>Structured concurrency is a programming paradigm that ensures:</p>
+                    <ol>
+                        <li><strong>No task is left behind</strong> - When a scope ends, all tasks inside it are cancelled</li>
+                        <li><strong>No fire-and-forget</strong> - Every async operation has a parent that waits for it</li>
+                        <li><strong>Cleanup is guaranteed</strong> - Resources are always cleaned up, even on error</li>
+                    </ol>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">// Regular function - structured!
+function parent() {
+  const result = child()  // Parent waits for child
+  console.log(result)     // This always runs after child
+}
+
+// Unstructured async (the problem)
+async function parent() {
+  child()  // Fire and forget! Parent doesn't wait
+  console.log('Done')  // This might run before child finishes
+}
+
+// Structured async with go-go-scope
+async function parent() {
+  await using s = scope()
+  const [err, result] = await s.task(() => child())  // Parent waits
+  console.log(result)  // This always runs after child
+}</code></pre>
+                    </div>
+                </section>
+
+                <section id="the-scope" class="content">
+                    <h2>The Scope</h2>
+                    
+                    <p>A <strong>Scope</strong> is a container for async operations. Think of it as a "workspace" for your tasks.</p>
+
+                    <h3>Creating a Scope</h3>
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">import { scope } from 'go-go-scope'
+
+// Simple scope
+await using s = scope()
+
+// With timeout
+await using s = scope({ timeout: 5000 })
+
+// With OpenTelemetry tracing
+await using s = scope({
+  name: 'my-operation',
+  tracer: trace.getTracer('my-app')
+})
+
+// With concurrency limit
+await using s = scope({ concurrency: 3 })
+
+// With circuit breaker
+await using s = scope({
+  circuitBreaker: {
+    failureThreshold: 5,
+    resetTimeout: 30000
+  }
+})
+
+// Combined
+await using s = scope({
+  name: 'complex-operation',
+  timeout: 30000,
+  concurrency: 5,
+  tracer: trace.getTracer('my-app'),
+  circuitBreaker: { failureThreshold: 3 }
+})</code></pre>
+                    </div>
+
+                    <h3>Resource Cleanup</h3>
+                    <p>Resources are cleaned up in LIFO order (reverse of creation):</p>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">async function processFile(filePath: string) {
+  await using s = scope()
+    .provide('tempDir', () => createTempDir(), (dir) => dir.cleanup())
+    .provide('fileHandle', () => openFile(filePath), (fh) => fh.close())
+    .provide('db', () => openDatabase(), (db) => db.close())
+  
+  // Use the resources
+  const data = await s.use('fileHandle').read()
+  
+  // Cleanup order (automatic):
+  // 1. Database connection closes
+  // 2. File handle closes
+  // 3. Temp directory is cleaned up
+}</code></pre>
+                    </div>
+                </section>
+
+                <section id="the-task" class="content">
+                    <h2>The Task</h2>
+                    
+                    <p>A <strong>Task</strong> is a unit of work within a scope. It's like a Promise, but:</p>
+                    <ul>
+                        <li><strong>Lazy</strong> - Doesn't start until you await it</li>
+                        <li><strong>Cancellable</strong> - Respects the AbortSignal</li>
+                        <li><strong>Returns a Result</strong> - Never throws, always returns <code>[error, value]</code></li>
+                    </ul>
+
+                    <h3>Lazy Execution</h3>
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">await using s = scope()
+
+const primary = s.task(() => fetchFromPrimary())
+const fallback = s.task(() => fetchFromFallback())
+
+// Try primary first
+const [err, result] = await primary
+if (err) {
+  // Only now does fallback start!
+  const [fallbackErr, fallbackResult] = await fallback
+  return fallbackResult
+}
+return result</code></pre>
+                    </div>
+
+                    <h3>Parallel Execution</h3>
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">await using s = scope({ concurrency: 3 })
+
+const result = await s.parallel([
+  ({ signal }) => fetchUser(1, { signal }),
+  ({ signal }) => fetchUser(2, { signal }),
+  ({ signal }) => fetchUser(3, { signal }),
+])
+
+// Access successful results
+for (const { index, value } of result.completed) {
+  console.log(`Task ${index}:`, value)
+}
+
+// Access errors
+for (const { index, error } of result.errors) {
+  console.log(`Task ${index} failed:`, error)
+}</code></pre>
+                    </div>
+                </section>
+
+                <section id="result-tuples" class="content">
+                    <h2>Result Tuples</h2>
+                    
+                    <p>Every task returns a <strong>Result tuple</strong>: <code>[error, value]</code></p>
+
+                    <h3>Why Result Tuples?</h3>
+                    <p>Promises throw errors:</p>
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">try {
+  const user = await fetchUser(1)  // Might throw!
+} catch (err) {
+  // Handle error
+}</code></pre>
+                    </div>
+
+                    <p>Tasks return errors:</p>
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">const [err, user] = await s.task(() => fetchUser(1))
+if (err) {
+  // Handle error
+} else {
+  // Use user
+}</code></pre>
+                    </div>
+
+                    <div class="info-box info">
+                        <div class="info-box-title">Benefits</div>
+                        <ul>
+                            <li><strong>Explicit</strong> - You must check for errors</li>
+                            <li><strong>Type-safe</strong> - TypeScript knows both types</li>
+                            <li><strong>Composable</strong> - Easy to aggregate results</li>
+                            <li><strong>No try/catch</strong> - Cleaner control flow</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section id="cancellation" class="content">
+                    <h2>Cancellation</h2>
+                    
+                    <p>Every task receives an <code>AbortSignal</code> that you can use for cancellation:</p>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">await s.task(async ({ signal, logger }) => {
+  // Pass to fetch for automatic cancellation
+  const response = await fetch(url, { signal })
+  
+  // Or check manually
+  if (signal.aborted) {
+    logger.warn('Task was cancelled')
+    throw new Error('Cancelled!')
+  }
+  
+  // Or listen for abort events
+  signal.addEventListener('abort', () => {
+    logger.info('Task was cancelled')
+  })
+})</code></pre>
+                    </div>
+
+                    <h3>When is Cancellation Triggered?</h3>
+                    <ol>
+                        <li><strong>Timeout</strong> - Scope timeout is reached</li>
+                        <li><strong>Scope disposal</strong> - <code>await using</code> block ends</li>
+                        <li><strong>Parent cancellation</strong> - Parent scope is cancelled</li>
+                        <li><strong>Manual abort</strong> - You call <code>scope.signal.abort()</code></li>
+                    </ol>
+                </section>
+
+                <section id="channels" class="content">
+                    <h2>Channels</h2>
+                    
+                    <p>Channels provide Go-style concurrent communication between tasks with configurable backpressure strategies.</p>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">await using s = scope()
+const ch = s.channel&lt;string&gt;(100)  // Buffer capacity of 100
+
+// Producer
+s.task(async () => {
+  for (const log of logs) {
+    await ch.send(log)  // Blocks if buffer full
+  }
+  ch.close()
+})
+
+// Consumer with native async iteration
+for await (const log of ch) {
+  await processLog(log)
+}</code></pre>
+                    </div>
+
+                    <h3>Backpressure Strategies</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Strategy</th>
+                                <th>Behavior</th>
+                                <th>Use Case</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>block</code> (default)</td>
+                                <td>Wait until space available</td>
+                                <td>Reliable delivery, bounded memory</td>
+                            </tr>
+                            <tr>
+                                <td><code>drop-oldest</code></td>
+                                <td>Remove oldest item to make room</td>
+                                <td>Keep recent data (telemetry)</td>
+                            </tr>
+                            <tr>
+                                <td><code>drop-latest</code></td>
+                                <td>Drop the new item</td>
+                                <td>Prioritize processing over ingestion</td>
+                            </tr>
+                            <tr>
+                                <td><code>error</code></td>
+                                <td>Throw <code>ChannelFullError</code></td>
+                                <td>Explicit backpressure handling</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <section id="error-handling" class="content">
+                    <h2>Error Handling</h2>
+                    
+                    <p>Use <a href="https://github.com/thelinuxlich/go-go-try" target="_blank">go-go-try</a> alongside <code>go-go-scope</code> for typed error handling:</p>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">import { scope } from 'go-go-scope'
+import { taggedError, success, failure } from 'go-go-try'
+
+const DatabaseError = taggedError('DatabaseError')
+const NetworkError = taggedError('NetworkError')
+
+async function fetchUser(id: string) {
+  await using s = scope()
+  
+  // Database operation - errors wrapped in DatabaseError
+  const [dbErr, user] = await s.task(
+    () => queryDatabase(id),
+    { errorClass: DatabaseError }
+  )
+  if (dbErr) return failure(dbErr)
+  
+  // Network operation - errors wrapped in NetworkError
+  const [netErr, enriched] = await s.task(
+    () => enrichUserData(user!),
+    { errorClass: NetworkError }
+  )
+  if (netErr) return failure(netErr)
+  
+  return success(enriched)
+}</code></pre>
+                    </div>
+                </section>
+
+                <!-- Guides -->
+                <section id="guide-http-client" class="content">
+                    <h2>Guide: HTTP Client with Retry</h2>
+                    
+                    <p>A resilient HTTP client with automatic retries and exponential backoff:</p>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">import { scope, exponentialBackoff } from 'go-go-scope'
+
+function createHttpClient(baseUrl: string) {
+  return {
+    async get&lt;T&gt;(url: string): Promise&lt;T&gt; {
+      await using s = scope()
+
+      const [err, result] = await s.task(
+        async ({ signal }) => {
+          const response = await fetch(`${baseUrl}${url}`, { signal })
+          if (!response.ok) throw new Error(`HTTP ${response.status}`)
+          return response.json() as Promise&lt;T&gt;
+        },
+        {
+          retry: {
+            max: 3,
+            delay: exponentialBackoff({ initial: 100, max: 5000, jitter: 0.3 })
+          }
+        }
+      )
+
+      if (err) throw err
+      return result!
+    }
+  }
+}</code></pre>
+                    </div>
+                </section>
+
+                <section id="guide-db-pool" class="content">
+                    <h2>Guide: Database Connection Pool</h2>
+                    
+                    <p>Manage a pool of database connections with automatic cleanup:</p>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">import { scope } from 'go-go-scope'
+
+async function withDatabase&lt;T&gt;(
+  connectionString: string,
+  fn: (db: DatabaseConnection) => Promise&lt;T&gt;
+): Promise&lt;T&gt; {
+  await using s = scope()
+
+  const pool = s.resourcePool&lt;DatabaseConnection&gt;({
+    create: async () => createConnection(connectionString),
+    destroy: async (conn) => conn.close(),
+    min: 2,
+    max: 10,
+    acquireTimeout: 5000
+  })
+
+  const conn = await pool.acquire()
+  try {
+    return await fn(conn)
+  } finally {
+    await pool.release(conn)
+  }
+}</code></pre>
+                    </div>
+                </section>
+
+                <section id="guide-circuit-breaker" class="content">
+                    <h2>Guide: Circuit Breaker Pattern</h2>
+                    
+                    <p>Protect services with circuit breaker pattern:</p>
+
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">import { scope } from 'go-go-scope'
+
+async function callExternalService() {
+  await using s = scope({
+    circuitBreaker: {
+      failureThreshold: 5,    // Open after 5 failures
+      resetTimeout: 30000,    // Try again after 30 seconds
+      onStateChange: (from, to, count) => {
+        console.log(`Circuit: ${from} -> ${to}`)
+      },
+      onOpen: (count) => {
+        alertService.notify(`Circuit opened after ${count} failures`)
+      }
+    }
+  })
+
+  const [err, result] = await s.task(() => fetchExternalData())
+
+  if (err) {
+    if (err.message === 'Circuit breaker is open') {
+      return getCachedData()  // Use fallback
+    }
+    throw err
+  }
+
+  return result
+}</code></pre>
+                    </div>
+                </section>
+
+                <section id="guide-retry" class="content">
+                    <h2>Guide: Retry Patterns</h2>
+                    
+                    <h3>Exponential Backoff</h3>
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">import { exponentialBackoff } from 'go-go-scope'
+
+const [err, result] = await s.task(
+  () => fetchData(),
+  {
+    retry: {
+      max: 5,
+      delay: exponentialBackoff({ initial: 1000, max: 30000, jitter: 0.3 })
+      // Attempt 1: ~1000ms (±30% jitter)
+      // Attempt 2: ~2000ms (±30% jitter)
+      // Attempt 3: ~4000ms (±30% jitter)
+    }
+  }
+)</code></pre>
+                    </div>
+
+                    <h3>Conditional Retry</h3>
+                    <div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-block-lang">TypeScript</span>
+                            <button class="code-block-copy" data-copy> Copy </button>
+                        </div>
+                        <pre><code class="language-typescript">const [err, result] = await s.task(
+  () => fetchData(),
+  {
+    retry: {
+      max: 3,
+      retryCondition: (error) => {
+        // Only retry network errors
+        return error instanceof NetworkError
+      }
+    }
+  }
+)</code></pre>
+                    </div>
+                </section>
+
+                <!-- API Reference -->
+                <section id="api" class="content">
+                    <h2>API Reference</h2>
+                    
+                    <p>The complete API documentation is automatically generated from JSDoc comments in the source code, ensuring it's always up-to-date with the latest changes.</p>
+
+                    <h3>Core Packages</h3>
+                    <div class="features-grid">
+                        <div class="feature-card">
+                            <h3>🏃 go-go-scope</h3>
+                            <p>Core library with Scope, Task, Channel, and concurrency primitives</p>
+                            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/go-go-scope.md" target="_blank">View API (388 items) →</a>
+                        </div>
+                        <div class="feature-card">
+                            <h3>🌊 @go-go-scope/stream</h3>
+                            <p>Lazy stream processing with 92+ operators</p>
+                            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/stream.md" target="_blank">View API (95 items) →</a>
+                        </div>
+                        <div class="feature-card">
+                            <h3>⏰ @go-go-scope/scheduler</h3>
+                            <p>Distributed job scheduler with cron support</p>
+                            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/scheduler.md" target="_blank">View API (117 items) →</a>
+                        </div>
+                        <div class="feature-card">
+                            <h3>🧪 @go-go-scope/testing</h3>
+                            <p>Testing utilities and mock helpers</p>
+                            <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/testing.md" target="_blank">View API (25 items) →</a>
+                        </div>
+                    </div>
+
+                    <div class="info-box info" id="api-full">
+                        <div class="info-box-title">Complete API Documentation</div>
+                        <p>Browse the full API reference on GitHub:</p>
+                        <p><a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/README.md" target="_blank">View Complete API Reference →</a></p>
+                    </div>
+                </section>
+
+                <!-- Page Navigation -->
+                <nav class="page-nav" id="pageNav">
+                    <a href="#introduction" class="page-nav-link" id="prevPage">
+                        <span class="page-nav-label">← Previous</span>
+                        <span class="page-nav-title">Introduction</span>
+                    </a>
+                    <a href="#quickstart" class="page-nav-link next" id="nextPage">
+                        <span class="page-nav-label">Next →</span>
+                        <span class="page-nav-title">Quick Start</span>
+                    </a>
+                </nav>
+
+                <!-- Footer -->
+                <footer class="footer">
+                    <p>Released under the MIT License • Made with ❤️ by <a href="https://github.com/thelinuxlich" target="_blank">thelinuxlich</a></p>
+                    <div class="footer-links">
+                        <a href="https://github.com/thelinuxlich/go-go-scope" target="_blank">GitHub</a>
+                        <a href="https://www.npmjs.com/package/go-go-scope" target="_blank">npm</a>
+                        <a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/README.md" target="_blank">API Reference</a>
+                    </div>
+                </footer>
+            </div>
         </main>
+
+        <!-- Table of Contents Sidebar -->
+        <aside class="toc-sidebar" id="tocSidebar">
+            <div class="toc-title">On this page</div>
+            <ul class="toc-list" id="tocList">
+                <!-- TOC items will be generated by JavaScript -->
+            </ul>
+        </aside>
     </div>
 
     <script>
-        // Tab switching for installation
-        const tabs = document.querySelectorAll('.install-tab');
-        const code = document.getElementById('installCode');
+        // ============================================
+        // THEME MANAGEMENT
+        // ============================================
+        const themeToggle = document.getElementById('themeToggle');
+        const sunIcon = themeToggle.querySelector('.sun-icon');
+        const moonIcon = themeToggle.querySelector('.moon-icon');
+        
+        // Check for saved theme preference or system preference
+        const savedTheme = localStorage.getItem('theme');
+        const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        
+        function setTheme(theme) {
+            if (theme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                sunIcon.classList.remove('hidden');
+                moonIcon.classList.add('hidden');
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+                sunIcon.classList.add('hidden');
+                moonIcon.classList.remove('hidden');
+            }
+            localStorage.setItem('theme', theme);
+        }
+        
+        // Initialize theme
+        if (savedTheme) {
+            setTheme(savedTheme);
+        } else if (systemPrefersDark) {
+            setTheme('dark');
+        }
+        
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            setTheme(currentTheme === 'dark' ? 'light' : 'dark');
+        });
+
+        // ============================================
+        // SIDEBAR NAVIGATION
+        // ============================================
+        const menuToggle = document.getElementById('menuToggle');
+        const sidebar = document.getElementById('sidebar');
+        const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+        
+        function toggleSidebar() {
+            sidebar.classList.toggle('open');
+            sidebarBackdrop.classList.toggle('active');
+            document.body.style.overflow = sidebar.classList.contains('open') ? 'hidden' : '';
+        }
+        
+        menuToggle.addEventListener('click', toggleSidebar);
+        sidebarBackdrop.addEventListener('click', toggleSidebar);
+        
+        // Close sidebar when clicking a link (mobile)
+        sidebar.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth <= 1024) {
+                    toggleSidebar();
+                }
+            });
+        });
+
+        // ============================================
+        // COLLAPSIBLE SIDEBAR SECTIONS
+        // ============================================
+        const navSections = document.querySelectorAll('.nav-section');
+        
+        // Restore collapsed state from localStorage
+        const savedCollapsed = JSON.parse(localStorage.getItem('collapsedSections') || '[]');
+        
+        navSections.forEach(section => {
+            const header = section.querySelector('.nav-section-header');
+            const items = section.querySelector('.nav-section-items');
+            const sectionId = section.dataset.section;
+            
+            // Set initial height for animation
+            items.style.height = items.scrollHeight + 'px';
+            
+            // Restore collapsed state
+            if (savedCollapsed.includes(sectionId)) {
+                section.classList.add('collapsed');
+                items.style.height = '0px';
+            }
+            
+            header.addEventListener('click', () => {
+                const isCollapsed = section.classList.toggle('collapsed');
+                
+                if (isCollapsed) {
+                    items.style.height = '0px';
+                    if (!savedCollapsed.includes(sectionId)) {
+                        savedCollapsed.push(sectionId);
+                    }
+                } else {
+                    items.style.height = items.scrollHeight + 'px';
+                    const index = savedCollapsed.indexOf(sectionId);
+                    if (index > -1) savedCollapsed.splice(index, 1);
+                }
+                
+                localStorage.setItem('collapsedSections', JSON.stringify(savedCollapsed));
+            });
+        });
+
+        // ============================================
+        // ACTIVE NAV LINK HIGHLIGHTING
+        // ============================================
+        const navLinks = document.querySelectorAll('.nav-link');
+        const sections = document.querySelectorAll('section[id]');
+        
+        function updateActiveNav() {
+            const scrollPos = window.scrollY + 100;
+            
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                const sectionHeight = section.offsetHeight;
+                const sectionId = section.getAttribute('id');
+                
+                if (scrollPos >= sectionTop && scrollPos < sectionTop + sectionHeight) {
+                    navLinks.forEach(link => {
+                        link.classList.remove('active');
+                        if (link.getAttribute('href') === '#' + sectionId) {
+                            link.classList.add('active');
+                        }
+                    });
+                }
+            });
+        }
+        
+        window.addEventListener('scroll', updateActiveNav);
+        updateActiveNav();
+
+        // ============================================
+        // TABLE OF CONTENTS (Right Sidebar)
+        // ============================================
+        const tocList = document.getElementById('tocList');
+        const mainContent = document.querySelector('.main');
+        
+        function generateTOC() {
+            const headings = mainContent.querySelectorAll('h2[id], h3[id]');
+            tocList.innerHTML = '';
+            
+            headings.forEach(heading => {
+                const li = document.createElement('li');
+                li.className = 'toc-item';
+                
+                const link = document.createElement('a');
+                link.className = 'toc-link';
+                link.href = '#' + heading.id;
+                link.textContent = heading.textContent;
+                
+                if (heading.tagName === 'H3') {
+                    link.classList.add('level-3');
+                }
+                
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    heading.scrollIntoView({ behavior: 'smooth' });
+                    history.pushState(null, null, '#' + heading.id);
+                });
+                
+                li.appendChild(link);
+                tocList.appendChild(li);
+            });
+        }
+        
+        function updateTOCHighlight() {
+            const headings = mainContent.querySelectorAll('h2[id], h3[id]');
+            const scrollPos = window.scrollY + 150;
+            
+            headings.forEach((heading, index) => {
+                const headingTop = heading.offsetTop;
+                const tocLinks = tocList.querySelectorAll('.toc-link');
+                
+                if (scrollPos >= headingTop || (index === 0 && scrollPos < headingTop)) {
+                    tocLinks.forEach(link => link.classList.remove('active'));
+                    if (tocLinks[index]) {
+                        tocLinks[index].classList.add('active');
+                    }
+                }
+            });
+        }
+        
+        generateTOC();
+        window.addEventListener('scroll', updateTOCHighlight);
+        updateTOCHighlight();
+
+        // ============================================
+        // SEARCH FUNCTIONALITY
+        // ============================================
+        const searchButton = document.getElementById('searchButton');
+        const searchModal = document.getElementById('searchModal');
+        const searchBackdrop = document.getElementById('searchBackdrop');
+        const searchInput = document.getElementById('searchInput');
+        const searchResults = document.getElementById('searchResults');
+        
+        // Search index
+        const searchIndex = [
+            // Getting Started
+            { title: 'Introduction', desc: 'Overview of go-go-scope', href: '#introduction', section: 'Getting Started' },
+            { title: 'Installation', desc: 'How to install the package', href: '#installation', section: 'Getting Started' },
+            { title: 'Quick Start', desc: 'Get started in 5 minutes', href: '#quickstart', section: 'Getting Started' },
+            // Core Concepts
+            { title: 'Structured Concurrency', desc: 'Understanding structured concurrency', href: '#structured-concurrency', section: 'Core Concepts' },
+            { title: 'The Scope', desc: 'Container for async operations', href: '#the-scope', section: 'Core Concepts' },
+            { title: 'The Task', desc: 'Unit of work within a scope', href: '#the-task', section: 'Core Concepts' },
+            { title: 'Result Tuples', desc: 'Error handling with [error, value]', href: '#result-tuples', section: 'Core Concepts' },
+            { title: 'Cancellation', desc: 'AbortSignal and cleanup', href: '#cancellation', section: 'Core Concepts' },
+            { title: 'Channels', desc: 'Go-style concurrent communication', href: '#channels', section: 'Core Concepts' },
+            { title: 'Error Handling', desc: 'Typed errors with go-go-try', href: '#error-handling', section: 'Core Concepts' },
+            // Guides
+            { title: 'HTTP Client', desc: 'Resilient HTTP client with retry', href: '#guide-http-client', section: 'Guides' },
+            { title: 'DB Connection Pool', desc: 'Database connection management', href: '#guide-db-pool', section: 'Guides' },
+            { title: 'WebSocket Manager', desc: 'WebSocket with auto-reconnection', href: '#guide-websocket', section: 'Guides' },
+            { title: 'Circuit Breaker', desc: 'Protect services from failures', href: '#guide-circuit-breaker', section: 'Guides' },
+            { title: 'Retry Patterns', desc: 'Exponential backoff and strategies', href: '#guide-retry', section: 'Guides' },
+            // API
+            { title: 'API Overview', desc: 'Complete API reference', href: '#api', section: 'API Reference' },
+            // Features
+            { title: 'Features', desc: 'Key features and capabilities', href: '#features', section: 'Overview' }
+        ];
+        
+        let selectedResultIndex = -1;
+        let currentResults = [];
+        
+        function openSearch() {
+            searchModal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+            setTimeout(() => searchInput.focus(), 100);
+        }
+        
+        function closeSearch() {
+            searchModal.classList.remove('active');
+            document.body.style.overflow = '';
+            searchInput.value = '';
+            searchResults.innerHTML = '';
+            selectedResultIndex = -1;
+        }
+        
+        function performSearch(query) {
+            if (!query.trim()) {
+                searchResults.innerHTML = '';
+                return;
+            }
+            
+            const normalizedQuery = query.toLowerCase();
+            currentResults = searchIndex.filter(item => 
+                item.title.toLowerCase().includes(normalizedQuery) ||
+                item.desc.toLowerCase().includes(normalizedQuery) ||
+                item.section.toLowerCase().includes(normalizedQuery)
+            );
+            
+            if (currentResults.length === 0) {
+                searchResults.innerHTML = '<div class="search-empty">No results found</div>';
+                return;
+            }
+            
+            searchResults.innerHTML = currentResults.map((item, index) => `
+                <div class="search-result" data-index="${index}" data-href="${item.href}">
+                    <div class="search-result-section">${item.section}</div>
+                    <div class="search-result-title">${item.title}</div>
+                    <div class="search-result-desc">${item.desc}</div>
+                </div>
+            `).join('');
+            
+            // Add click handlers
+            searchResults.querySelectorAll('.search-result').forEach(result => {
+                result.addEventListener('click', () => {
+                    const href = result.dataset.href;
+                    closeSearch();
+                    window.location.href = href;
+                });
+            });
+            
+            selectedResultIndex = 0;
+            updateSelectedResult();
+        }
+        
+        function updateSelectedResult() {
+            const results = searchResults.querySelectorAll('.search-result');
+            results.forEach((result, index) => {
+                result.classList.toggle('selected', index === selectedResultIndex);
+            });
+            
+            const selected = results[selectedResultIndex];
+            if (selected) {
+                selected.scrollIntoView({ block: 'nearest' });
+            }
+        }
+        
+        searchButton.addEventListener('click', openSearch);
+        searchBackdrop.addEventListener('click', closeSearch);
+        
+        searchInput.addEventListener('input', (e) => {
+            performSearch(e.target.value);
+        });
+        
+        searchInput.addEventListener('keydown', (e) => {
+            const results = searchResults.querySelectorAll('.search-result');
+            
+            switch (e.key) {
+                case 'ArrowDown':
+                    e.preventDefault();
+                    selectedResultIndex = Math.min(selectedResultIndex + 1, results.length - 1);
+                    updateSelectedResult();
+                    break;
+                case 'ArrowUp':
+                    e.preventDefault();
+                    selectedResultIndex = Math.max(selectedResultIndex - 1, 0);
+                    updateSelectedResult();
+                    break;
+                case 'Enter':
+                    e.preventDefault();
+                    if (selectedResultIndex >= 0 && results[selectedResultIndex]) {
+                        const href = results[selectedResultIndex].dataset.href;
+                        closeSearch();
+                        window.location.href = href;
+                    }
+                    break;
+                case 'Escape':
+                    e.preventDefault();
+                    closeSearch();
+                    break;
+            }
+        });
+        
+        // Keyboard shortcut (Ctrl+K or Cmd+K)
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                openSearch();
+            }
+            if (e.key === 'Escape' && searchModal.classList.contains('active')) {
+                closeSearch();
+            }
+        });
+
+        // ============================================
+        // COPY TO CLIPBOARD
+        // ============================================
+        document.querySelectorAll('[data-copy]').forEach(button => {
+            button.addEventListener('click', async () => {
+                const codeBlock = button.closest('.code-block-wrapper')?.querySelector('pre code') ||
+                                   button.parentElement.querySelector('pre');
+                const text = codeBlock.textContent;
+                
+                try {
+                    await navigator.clipboard.writeText(text);
+                    button.textContent = 'Copied!';
+                    button.classList.add('copied');
+                    
+                    setTimeout(() => {
+                        button.textContent = 'Copy';
+                        button.classList.remove('copied');
+                    }, 2000);
+                } catch (err) {
+                    console.error('Failed to copy:', err);
+                }
+            });
+        });
+        
+        // Installation tab copy
+        document.querySelectorAll('.install-copy').forEach(button => {
+            button.addEventListener('click', async () => {
+                const code = document.getElementById(button.dataset.copyTarget).textContent;
+                
+                try {
+                    await navigator.clipboard.writeText(code);
+                    button.textContent = 'Copied!';
+                    
+                    setTimeout(() => {
+                        button.textContent = 'Copy';
+                    }, 2000);
+                } catch (err) {
+                    console.error('Failed to copy:', err);
+                }
+            });
+        });
+
+        // ============================================
+        // INSTALLATION TABS
+        // ============================================
+        const installTabs = document.querySelectorAll('.install-tab');
+        const installCode = document.getElementById('installCode');
         const commands = {
             npm: 'npm install go-go-scope',
             pnpm: 'pnpm add go-go-scope',
             yarn: 'yarn add go-go-scope',
             bun: 'bun add go-go-scope'
         };
-
-        tabs.forEach(tab => {
+        
+        installTabs.forEach(tab => {
             tab.addEventListener('click', () => {
-                tabs.forEach(t => t.classList.remove('active'));
+                installTabs.forEach(t => t.classList.remove('active'));
                 tab.classList.add('active');
-                code.textContent = commands[tab.dataset.tab];
+                installCode.textContent = commands[tab.dataset.tab];
             });
         });
 
-        // Search functionality
-        const searchInput = document.getElementById('searchInput');
-        const searchResults = document.getElementById('searchResults');
+        // ============================================
+        // PAGE NAVIGATION (Prev/Next)
+        // ============================================
+        const pageNav = document.getElementById('pageNav');
+        const prevPage = document.getElementById('prevPage');
+        const nextPage = document.getElementById('nextPage');
         
-
-
-        const docs = [
-            // Getting Started
-            { title: 'Introduction', desc: 'Overview of go-go-scope', href: '#introduction' },
-            { title: 'Installation', desc: 'How to install the package', href: '#installation' },
-            { title: 'Quick Start', desc: 'Get started in 5 minutes', href: '#quickstart' },
-            // Examples
-            { title: 'Examples', desc: 'Real-world usage patterns', href: '#examples' },
-            { title: 'Resilient HTTP Client', desc: 'Retry & circuit breaker pattern', href: '#example-http-client' },
-            { title: 'Data Pipeline', desc: 'Stream processing with metrics', href: '#example-data-pipeline' },
-            { title: 'WebSocket Fan-out', desc: 'Real-time broadcasting', href: '#example-websocket' },
-            { title: 'DB Transactions', desc: 'Connection pooling & transactions', href: '#example-db-transaction' },
-            { title: 'Job Scheduler', desc: 'Distributed cron jobs', href: '#example-scheduler' },
-            { title: 'Distributed Lock', desc: 'Redis-backed distributed locking', href: '#example-distributed-lock' },
-            { title: 'Worker Threads', desc: 'CPU-intensive tasks in parallel', href: '#example-worker-threads' },
-            { title: 'scope.acquireLock()', desc: 'Create mutex, read-write, or distributed locks (v2.6.2+)', href: '#scope-acquirelock' },
-            // Core Concepts
-            { title: 'The Scope', desc: 'Understanding scopes', href: '#scope' },
-            { title: 'The Task', desc: 'Working with tasks', href: '#task' },
-            { title: 'Channels', desc: 'Go-style channels', href: '#channels' },
-            { title: 'Cancellation', desc: 'Cancellation utilities', href: '#cancellation' },
-            // API Reference - Core Types
-            { title: 'API Reference', desc: 'Complete API documentation', href: '#api' },
-            { title: 'Result&lt;E,T&gt;', desc: 'Result tuple type', href: '#result-type' },
-            { title: 'ScopeOptions', desc: 'Scope configuration options', href: '#scopeoptions-type' },
-            { title: 'TaskOptions', desc: 'Task configuration options', href: '#taskoptions-type' },
-            { title: 'CircuitBreakerOptions', desc: 'Circuit breaker configuration', href: '#circuitbreakeroptions-type' },
-            { title: 'CircuitState', desc: 'Circuit breaker states', href: '#circuitstate-type' },
-            { title: 'ChannelOptions', desc: 'Channel configuration', href: '#channeloptions-type' },
-            { title: 'ResourcePoolOptions', desc: 'Resource pool configuration', href: '#resourcepooloptions-type' },
-            { title: 'DebounceOptions', desc: 'Debounce configuration', href: '#debounceoptions-type' },
-            { title: 'ThrottleOptions', desc: 'Throttle configuration', href: '#throttleoptions-type' },
-            { title: 'RaceOptions', desc: 'Race configuration', href: '#raceoptions-type' },
-            { title: 'PollOptions', desc: 'Poll configuration', href: '#polloptions-type' },
-            { title: 'SelectOptions', desc: 'Select configuration', href: '#selectoptions-type' },
-            { title: 'BackpressureStrategy', desc: 'Channel backpressure strategies', href: '#backpressurestrategy-type' },
-            { title: 'ScopeHooks', desc: 'Lifecycle hooks', href: '#scopehooks-type' },
-            { title: 'Logger', desc: 'Logger interface', href: '#logger-interface' },
-            { title: 'TaskContext', desc: 'Task context object', href: '#taskcontext-type' },
-            { title: 'RetryStrategies', desc: 'Built-in retry strategies', href: '#retrystrategies-type' },
-            { title: 'DisposableScope', desc: 'Minimal scope interface', href: '#disposablescope-type' },
-            { title: 'ScopePlugin', desc: 'Plugin interface', href: '#scopeplugin-type' },
-            // Scope Methods
-            { title: 'scope()', desc: 'Create a new scope', href: '#scope-function' },
-            { title: 'scope.task()', desc: 'Create a task', href: '#scope-task' },
-            { title: 'scope.provide()', desc: 'Provide a service', href: '#scope-provide' },
-            { title: 'scope.use()', desc: 'Use a service', href: '#scope-use' },
-            { title: 'scope.has()', desc: 'Check service exists', href: '#scope-has' },
-            { title: 'scope.override()', desc: 'Override a service', href: '#scope-override' },
-            { title: 'scope.race()', desc: 'Race multiple tasks', href: '#scope-race' },
-            { title: 'scope.parallel()', desc: 'Parallel execution', href: '#scope-parallel' },
-            { title: 'scope.channel()', desc: 'Create a channel', href: '#scope-channel' },
-            { title: 'scope.poll()', desc: 'Polling utility', href: '#scope-poll' },
-            { title: 'scope.debounce()', desc: 'Debounce function', href: '#scope-debounce' },
-            { title: 'scope.throttle()', desc: 'Throttle function', href: '#scope-throttle' },
-            { title: 'scope.delay()', desc: 'Delay with cancellation', href: '#scope-delay' },
-            { title: 'scope.every()', desc: 'Interval execution', href: '#scope-every' },
-            { title: 'scope.any()', desc: 'First success', href: '#scope-any' },
-            { title: 'scope.batch()', desc: 'Batch processing', href: '#scope-batch' },
-            { title: 'scope.memoryUsage()', desc: 'Memory monitoring', href: '#scope-memoryusage', tag: 'v2.9.0' },
-            { title: 'scope.setContext()', desc: 'Set context value', href: '#scope-setcontext', tag: 'v2.9.0' },
-            { title: 'scope.getContext()', desc: 'Get context value', href: '#scope-getcontext', tag: 'v2.9.0' },
-            { title: 'scope.hasContext()', desc: 'Check context key', href: '#scope-hascontext', tag: 'v2.9.0' },
-            { title: 'scope.removeContext()', desc: 'Remove context key', href: '#scope-removecontext', tag: 'v2.9.0' },
-            { title: 'scope.getAllContext()', desc: 'Get all context', href: '#scope-getallcontext', tag: 'v2.9.0' },
-            { title: 'scope.setMemoryLimit()', desc: 'Update memory limit', href: '#scope-setmemorylimit', tag: 'v2.9.0' },
-            { title: 'Worker Module Loading', desc: 'Load workers from files', href: '#worker-module-loading', tag: 'v2.9.0' },
-            { title: 'scope.select()', desc: 'Select statement', href: '#scope-select' },
-            { title: 'scope.broadcast()', desc: 'Create broadcast channel', href: '#scope-broadcast' },
-            { title: 'scope.priorityChannel()', desc: 'Priority channel', href: '#scope-prioritychannel' },
-            { title: 'scope.pool()', desc: 'Resource pool', href: '#scope-pool' },
-            { title: 'scope.metrics()', desc: 'Get metrics', href: '#scope-metrics' },
-            { title: 'scope.onDispose()', desc: 'Register cleanup', href: '#scope-ondispose' },
-            { title: 'scope.stream()', desc: 'Create stream', href: '#scope-stream' },
-            // Classes
-            { title: 'Task', desc: 'Task class', href: '#task-class' },
-            { title: 'Channel', desc: 'Channel class', href: '#channel-class' },
-            { title: 'BroadcastChannel', desc: 'Broadcast channel class', href: '#broadcastchannel-class' },
-            { title: 'ResourcePool', desc: 'Resource pool class', href: '#resourcepool-class' },
-            { title: 'CircuitBreaker', desc: 'Circuit breaker class', href: '#circuitbreaker-class' },
-            { title: 'Semaphore', desc: 'Semaphore class', href: '#semaphore-class' },
-            { title: 'TokenBucket', desc: 'Token bucket rate limiter', href: '#tokenbucket-class' },
-            { title: 'GracefulShutdownController', desc: 'Graceful shutdown', href: '#gracefulshutdowncontroller-class' },
-            { title: 'PerformanceMonitor', desc: 'Performance monitoring', href: '#performancemonitor-class' },
-            { title: 'MemoryTracker', desc: 'Memory tracking', href: '#memorytracker-class' },
-            { title: 'MetricsReporter', desc: 'Metrics reporting', href: '#metricsreporter-class' },
-            { title: 'AsyncDisposableResource', desc: 'Resource wrapper', href: '#asyncdisposableresource-class' },
-            { title: 'WorkerPool', desc: 'Worker thread pool (advanced)', href: '#workerpool-class' },
-            { title: 'Lock', desc: 'Unified Lock API - accessed via scope.acquireLock() (v2.6.2+)', href: '#scope-acquirelock' },
-            { title: 'LockGuard', desc: 'Lock guard for automatic release (v2.6.0+)', href: '#lockguard-class' },
-            { title: 'ScopedEventEmitter', desc: 'Type-safe EventEmitter with auto-cleanup (v2.6.0+)', href: '#scopedeventemitter-class' },
-            { title: 'createChild()', desc: 'Create child scope with inheritance (v2.6.0+)', href: '#scope-createchild' },
-            { title: 'debugTree()', desc: 'Visual scope hierarchy debugging (v2.6.0+)', href: '#scope-debugtree' },
-            // Stream API
-            { title: 'Stream', desc: 'Stream class', href: '#stream-class' },
-            { title: 'stream.map()', desc: 'Transform values', href: '#stream-map' },
-            { title: 'stream.filter()', desc: 'Filter values', href: '#stream-filter' },
-            { title: 'stream.flatMap()', desc: 'Map and flatten', href: '#stream-flatmap' },
-            { title: 'stream.tap()', desc: 'Side effects', href: '#stream-tap' },
-            { title: 'stream.take()', desc: 'Take N values', href: '#stream-take' },
-            { title: 'stream.drop()', desc: 'Drop N values', href: '#stream-drop' },
-            { title: 'stream.buffer()', desc: 'Buffer values', href: '#stream-buffer' },
-            { title: 'stream.debounce()', desc: 'Debounce stream', href: '#stream-debounce' },
-            { title: 'stream.throttle()', desc: 'Throttle stream', href: '#stream-throttle' },
-            { title: 'stream.distinct()', desc: 'Remove duplicates', href: '#stream-distinct' },
-            { title: 'stream.merge()', desc: 'Merge streams', href: '#stream-merge' },
-            { title: 'stream.zip()', desc: 'Zip streams', href: '#stream-zip' },
-            { title: 'stream.toArray()', desc: 'Collect to array', href: '#stream-toarray' },
-            { title: 'stream.drain()', desc: 'Consume stream', href: '#stream-drain' },
-            { title: 'stream.first()', desc: 'Get first value', href: '#stream-first' },
-            { title: 'stream.reduce()', desc: 'Reduce values', href: '#stream-reduce' },
-            // Retry Strategies
-            { title: 'exponentialBackoff()', desc: 'Exponential backoff strategy', href: '#exponentialbackoff-function' },
-            { title: 'jitter()', desc: 'Jitter delay strategy', href: '#jitter-function' },
-            { title: 'linear()', desc: 'Linear delay strategy', href: '#linear-function' },
-            { title: 'decorrelatedJitter()', desc: 'Decorrelated jitter strategy', href: '#decorrelatedjitter-function' },
-            // Utilities
-            { title: 'createCache()', desc: 'Create LRU cache', href: '#createcache-function' },
-
-            { title: 'benchmark()', desc: 'Benchmark function', href: '#benchmark-function' },
-            { title: 'installPlugins()', desc: 'Install plugins', href: '#installplugins-function' },
-            // Error Classes
-            { title: 'AbortError', desc: 'Abort error class', href: '#aborterror-class' },
-            { title: 'UnknownError', desc: 'Unknown error class', href: '#unknownerror-class' },
-            { title: 'ChannelFullError', desc: 'Channel full error', href: '#channelfullerror-class' },
-            // Persistence
-            { title: 'LockProvider', desc: 'Distributed lock interface', href: '#lockprovider-type' },
-            { title: 'LockHandle', desc: 'Lock handle interface', href: '#lockhandle-type' },
-            { title: 'CircuitBreakerStateProvider', desc: 'CB state provider', href: '#circuitbreakerstateprovider-type' },
-            { title: 'IdempotencyProvider', desc: 'Idempotency provider', href: '#idempotencyprovider-type' },
-            { title: 'CacheProvider', desc: 'Cache provider', href: '#cacheprovider-type' },
-            // Plugins
-            { title: 'OpenTelemetry Plugin', desc: 'Distributed tracing plugin', href: '#opentelemetry-plugin' },
-            { title: 'Metrics Plugin', desc: 'Advanced metrics collection', href: '#metrics-plugin' },
-            { title: 'Profiler Plugin', desc: 'Task performance profiling', href: '#profiler-plugin' },
-            { title: 'Deadlock Detector Plugin', desc: 'Detect potential deadlocks', href: '#deadlock-detector-plugin' },
-            // Adapters
-            { title: 'Fastify Adapter', desc: 'Fastify framework integration', href: '#adapter-fastify' },
-            { title: 'Express Adapter', desc: 'Express framework integration', href: '#adapter-express' },
-            { title: 'NestJS Adapter', desc: 'NestJS framework integration', href: '#adapter-nestjs' },
-            { title: 'Hono Adapter', desc: 'Hono framework integration', href: '#adapter-hono' },
-            { title: 'Elysia Adapter', desc: 'Elysia framework integration', href: '#adapter-elysia' },
-            { title: 'Hapi Adapter', desc: 'Hapi framework integration', href: '#adapter-hapi' },
-            { title: 'Koa Adapter', desc: 'Koa framework integration', href: '#adapter-koa' }
+        const pageOrder = [
+            { id: 'introduction', title: 'Introduction' },
+            { id: 'features', title: 'Key Features' },
+            { id: 'installation', title: 'Installation' },
+            { id: 'quickstart', title: 'Quick Start' },
+            { id: 'structured-concurrency', title: 'Structured Concurrency' },
+            { id: 'the-scope', title: 'The Scope' },
+            { id: 'the-task', title: 'The Task' },
+            { id: 'result-tuples', title: 'Result Tuples' },
+            { id: 'cancellation', title: 'Cancellation' },
+            { id: 'channels', title: 'Channels' },
+            { id: 'error-handling', title: 'Error Handling' },
+            { id: 'guide-http-client', title: 'HTTP Client Guide' },
+            { id: 'guide-db-pool', title: 'DB Connection Pool' },
+            { id: 'guide-circuit-breaker', title: 'Circuit Breaker' },
+            { id: 'guide-retry', title: 'Retry Patterns' },
+            { id: 'api', title: 'API Reference' }
         ];
-
-        searchInput.addEventListener('input', (e) => {
-            const query = e.target.value.toLowerCase().trim();
-            selectedIndex = -1; // Reset selection
+        
+        function updatePageNav() {
+            const scrollPos = window.scrollY + 200;
+            let currentIndex = 0;
             
-            if (query.length < 2) {
-                searchResults.classList.remove('active');
-                return;
-            }
-
-            const results = docs.filter(doc => 
-                doc.title.toLowerCase().includes(query) || 
-                doc.desc.toLowerCase().includes(query)
-            );
-
-            if (results.length > 0) {
-                searchResults.innerHTML = results.map(r => `
-                    <a href="${r.href}" class="search-result" tabindex="0">
-                        <div class="search-result-title">${r.title}</div>
-                        <div class="search-result-desc">${r.desc}</div>
-                    </a>
-                `).join('');
-                searchResults.classList.add('active');
+            pageOrder.forEach((page, index) => {
+                const section = document.getElementById(page.id);
+                if (section && section.offsetTop <= scrollPos) {
+                    currentIndex = index;
+                }
+            });
+            
+            const prev = pageOrder[currentIndex - 1];
+            const next = pageOrder[currentIndex + 1];
+            
+            if (prev) {
+                prevPage.href = '#' + prev.id;
+                prevPage.querySelector('.page-nav-title').textContent = prev.title;
+                prevPage.style.visibility = 'visible';
             } else {
-                searchResults.innerHTML = '<div class="search-result"><div class="search-result-title">No results found</div></div>';
-                searchResults.classList.add('active');
+                prevPage.style.visibility = 'hidden';
             }
-        });
-        
-        // Also handle focus event to show results if query exists
-        searchInput.addEventListener('focus', (e) => {
-            const query = e.target.value.toLowerCase().trim();
-            if (query.length >= 2) {
-                searchResults.classList.add('active');
-            }
-        });
-        
-        // Handle keyboard navigation
-        let selectedIndex = -1;
-        searchInput.addEventListener('keydown', (e) => {
-            const items = searchResults.querySelectorAll('.search-result');
-            if (!items.length || !searchResults.classList.contains('active')) return;
             
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
-                items[selectedIndex]?.focus();
-                items[selectedIndex]?.scrollIntoView({ block: 'nearest' });
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                selectedIndex = Math.max(selectedIndex - 1, -1);
-                if (selectedIndex >= 0) {
-                    items[selectedIndex]?.focus();
-                    items[selectedIndex]?.scrollIntoView({ block: 'nearest' });
-                } else {
-                    searchInput.focus();
-                }
-            } else if (e.key === 'Enter') {
-                e.preventDefault();
-                const targetItem = selectedIndex >= 0 ? items[selectedIndex] : items[0];
-                if (targetItem && targetItem.href) {
-                    window.location.href = targetItem.href;
-                }
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                searchResults.classList.remove('active');
-                selectedIndex = -1;
-                searchInput.blur();
+            if (next) {
+                nextPage.href = '#' + next.id;
+                nextPage.querySelector('.page-nav-title').textContent = next.title;
+                nextPage.style.visibility = 'visible';
+            } else {
+                nextPage.style.visibility = 'hidden';
             }
-        });
+        }
+        
+        window.addEventListener('scroll', updatePageNav);
+        updatePageNav();
 
-        // Close search on click outside (with delay to allow click on results)
-        document.addEventListener('click', (e) => {
-            const searchBox = document.querySelector('.search-box');
-            if (searchBox && !searchBox.contains(e.target)) {
-                searchResults.classList.remove('active');
-            }
-        });
-
-        // Active nav link highlighting
-        const sections = document.querySelectorAll('section[id]');
-        const navLinks = document.querySelectorAll('.nav-link');
-
-        window.addEventListener('scroll', () => {
-            let current = '';
-            sections.forEach(section => {
-                const sectionTop = section.offsetTop;
-                if (scrollY >= sectionTop - 200) {
-                    current = section.getAttribute('id');
-                }
-            });
-
-            navLinks.forEach(link => {
-                link.classList.remove('active');
-                // Only set active on non-sub links to avoid highlighting multiple items
-                if (!link.classList.contains('sub') && link.getAttribute('href') === `#${current}`) {
-                    link.classList.add('active');
+        // ============================================
+        // SMOOTH SCROLL FOR ANCHOR LINKS
+        // ============================================
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                const href = this.getAttribute('href');
+                if (href === '#') return;
+                
+                const target = document.querySelector(href);
+                if (target) {
+                    e.preventDefault();
+                    target.scrollIntoView({ behavior: 'smooth' });
+                    history.pushState(null, null, href);
                 }
             });
         });
+
+        // ============================================
+        // HANDLE HASH ON PAGE LOAD
+        // ============================================
+        if (window.location.hash) {
+            const target = document.querySelector(window.location.hash);
+            if (target) {
+                setTimeout(() => {
+                    target.scrollIntoView({ behavior: 'smooth' });
+                }, 100);
+            }
+        }
     </script>
 </body>
 </html>
