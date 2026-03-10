@@ -53,6 +53,33 @@ function truncateText(text: string, maxLength: number): string {
   return truncated.slice(0, lastSpace) + '...';
 }
 
+/**
+ * Clean up description for Quick Reference display
+ * - Removes compiler directives like #__PURE__
+ * - Removes TypeScript directives like // @ts-expect-error
+ * - Extracts first sentence for brevity
+ * - Cleans up extra whitespace
+ */
+function cleanQuickRefDescription(description: string): string {
+  if (!description) return "";
+  
+  // Remove compiler directives
+  let cleaned = description
+    .replace(/#__PURE__/g, '')
+    .replace(/\/\/\s*@ts-expect-error.*/g, '');
+  
+  // Get first sentence (up to first period followed by space or end)
+  const firstSentence = cleaned.match(/^[^.!?]+[.!?]/);
+  if (firstSentence) {
+    cleaned = firstSentence[0].trim();
+  }
+  
+  // Clean up whitespace
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  
+  return cleaned;
+}
+
 const PACKAGES_DIR = "packages";
 const OUTPUT_DIR = "docs/api";
 const DOCS_DIR = "docs";
@@ -497,7 +524,7 @@ function generateMainIndex(allDocs: DocEntry[]): string {
   if (coreFunctions.length > 0) {
     md += "### Core Functions\n\n";
     for (const fn of coreFunctions) {
-      md += `- **${fn.name}** - ${fn.description}\n`;
+      md += `- **${fn.name}** - ${cleanQuickRefDescription(fn.description)}\n`;
     }
   }
 
@@ -507,7 +534,7 @@ function generateMainIndex(allDocs: DocEntry[]): string {
   if (coreClasses.length > 0) {
     md += "\n### Core Classes\n\n";
     for (const cls of coreClasses) {
-      md += `- **${cls.name}** - ${cls.description}\n`;
+      md += `- **${cls.name}** - ${cleanQuickRefDescription(cls.description)}\n`;
     }
   }
 
