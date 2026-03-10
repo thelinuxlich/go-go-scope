@@ -887,7 +887,7 @@
             <section class="hero" id="introduction">
                 <div class="hero-badge">
                     <span>✨</span>
-                    <span>v2.8.0</span>
+                    <span>v2.9.0</span>
                     <span>•</span>
                     <span>TypeScript 5.2+</span>
                     <span>•</span>
@@ -981,6 +981,21 @@
                     <div class="feature-icon">⏱️</div>
                     <h3>Race Stagger</h3>
                     <p>Request hedging with staggered task startup for cost-optimized racing</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🧠</div>
+                    <h3>Memory Monitoring</h3>
+                    <p>Heap usage tracking with configurable limits and pressure callbacks for long-running processes</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📝</div>
+                    <h3>Dynamic Context API</h3>
+                    <p>Runtime context mutation with type-safe get/set for request tracing without parameter drilling</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📁</div>
+                    <h3>Worker Module Loading</h3>
+                    <p>Load worker functions from files with full module context - no more closure serialization limits</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">📡</div>
@@ -2759,6 +2774,65 @@ s.<span class="function">task</span>(({ context }) => {
         </tbody>
     </table>
 
+    <h3 id="worker-module-loading">Worker Module Loading <span style="color: var(--primary);">v2.9.0+</span></h3>
+    <p>Load worker functions from files with full module context. Eliminates closure serialization limitations of inline worker functions.</p>
+    <pre><code><span class="comment">// workers/compute.ts - Full module with imports</span>
+<span class="keyword">import</span> { fibonacci } <span class="keyword">from</span> <span class="string">"./math.js"</span>;
+
+<span class="keyword">export</span> <span class="keyword">function</span> <span class="function">compute</span>({ data }: { data: { n: <span class="type">number</span> } }) {
+  <span class="comment">// Full access to imports, closures, and module scope</span>
+  <span class="keyword">return</span> <span class="function">fibonacci</span>(data.n);
+}</code></pre>
+
+    <h4>Usage</h4>
+    <pre><code><span class="comment">// Load and execute from file</span>
+<span class="keyword">const</span> [err, result] = <span class="keyword">await</span> s.<span class="function">task</span>(
+  { 
+    module: <span class="string">"./workers/compute.ts"</span>, 
+    export: <span class="string">"compute"</span>,           <span class="comment">// Named export (default: "default")</span>
+    validate: <span class="keyword">true</span>,              <span class="comment">// Validate module exists (default: true)</span>
+    cache: <span class="keyword">true</span>,                 <span class="comment">// Cache module for reuse (default: true)</span>
+    sourceMap: <span class="keyword">true</span>             <span class="comment">// Enable source maps (default: true)</span>
+  },
+  { 
+    worker: <span class="keyword">true</span>, 
+    data: { n: <span class="number">40</span> }              <span class="comment">// Data passed to worker</span>
+  }
+);</code></pre>
+
+    <h4>Shared Workers</h4>
+    <p>Create shared worker modules for reuse across multiple scopes:</p>
+    <pre><code><span class="keyword">import</span> { createSharedWorker } <span class="keyword">from</span> <span class="string">"go-go-scope"</span>;
+
+<span class="comment">// Create once, use across many scopes</span>
+<span class="keyword">const</span> imageProcessor = <span class="keyword">await</span> <span class="function">createSharedWorker</span>(<span class="string">"./image-processor.ts"</span>);
+
+<span class="comment">// Use in scope 1</span>
+<span class="keyword">await using</span> s1 = <span class="function">scope</span>();
+<span class="keyword">const</span> [err1, thumb1] = <span class="keyword">await</span> s1.<span class="function">task</span>(
+  imageProcessor.<span class="function">export</span>(<span class="string">"createThumbnail"</span>),
+  { worker: <span class="keyword">true</span>, data: { image: buffer1, size: <span class="number">256</span> } }
+);
+
+<span class="comment">// Use in scope 2 (same worker pool)</span>
+<span class="keyword">await using</span> s2 = <span class="function">scope</span>();
+<span class="keyword">const</span> [err2, thumb2] = <span class="keyword">await</span> s2.<span class="function">task</span>(
+  imageProcessor.<span class="function">export</span>(<span class="string">"createThumbnail"</span>),
+  { worker: <span class="keyword">true</span>, data: { image: buffer2, size: <span class="number">512</span> } }
+);</code></pre>
+
+    <h4>Zero-Copy Transfer</h4>
+    <p>ArrayBuffers are automatically extracted and transferred (not copied) to workers:</p>
+    <pre><code><span class="keyword">const</span> buffer = <span class="keyword">new</span> <span class="type">ArrayBuffer</span>(<span class="number">1024</span> * <span class="number">1024</span>); <span class="comment">// 1MB</span>
+
+<span class="keyword">const</span> [err, hash] = <span class="keyword">await</span> s.<span class="function">task</span>(
+  { module: <span class="string">"./hash.ts"</span>, export: <span class="string">"sha256"</span> },
+  { worker: <span class="keyword">true</span>, data: { buffer } }
+);
+
+<span class="comment">// buffer is now detached (transferred, not copied)</span>
+<span class="function">console</span>.<span class="function">log</span>(buffer.byteLength); <span class="comment">// 0</span></code></pre>
+
     <h3 id="gracefulshutdowncontroller-class">GracefulShutdownController Class</h3>
     <p>Manages graceful application shutdown. Use via <code>gracefulShutdown</code> scope option (v2.6.0+).</p>
 
@@ -3822,6 +3896,11 @@ app.<span class="function">use</span>(<span class="keyword">async</span> (ctx) =
             { title: 'scope.memoryUsage()', desc: 'Memory monitoring', href: '#scope-memoryusage', tag: 'v2.9.0' },
             { title: 'scope.setContext()', desc: 'Set context value', href: '#scope-setcontext', tag: 'v2.9.0' },
             { title: 'scope.getContext()', desc: 'Get context value', href: '#scope-getcontext', tag: 'v2.9.0' },
+            { title: 'scope.hasContext()', desc: 'Check context key', href: '#scope-hascontext', tag: 'v2.9.0' },
+            { title: 'scope.removeContext()', desc: 'Remove context key', href: '#scope-removecontext', tag: 'v2.9.0' },
+            { title: 'scope.getAllContext()', desc: 'Get all context', href: '#scope-getallcontext', tag: 'v2.9.0' },
+            { title: 'scope.setMemoryLimit()', desc: 'Update memory limit', href: '#scope-setmemorylimit', tag: 'v2.9.0' },
+            { title: 'Worker Module Loading', desc: 'Load workers from files', href: '#worker-module-loading', tag: 'v2.9.0' },
             { title: 'scope.select()', desc: 'Select statement', href: '#scope-select' },
             { title: 'scope.broadcast()', desc: 'Create broadcast channel', href: '#scope-broadcast' },
             { title: 'scope.priorityChannel()', desc: 'Priority channel', href: '#scope-prioritychannel' },
