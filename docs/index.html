@@ -41,7 +41,6 @@
             /* Layout */
             --header-height: 64px;
             --sidebar-width: 280px;
-            --toc-width: 240px;
             --content-max-width: 900px;
             
             /* Transitions */
@@ -466,7 +465,6 @@
         .main {
             flex: 1;
             margin-left: var(--sidebar-width);
-            margin-right: var(--toc-width);
             min-width: 0;
         }
 
@@ -640,6 +638,8 @@
             border-radius: 12px;
             overflow: hidden;
             background: var(--bg-code);
+            border: none;
+            box-shadow: none;
         }
 
         .code-block-header {
@@ -685,11 +685,13 @@
         }
 
         .code-block-wrapper pre {
-            padding: 32px 40px !important;
+            padding: 40px 48px !important;
             overflow-x: auto;
             background: var(--bg-code) !important;
             margin: 0;
-            border: none;
+            border: none !important;
+            box-shadow: none !important;
+            outline: none !important;
         }
 
         .code-block-wrapper pre code {
@@ -716,6 +718,14 @@
         code[class*="language-"] {
             color: #e0e0e0;
             text-shadow: none;
+        }
+        
+        /* Remove PrismJS borders/shadows */
+        pre[class*="language-"],
+        code[class*="language-"] {
+            border: none !important;
+            box-shadow: none !important;
+            outline: none !important;
         }
 
         /* Tables */
@@ -910,70 +920,6 @@
         .info-box p {
             margin: 0;
             font-size: 14px;
-        }
-
-        /* ============================================
-           TABLE OF CONTENTS (Right Sidebar)
-           ============================================ */
-        .toc-sidebar {
-            position: fixed;
-            right: 0;
-            top: var(--header-height);
-            bottom: 0;
-            width: var(--toc-width);
-            background: var(--bg-secondary);
-            border-left: 1px solid var(--border-light);
-            padding: 24px 16px;
-            overflow-y: auto;
-            z-index: 10;
-        }
-
-        .toc-title {
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: var(--text-tertiary);
-            margin-bottom: 12px;
-            padding: 0 8px;
-        }
-
-        .toc-list {
-            list-style: none;
-            padding: 0;
-        }
-
-        .toc-item {
-            margin: 0;
-        }
-
-        .toc-link {
-            display: block;
-            padding: 6px 8px;
-            color: var(--text-tertiary);
-            text-decoration: none;
-            font-size: 13px;
-            line-height: 1.4;
-            border-radius: 6px;
-            transition: all var(--transition-fast);
-            border-left: 2px solid transparent;
-            margin-left: -2px;
-        }
-
-        .toc-link:hover {
-            color: var(--text-primary);
-            background: var(--bg-tertiary);
-        }
-
-        .toc-link.active {
-            color: var(--primary);
-            border-left-color: var(--primary);
-            font-weight: 500;
-        }
-
-        .toc-link.level-3 {
-            padding-left: 20px;
-            font-size: 12px;
         }
 
         /* ============================================
@@ -1213,16 +1159,6 @@
         /* ============================================
            MOBILE RESPONSIVE
            ============================================ */
-        @media (max-width: 1200px) {
-            .toc-sidebar {
-                display: none;
-            }
-
-            .main {
-                margin-right: 0;
-            }
-        }
-
         @media (max-width: 1024px) {
             .menu-toggle {
                 display: flex;
@@ -2239,19 +2175,18 @@ async function granularTimeouts() {
                         <pre><code class="language-typescript">import { scope } from 'go-go-scope'
 
 async function main() {
-  await using s = scope()
-
-  // Setup graceful shutdown
-  const shutdown = setupGracefulShutdown(s, {
-    signals: ['SIGTERM', 'SIGINT'],
-    timeout: 30000,
-    beforeShutdown: async () => {
-      console.log('Starting graceful shutdown...')
-      await closeDatabaseConnections()
-      await flushLogs()
-    },
-    afterShutdown: () => {
-      console.log('Shutdown complete')
+  await using s = scope({
+    gracefulShutdown: {
+      signals: ['SIGTERM', 'SIGINT'],
+      timeout: 30000,
+      beforeShutdown: async () => {
+        console.log('Starting graceful shutdown...')
+        await closeDatabaseConnections()
+        await flushLogs()
+      },
+      afterShutdown: () => {
+        console.log('Shutdown complete')
+      }
     }
   })
 
@@ -2496,19 +2431,6 @@ const [err, result] = await s.task(
                         <p><a href="https://github.com/thelinuxlich/go-go-scope/blob/main/docs/api/README.md" target="_blank">View Complete API Reference →</a></p>
                     </div>
                 </section>
-
-                <!-- Page Navigation -->
-                <nav class="page-nav" id="pageNav">
-                    <a href="#introduction" class="page-nav-link" id="prevPage">
-                        <span class="page-nav-label">← Previous</span>
-                        <span class="page-nav-title">Introduction</span>
-                    </a>
-                    <a href="#quickstart" class="page-nav-link next" id="nextPage">
-                        <span class="page-nav-label">Next →</span>
-                        <span class="page-nav-title">Quick Start</span>
-                    </a>
-                </nav>
-
                 <!-- Footer -->
                 <footer class="footer">
                     <p>Released under the MIT License • Made with ❤️ by <a href="https://github.com/thelinuxlich" target="_blank">thelinuxlich</a></p>
@@ -2521,13 +2443,7 @@ const [err, result] = await s.task(
             </div>
         </main>
 
-        <!-- Table of Contents Sidebar -->
-        <aside class="toc-sidebar" id="tocSidebar">
-            <div class="toc-title">On this page</div>
-            <ul class="toc-list" id="tocList">
-                <!-- TOC items will be generated by JavaScript -->
-            </ul>
-        </aside>
+
     </div>
 
     <script>
@@ -2659,61 +2575,6 @@ const [err, result] = await s.task(
         
         window.addEventListener('scroll', updateActiveNav);
         updateActiveNav();
-
-        // ============================================
-        // TABLE OF CONTENTS (Right Sidebar)
-        // ============================================
-        const tocList = document.getElementById('tocList');
-        const mainContent = document.querySelector('.main');
-        
-        function generateTOC() {
-            const headings = mainContent.querySelectorAll('h2[id], h3[id]');
-            tocList.innerHTML = '';
-            
-            headings.forEach(heading => {
-                const li = document.createElement('li');
-                li.className = 'toc-item';
-                
-                const link = document.createElement('a');
-                link.className = 'toc-link';
-                link.href = '#' + heading.id;
-                link.textContent = heading.textContent;
-                
-                if (heading.tagName === 'H3') {
-                    link.classList.add('level-3');
-                }
-                
-                link.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    heading.scrollIntoView({ behavior: 'smooth' });
-                    history.pushState(null, null, '#' + heading.id);
-                });
-                
-                li.appendChild(link);
-                tocList.appendChild(li);
-            });
-        }
-        
-        function updateTOCHighlight() {
-            const headings = mainContent.querySelectorAll('h2[id], h3[id]');
-            const scrollPos = window.scrollY + 150;
-            
-            headings.forEach((heading, index) => {
-                const headingTop = heading.offsetTop;
-                const tocLinks = tocList.querySelectorAll('.toc-link');
-                
-                if (scrollPos >= headingTop || (index === 0 && scrollPos < headingTop)) {
-                    tocLinks.forEach(link => link.classList.remove('active'));
-                    if (tocLinks[index]) {
-                        tocLinks[index].classList.add('active');
-                    }
-                }
-            });
-        }
-        
-        generateTOC();
-        window.addEventListener('scroll', updateTOCHighlight);
-        updateTOCHighlight();
 
         // ============================================
         // SEARCH FUNCTIONALITY

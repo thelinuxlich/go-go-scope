@@ -23,7 +23,7 @@
 - [adapter-sveltekit](./adapter-sveltekit.md) - 5 documented items
 - [adapter-vercel-edge](./adapter-vercel-edge.md) - 6 documented items
 - [benchmark](./benchmark.md) - 11 documented items
-- [go-go-scope](./go-go-scope.md) - 388 documented items
+- [go-go-scope](./go-go-scope.md) - 387 documented items
 - [logger](./logger.md) - 10 documented items
 - [persistence-cloudflare-do](./persistence-cloudflare-do.md) - 3 documented items
 - [persistence-deno-kv](./persistence-deno-kv.md) - 2 documented items

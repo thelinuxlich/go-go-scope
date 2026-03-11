@@ -1743,13 +1743,6 @@
     "file": "packages/go-go-scope/src/graceful-shutdown.ts"
   },
   {
-    "name": "setupGracefulShutdown",
-    "kind": "function",
-    "package": "go-go-scope",
-    "description": "Setup graceful shutdown handling for a scope. Factory function that creates a {@link GracefulShutdownController} for the given scope. The controller will automatically handle shutdown signals and coor",
-    "file": "packages/go-go-scope/src/graceful-shutdown.ts"
-  },
-  {
     "name": "InMemoryIdempotencyProviderOptions",
     "kind": "interface",
     "package": "go-go-scope",

@@ -6,9 +6,9 @@ The API documentation is automatically generated from JSDoc comments in the sour
 
 | Metric | Count |
 |--------|-------|
-| **Total Documented Items** | 955 |
+| **Total Documented Items** | 954 |
 | **Packages** | 40 |
-| **Functions** | 204 |
+| **Functions** | 203 |
 | **Classes** | 80 |
 | **Stream Operators** | 92 |
 
@@ -16,7 +16,7 @@ The API documentation is automatically generated from JSDoc comments in the sour
 
 | Package | Description | Link |
 |---------|-------------|------|
-| **go-go-scope** | Core library - Scope, Task, Channel, and concurrency primitives | [View API](./api/go-go-scope.md) (388 items) |
+| **go-go-scope** | Core library - Scope, Task, Channel, and concurrency primitives | [View API](./api/go-go-scope.md) (387 items) |
 | **stream** | Lazy stream processing with 50+ operators | [View API](./api/stream.md) (95 items) |
 | **scheduler** | Distributed job scheduler with cron support | [View API](./api/scheduler.md) (117 items) |
 | **testing** | Testing utilities and mock helpers | [View API](./api/testing.md) (25 items) |
@@ -109,4 +109,4 @@ When adding new functions or modifying existing ones:
 
 ---
 
-*The API documentation is automatically generated from JSDoc comments. Last updated: 2026-03-10*
+*The API documentation is automatically generated from JSDoc comments. Last updated: 2026-03-11*

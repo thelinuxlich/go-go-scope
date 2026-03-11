@@ -425,6 +425,8 @@ export class GracefulShutdownController {
  * @param options.timeoutExitCode - Exit code on timeout (default: 1)
  * @returns {GracefulShutdownController} The shutdown controller
  *
+ * @internal Use {@link Scope.setupGracefulShutdown} instead
+ *
  * @see {@link GracefulShutdownController} The controller class
  * @see {@link GracefulShutdownOptions} Configuration options
  * @see {@link Scope.setupGracefulShutdown} Factory method on scope
