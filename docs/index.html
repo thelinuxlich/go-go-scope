@@ -1410,22 +1410,6 @@
                     </div>
                 </div>
 
-                <!-- Guides -->
-                <div class="nav-section" data-section="guides">
-                    <button class="nav-section-header">
-                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="6 9 12 15 18 9"></polyline>
-                        </svg>
-                        <span class="nav-section-title">Guides</span>
-                    </button>
-                    <div class="nav-section-items">
-                        <a href="#guide-http-client" class="nav-link">HTTP Client</a>
-                        <a href="#guide-db-pool" class="nav-link">DB Connection Pool</a>
-                        <a href="#guide-circuit-breaker" class="nav-link">Circuit Breaker</a>
-                        <a href="#guide-retry" class="nav-link">Retry Patterns</a>
-                    </div>
-                </div>
-
                 <!-- Concurrency -->
                 <div class="nav-section" data-section="concurrency">
                     <button class="nav-section-header">
@@ -1457,6 +1441,22 @@
                         <a href="#timeout-patterns" class="nav-link sub">Timeout</a>
                         <a href="#graceful-shutdown" class="nav-link sub">Graceful Shutdown</a>
                         <a href="#deadlock-detection" class="nav-link sub">Deadlock Detection</a>
+                    </div>
+                </div>
+
+                <!-- Guides -->
+                <div class="nav-section" data-section="guides">
+                    <button class="nav-section-header">
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                        <span class="nav-section-title">Guides</span>
+                    </button>
+                    <div class="nav-section-items">
+                        <a href="#guide-http-client" class="nav-link">HTTP Client</a>
+                        <a href="#guide-db-pool" class="nav-link">DB Connection Pool</a>
+                        <a href="#guide-circuit-breaker" class="nav-link">Circuit Breaker</a>
+                        <a href="#guide-retry" class="nav-link">Retry Patterns</a>
                     </div>
                 </div>
 
@@ -2555,20 +2555,22 @@ const [err, result] = await s.task(
         const sections = document.querySelectorAll('section[id]');
         
         function updateActiveNav() {
-            const scrollPos = window.scrollY + 100;
+            const scrollPos = window.scrollY + 150;
+            let activeSectionId = null;
             
+            // Find the current section (first one whose top is above scroll position)
             sections.forEach(section => {
                 const sectionTop = section.offsetTop;
-                const sectionHeight = section.offsetHeight;
-                const sectionId = section.getAttribute('id');
-                
-                if (scrollPos >= sectionTop && scrollPos < sectionTop + sectionHeight) {
-                    navLinks.forEach(link => {
-                        link.classList.remove('active');
-                        if (link.getAttribute('href') === '#' + sectionId) {
-                            link.classList.add('active');
-                        }
-                    });
+                if (scrollPos >= sectionTop) {
+                    activeSectionId = section.getAttribute('id');
+                }
+            });
+            
+            // Update active state on links
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + activeSectionId) {
+                    link.classList.add('active');
                 }
             });
         }
