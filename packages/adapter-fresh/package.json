@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/adapter-fresh",
-	"version": "2.9.0",
+	"version": "2.9.1",
 	"description": "Fresh (Deno) adapter for go-go-scope",
 	"type": "module",
 	"exports": {

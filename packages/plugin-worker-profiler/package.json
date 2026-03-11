@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/plugin-worker-profiler",
-	"version": "2.9.0",
+	"version": "2.9.1",
 	"description": "Worker performance profiling plugin for go-go-scope",
 	"type": "module",
 	"main": "./dist/index.mjs",

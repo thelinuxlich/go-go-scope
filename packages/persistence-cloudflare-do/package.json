@@ -1,6 +1,6 @@
 {
 	"name": "@go-go-scope/persistence-cloudflare-do",
-	"version": "2.9.0",
+	"version": "2.9.1",
 	"description": "Cloudflare Durable Objects persistence adapter for go-go-scope",
 	"type": "module",
 	"main": "./dist/index.mjs",
