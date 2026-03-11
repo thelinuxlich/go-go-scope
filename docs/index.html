@@ -1625,7 +1625,31 @@ async function parent() {
                 <section id="the-scope" class="content">
                     <h2 id="the-scope">The Scope</h2>
                     
-                    <p>A <strong>Scope</strong> is a container for async operations. Think of it as a "workspace" for your tasks.</p>
+                    <p>A <strong>Scope</strong> is the core primitive for structured concurrency. It manages the lifecycle of concurrent operations and provides a rich API for building resilient applications.</p>
+                    
+                    <h3>Scope Capabilities</h3>
+                    <ul>
+                        <li><strong>Task Spawning</strong> - Create tasks with <code>s.task()</code> that respect scope cancellation</li>
+                        <li><strong>Parallel Execution</strong> - Run multiple tasks concurrently with <code>s.parallel()</code></li>
+                        <li><strong>Race Operations</strong> - Get the first completed result with <code>s.race()</code></li>
+                        <li><strong>Channels</strong> - Create Go-style channels with <code>s.channel()</code></li>
+                        <li><strong>Broadcast Channels</strong> - Fan-out to multiple consumers with <code>s.broadcast()</code></li>
+                        <li><strong>Resource Management</strong> - Provide and use services with automatic cleanup</li>
+                        <li><strong>Polling</strong> - Set up recurring operations with <code>s.poll()</code></li>
+                        <li><strong>Rate Limiting</strong> - Debounce and throttle functions</li>
+                        <li><strong>Resource Pools</strong> - Manage connection pools and worker pools</li>
+                        <li><strong>Semaphores</strong> - Control concurrent access to resources</li>
+                        <li><strong>Timeouts</strong> - Automatic cancellation after a duration</li>
+                        <li><strong>Retry Logic</strong> - Built-in exponential backoff and custom strategies</li>
+                        <li><strong>Circuit Breaker</strong> - Fault tolerance with automatic recovery</li>
+                        <li><strong>Stream Processing</strong> - Create lazy streams with <code>s.stream()</code></li>
+                        <li><strong>Priority Channels</strong> - Handle tasks by priority</li>
+                        <li><strong>Select Statement</strong> - Wait on multiple channel operations</li>
+                        <li><strong>Context API</strong> - Set and get values with <code>s.setContext()</code> / <code>s.getContext()</code></li>
+                        <li><strong>Memory Monitoring</strong> - Track and limit memory usage</li>
+                        <li><strong>Lifecycle Hooks</strong> - Register cleanup with <code>s.onDispose()</code></li>
+                        <li><strong>Metrics</strong> - Built-in performance and health metrics</li>
+                    </ul>
 
                     <h3 id="creating-a-scope">Creating a Scope</h3>
                     <div class="code-block-wrapper">
@@ -1696,11 +1720,20 @@ await using s = scope({
                 <section id="the-task" class="content">
                     <h2 id="the-task">The Task</h2>
                     
-                    <p>A <strong>Task</strong> is a unit of work within a scope. It's like a Promise, but:</p>
+                    <p>A <strong>Task</strong> is a unit of work within a scope. Unlike Promises, tasks are lazy, cancellable, and always return Result tuples.</p>
+                    
+                    <h3>Task Features</h3>
                     <ul>
-                        <li><strong>Lazy</strong> - Doesn't start until you await it</li>
-                        <li><strong>Cancellable</strong> - Respects the AbortSignal</li>
-                        <li><strong>Returns a Result</strong> - Never throws, always returns <code>[error, value]</code></li>
+                        <li><strong>Lazy Execution</strong> - Task doesn't start until you await it</li>
+                        <li><strong>Cancellable</strong> - Receives an <code>AbortSignal</code> for cancellation support</li>
+                        <li><strong>Result Tuple</strong> - Always returns <code>[error, value]</code>, never throws</li>
+                        <li><strong>Timeout Support</strong> - Per-task timeout with automatic cancellation</li>
+                        <li><strong>Retry Logic</strong> - Built-in retry with exponential backoff</li>
+                        <li><strong>Error Transformation</strong> - Wrap errors with typed error classes</li>
+                        <li><strong>Worker Thread Support</strong> - Run CPU-intensive tasks in workers</li>
+                        <li><strong>Tracing Integration</strong> - Automatic OpenTelemetry span creation</li>
+                        <li><strong>Logging Context</strong> - Access to structured logger instance</li>
+                        <li><strong>Service Injection</strong> - Access provided services via context</li>
                     </ul>
 
                     <h3 id="lazy-execution">Lazy Execution</h3>
@@ -2595,8 +2628,8 @@ const [err, result] = await s.task(
             { title: 'Quick Start', desc: 'Get started in 5 minutes', href: '#quickstart', section: 'Getting Started' },
             // Core Concepts
             { title: 'Structured Concurrency', desc: 'Understanding structured concurrency', href: '#structured-concurrency', section: 'Core Concepts' },
-            { title: 'The Scope', desc: 'Container for async operations', href: '#the-scope', section: 'Core Concepts' },
-            { title: 'The Task', desc: 'Unit of work within a scope', href: '#the-task', section: 'Core Concepts' },
+            { title: 'The Scope', desc: 'Core primitive with 20+ capabilities for structured concurrency', href: '#the-scope', section: 'Core Concepts' },
+            { title: 'The Task', desc: 'Lazy, cancellable unit of work with Result tuples', href: '#the-task', section: 'Core Concepts' },
             { title: 'Result Tuples', desc: 'Error handling with [error, value]', href: '#result-tuples', section: 'Core Concepts' },
             { title: 'Cancellation', desc: 'AbortSignal and cleanup', href: '#cancellation', section: 'Core Concepts' },
             { title: 'Channels', desc: 'Go-style concurrent communication', href: '#channels', section: 'Core Concepts' },
